@@ -24,6 +24,7 @@
       "@review/domain/review-format": ["./packages/domain/src/review-format/index.ts"],
       "@review/domain/prompt": ["./packages/domain/src/prompt/index.ts"],
       "@review/domain/experiment": ["./packages/domain/src/experiment/index.ts"],
+      "@review/domain/guards": ["./packages/domain/src/guards/index.ts"],
       "@review/contracts/shared": ["./packages/contracts/src/shared/index.ts"],
       "@review/contracts/context": ["./packages/contracts/src/context/index.ts"],
       "@review/contracts/generation": ["./packages/contracts/src/generation/index.ts"],
