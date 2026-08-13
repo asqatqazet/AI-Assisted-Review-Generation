@@ -69,12 +69,23 @@ export type ModelFailureCode =
   | "cancellation"
   | "invalid-output";
 
+export interface ModelFailureDetails {
+  readonly retryAfterMs?: number;
+  readonly attempt?: ModelAttempt;
+}
+
 export class ModelGatewayError extends Error {
+  public readonly retryAfterMs: number | undefined;
+  public readonly attempt: ModelAttempt | undefined;
+
   public constructor(
     public readonly code: ModelFailureCode,
     message: string,
+    details: ModelFailureDetails = {},
   ) {
     super(message);
     this.name = "ModelGatewayError";
+    this.retryAfterMs = details.retryAfterMs;
+    this.attempt = details.attempt;
   }
 }

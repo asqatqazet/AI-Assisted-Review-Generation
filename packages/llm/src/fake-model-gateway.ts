@@ -1,4 +1,5 @@
 import type {
+  ModelAttempt,
   ModelFailureCode,
   ModelGateway,
   ModelRequest,
@@ -18,6 +19,8 @@ export interface FakeModelFailure {
   readonly failure: {
     readonly code: ModelFailureCode;
     readonly message: string;
+    readonly retryAfterMs?: number;
+    readonly attempt?: ModelAttempt;
   };
 }
 
@@ -84,7 +87,11 @@ export class FakeModelGateway implements ModelGateway {
     await waitForLatency(step.latencyMs ?? 0, signal);
 
     if (step.outcome === "failure") {
-      throw new ModelGatewayError(step.failure.code, step.failure.message);
+      throw new ModelGatewayError(
+        step.failure.code,
+        step.failure.message,
+        step.failure,
+      );
     }
 
     return step.run;
