@@ -1,15 +1,25 @@
 import type {
+  ModelFailureCode,
   ModelGateway,
   ModelRequest,
   ModelRun,
 } from "./model-gateway.js";
+import { ModelGatewayError } from "./model-gateway.js";
 
 export interface FakeModelSuccess {
   readonly outcome: "success";
   readonly run: ModelRun;
 }
 
-export type FakeModelStep = FakeModelSuccess;
+export interface FakeModelFailure {
+  readonly outcome: "failure";
+  readonly failure: {
+    readonly code: ModelFailureCode;
+    readonly message: string;
+  };
+}
+
+export type FakeModelStep = FakeModelFailure | FakeModelSuccess;
 
 export class FakeModelGateway implements ModelGateway {
   readonly #steps: readonly FakeModelStep[];
@@ -28,6 +38,10 @@ export class FakeModelGateway implements ModelGateway {
 
     if (step === undefined) {
       throw new Error("No scripted model run remains.");
+    }
+
+    if (step.outcome === "failure") {
+      throw new ModelGatewayError(step.failure.code, step.failure.message);
     }
 
     return step.run;

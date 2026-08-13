@@ -58,3 +58,23 @@ export interface ModelRun {
 export interface ModelGateway {
   generate(request: ModelRequest, signal?: AbortSignal): Promise<ModelRun>;
 }
+
+export type ModelFailureCode =
+  | "timeout"
+  | "rate-limit"
+  | "auth"
+  | "content-filter"
+  | "provider"
+  | "unavailable"
+  | "cancellation"
+  | "invalid-output";
+
+export class ModelGatewayError extends Error {
+  public constructor(
+    public readonly code: ModelFailureCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ModelGatewayError";
+  }
+}
