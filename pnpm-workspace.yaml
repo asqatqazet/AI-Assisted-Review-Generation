@@ -3,6 +3,7 @@ packages:
   - packages/*
 
 allowBuilds:
+  '@prisma/client': true
   esbuild: true
   nx: true
 
