@@ -95,7 +95,9 @@ export class ConfigurationResolutionError extends Error {
   public constructor(
     public readonly code:
       | "unknown-location-override"
-      | "location-tenant-mismatch",
+      | "location-tenant-mismatch"
+      | "invalid-fact-option-owner"
+      | "duplicate-fact-option",
     message: string,
   ) {
     super(message);
@@ -120,6 +122,53 @@ export function resetLocationOverride(
       Object.entries(location.overrides).filter(([key]) => key !== field),
     ),
   };
+}
+
+const byScopeOrder = (left: FactOption, right: FactOption): number =>
+  left.sortOrder - right.sortOrder || left.id.localeCompare(right.id);
+
+function mergeFactOptions(
+  tenant: TenantConfiguration,
+  location: LocationConfiguration,
+): readonly FactOption[] {
+  for (const option of tenant.factOptions) {
+    if (option.owner.scope !== "tenant" || option.owner.tenantId !== tenant.id) {
+      throw new ConfigurationResolutionError(
+        "invalid-fact-option-owner",
+        `Fact Option ${option.id} is not owned by Tenant ${tenant.id}.`,
+      );
+    }
+  }
+
+  for (const option of location.factOptionAdditions) {
+    if (
+      option.owner.scope !== "location" ||
+      option.owner.tenantId !== tenant.id ||
+      option.owner.locationId !== location.id
+    ) {
+      throw new ConfigurationResolutionError(
+        "invalid-fact-option-owner",
+        `Fact Option ${option.id} is not owned by Location ${location.id}.`,
+      );
+    }
+  }
+
+  const options = [...tenant.factOptions, ...location.factOptionAdditions];
+  const identities = new Set<string>();
+  for (const option of options) {
+    if (identities.has(option.id)) {
+      throw new ConfigurationResolutionError(
+        "duplicate-fact-option",
+        `Fact Option identity ${option.id} occurs more than once.`,
+      );
+    }
+    identities.add(option.id);
+  }
+
+  return [
+    ...tenant.factOptions.toSorted(byScopeOrder),
+    ...location.factOptionAdditions.toSorted(byScopeOrder),
+  ];
 }
 
 export function resolveEffectiveConfig(input: {
@@ -204,7 +253,7 @@ export function resolveEffectiveConfig(input: {
       enabledCommands: enabledCommands.value,
       monthlyBudgetMicros: monthlyBudgetMicros.value,
       alertThresholdPct: alertThresholdPct.value,
-      factOptions: [...tenant.factOptions, ...location.factOptionAdditions],
+      factOptions: mergeFactOptions(tenant, location),
     },
     provenance: {
       locale: locale.provenance,
