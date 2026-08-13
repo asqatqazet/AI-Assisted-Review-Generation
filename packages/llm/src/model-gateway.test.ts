@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   FakeModelGateway,
@@ -89,5 +89,27 @@ describe("FakeModelGateway", () => {
 
     expect(error).toBeInstanceOf(ModelGatewayError);
     expect(error).toMatchObject({ code: "unavailable" });
+  });
+
+  it("does not settle a scripted run before its injected latency", async () => {
+    vi.useFakeTimers();
+    try {
+      const gateway = new FakeModelGateway([
+        { outcome: "success", run: firstRun, latencyMs: 50 },
+      ]);
+      let observed: ModelRun | undefined;
+      const run = gateway.generate(request).then((value) => {
+        observed = value;
+      });
+
+      await vi.advanceTimersByTimeAsync(49);
+      expect(observed).toBeUndefined();
+
+      await vi.advanceTimersByTimeAsync(1);
+      await run;
+      expect(observed).toEqual(firstRun);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
