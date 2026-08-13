@@ -33,8 +33,15 @@ export class FakeModelGateway implements ModelGateway {
 
   public async generate(
     _request: ModelRequest,
-    _signal?: AbortSignal,
+    signal?: AbortSignal,
   ): Promise<ModelRun> {
+    if (signal?.aborted === true) {
+      throw new ModelGatewayError(
+        "cancellation",
+        "Model generation was cancelled before it started.",
+      );
+    }
+
     const step = this.#steps[this.#nextStep];
     this.#nextStep += 1;
 
