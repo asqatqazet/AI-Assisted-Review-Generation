@@ -1,0 +1,79 @@
+/* Maue color system — base palette then semantic aliases.
+   Base values are verbatim from the Maue brand source; do not round or re-mix them. */
+:root{
+  /* Brand & accent */
+  --maue-black:#000000;
+  --ink-900:#16181d; /* near-black primary: CTAs, dark footer, deep UI cards */
+  --ink:#1f2023;     /* default body text */
+  --deep-indigo:#191d3f;
+  --deep-clay:#33211a;
+  --action-blue:#1c54c9;
+  --marigold:#b5701c;
+  --marigold-soft:#e8c79a;
+
+  /* Surfaces */
+  --canvas:#ffffff;
+  --warm-chalk:#eae7e0;
+  --pale-lilac:#f3f0fb;
+  --pale-sand:#fbf6ed;
+
+  /* Rules & borders */
+  --hairline:#d9d9dd;
+  --border-light:#e5e7eb;
+  --card-border:#f2f2f2;
+
+  /* Muted text */
+  --muted:#93939f;
+  --slate:#75758a;
+  --body-muted:#616161;
+
+  /* Semantic */
+  --focus-blue:#4c6ee6;
+  --form-focus:#9b60aa;
+  --error:#b30000;
+  --on-primary:#ffffff;
+  --on-dark:#ffffff;
+
+  /* Translucent rules/surfaces for dark product bands (derived, used by dark-feature-band) */
+  --on-dark-rule:rgba(255,255,255,.16);
+  --on-dark-surface:rgba(255,255,255,.06);
+  --on-dark-muted:rgba(255,255,255,.64);
+
+  /* ---- Semantic aliases: prefer these in product code ---- */
+  --text-body:var(--ink);
+  --text-strong:var(--maue-black);
+  --text-heading:var(--ink-900);
+  --text-muted:var(--body-muted);
+  --text-meta:var(--muted);
+  --text-tertiary:var(--slate);
+  --text-link:var(--action-blue);
+  --text-on-dark:var(--on-dark);
+  --text-on-dark-muted:var(--on-dark-muted);
+  --text-taxonomy:var(--marigold);
+  --text-error:var(--error);
+
+  --surface-page:var(--canvas);
+  --surface-card:var(--canvas);
+  --surface-card-warm:var(--warm-chalk);
+  --surface-wash-lilac:var(--pale-lilac);
+  --surface-wash-sand:var(--pale-sand);
+  --surface-band-indigo:var(--deep-indigo);
+  --surface-band-clay:var(--deep-clay);
+  --surface-inverse:var(--ink-900);
+  --surface-announcement:var(--maue-black);
+
+  --border-rule:var(--hairline);
+  --border-utility:var(--border-light);
+  --border-card:var(--card-border);
+  --border-input:var(--hairline);
+  --border-input-focus:var(--form-focus);
+  --border-chip-soft:var(--marigold-soft);
+  --border-on-dark:var(--on-dark-rule);
+
+  --action-primary-bg:var(--ink-900);
+  --action-primary-fg:var(--on-primary);
+  --action-primary-bg-hover:var(--maue-black);
+  --action-primary-bg-inverse:var(--canvas);
+  --action-primary-fg-inverse:var(--ink-900);
+  --ring-focus:var(--focus-blue);
+}

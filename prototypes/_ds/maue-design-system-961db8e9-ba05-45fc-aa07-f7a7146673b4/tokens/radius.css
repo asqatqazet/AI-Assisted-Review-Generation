@@ -1,0 +1,10 @@
+/* Maue radius scale. 8px and 22px dominate; 22px is the signature media-card radius. */
+:root{
+  --radius-xs:4px;   /* small images, search fields, article thumbnails */
+  --radius-sm:8px;   /* blog chips, cards, small media, dialogs */
+  --radius-md:16px;  /* medium product cards, grouped blocks */
+  --radius-lg:22px;  /* signature media card + soft placeholder */
+  --radius-xl:30px;  /* research / topic filter pills */
+  --radius-pill:32px;/* primary CTA buttons */
+  --radius-full:9999px;
+}

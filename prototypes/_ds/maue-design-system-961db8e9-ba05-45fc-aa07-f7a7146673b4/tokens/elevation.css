@@ -1,0 +1,14 @@
+/* Maue elevation — the system is flat. Depth comes from surface alternation, media
+   contrast, rounded corners and 1px rules. There is no drop-shadow scale by design;
+   the only shadow token is the focus ring. */
+:root{
+  --rule-1:1px solid var(--hairline);
+  --rule-utility:1px solid var(--border-light);
+  --rule-card:1px solid var(--card-border);
+  --rule-on-dark:1px solid var(--on-dark-rule);
+  --shadow-none:none;
+  --ring-width:2px;
+  --ring-offset:2px;
+  --shadow-focus:0 0 0 var(--ring-width) var(--ring-focus);
+  --shadow-error:0 0 0 var(--ring-width) var(--error);
+}

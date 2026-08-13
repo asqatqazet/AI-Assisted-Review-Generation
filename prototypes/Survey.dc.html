@@ -1,0 +1,1925 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+body{margin:0;background:#ffffff;color:var(--text-body,#1f2023);font:400 16px/1.5 "Inter","Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--text-body,#1f2023)}
+a:hover{opacity:.7}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--ring-focus,#4c6ee6);outline-offset:2px}
+textarea,input,select,button{font-family:inherit}
+</style>
+</helmet>
+<div style="min-height:100vh;background:var(--surface-page);padding-bottom:96px">
+
+<header style="display:flex;align-items:center;justify-content:space-between;gap:16px;height:56px;padding:0 20px;border-bottom:1px solid var(--border-card)">
+<span style="font:400 20px/1 var(--font-display);letter-spacing:-0.5px;color:var(--maue-black)">{{ biz.name }}</span>
+<span style="font:var(--type-micro);letter-spacing:var(--track-mono-label);text-transform:uppercase;font-family:var(--font-mono);color:var(--text-tertiary)">{{ headerNote }}</span>
+</header>
+
+<sc-if value="{{ isEntry }}" hint-placeholder-val="{{ true }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<!-- Everything on this screen was resolved from the link: tenant, location, and
+     on the invited path a validated visit token. Nothing was typed to get here. -->
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ biz.category }} · {{ locName }}</p>
+<h1 style="margin:16px 0 0;font:400 40px/1.05 var(--font-display);letter-spacing:-1.2px;color:var(--text-heading);text-wrap:balance">{{ askHeading }}</h1>
+<p style="margin:16px 0 0;font:var(--type-body-lg);color:var(--text-muted);text-wrap:pretty">{{ entryAck }}</p>
+<sc-if value="{{ hasTableRef }}" hint-placeholder-val="{{ false }}">
+<p style="margin:10px 0 0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-meta)">{{ tableRefLabel }}</p>
+</sc-if>
+
+<section style="margin-top:40px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">{{ ratingAsk }}</h2>
+<div role="group" aria-label="Rating, 1 to 5" style="display:flex;gap:8px;margin-top:16px">
+<sc-for list="{{ ratingButtons }}" as="r" hint-placeholder-count="5">
+<button type="button" onClick="{{ r.onClick }}" aria-pressed="{{ r.selected }}" aria-label="{{ r.aria }}" style="{{ r.style }}">{{ r.n }}</button>
+</sc-for>
+</div>
+<p aria-live="polite" style="margin:12px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ ratingLabel }}</p>
+</section>
+
+<section style="margin-top:28px;padding:20px;background:var(--surface-wash-lilac);border-radius:var(--radius-sm)">
+<p style="margin:0;font:var(--type-caption);color:var(--text-body);text-wrap:pretty">{{ trustText }}</p>
+</section>
+
+<section style="margin-top:36px;display:grid;gap:16px">
+<sc-for list="{{ entryPaths }}" as="p" hint-placeholder-count="2">
+<div style="border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:24px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ p.eyebrow }}</p>
+<h3 style="margin:10px 0 0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">{{ p.title }}</h3>
+<p style="margin:8px 0 20px;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ p.body }}</p>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ p.onClick }}" disabled="{{ p.disabled }}" full-width="{{ true }}" hint-size="100%,44px">{{ p.cta }}</x-import>
+</div>
+</sc-for>
+</section>
+
+<p aria-live="polite" style="margin:16px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ entryBlockReason }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isVerification }}" hint-placeholder-val="{{ false }}">
+<!-- Fallback, not the default path. An invited link carries a validated token in ?v=,
+     so this state is only reached when the token is missing or unreadable. -->
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Your link is missing its visit code</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Enter your booking reference</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">Invitations from {{ biz.name }} normally confirm the visit for you. This one didn't, so the reference from your appointment confirmation will do it instead.</p>
+<label for="verify-code" style="display:block;margin:28px 0 8px;font:var(--type-caption);color:var(--text-body)">Booking or receipt code</label>
+<input id="verify-code" type="text" value="{{ code }}" onChange="{{ onCode }}" placeholder="e.g. BS-4471-K" style="width:100%;padding:12px 14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs)" />
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:20px;margin-top:24px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onVerify }}" disabled="{{ verifyDisabled }}" hint-size="120px,44px">Continue</x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" onClick="{{ onNoCode }}" underline="hover" hint-size="200px,36px">I don't have a code</x-import>
+</div>
+<p aria-live="polite" style="margin:12px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ verifyReason }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isVerificationUnavailable }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Confirmed visits only</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Drafting help needs a confirmed visit</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ biz.name }} has chosen to offer writing help only to people whose visit it can confirm. That is deliberate: it keeps the reviews on their profile tied to real appointments. You can still write and post a review yourself, unaided, on {{ targetLabel }}.</p>
+<p style="margin:24px 0 0"><a href="{{ targetUrl }}" target="_blank" rel="noopener" style="font:var(--type-body);color:var(--text-link)">Write one yourself on {{ targetLabel }} →</a></p>
+<div style="margin-top:24px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" onClick="{{ onBackToVerify }}" underline="hover" hint-size="160px,36px">Back to the code</x-import></div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isTokenUsed }}" hint-placeholder-val="{{ false }}">
+<!-- Anti-abuse, stated plainly. One invitation, one assisted draft. Not an error,
+     and never a dead end: the unaided route is offered in the same breath. -->
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">This invitation is closed</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading);text-wrap:balance">A review was already written from this link</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">Each invitation covers one visit and one assisted draft. That keeps the reviews on {{ locName }}'s profile matched one-to-one with visits that happened.</p>
+<p style="margin:16px 0 0;font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">You can still write a review yourself, unaided, any time — no invitation is needed for that.</p>
+<div style="display:grid;gap:10px;margin-top:24px">
+<sc-for list="{{ doneDestinations }}" as="d" hint-placeholder-count="1">
+<a href="{{ d.url }}" target="_blank" rel="noopener" style="{{ d.style }}"><span style="font:var(--type-body);color:var(--text-heading)">{{ d.label }} →</span><span style="font:var(--type-micro);font-family:var(--font-mono);color:var(--text-meta)">{{ d.note }}</span></a>
+</sc-for>
+</div>
+<p style="margin:20px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ tokenUsedNote }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isKeywords }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ stepLabel }}</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading);text-wrap:balance">{{ keywordsHeading }}</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ keywordsLead }}</p>
+
+<sc-for list="{{ keywordGroups }}" as="g" hint-placeholder-count="3">
+<section style="margin-top:32px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0 0 14px;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ g.label }}</h2>
+<div style="display:flex;flex-wrap:wrap;gap:8px">
+<sc-for list="{{ g.items }}" as="k" hint-placeholder-count="3">
+<button type="button" onClick="{{ k.onToggle }}" aria-pressed="{{ k.selected }}" style="{{ k.style }}">{{ k.label }}<span aria-hidden="true" style="font-family:var(--font-mono);font-size:11px;opacity:.7">{{ k.mark }}</span></button>
+</sc-for>
+</div>
+</section>
+</sc-for>
+
+<p aria-live="polite" style="margin:24px 0 0;font:var(--type-caption);color:var(--text-body)">{{ selectionCountLabel }}</p>
+
+<section style="margin-top:28px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<label for="free-text" style="display:block;font:var(--type-caption);color:var(--text-body)">Anything specific, in your words (optional)</label>
+<p style="margin:6px 0 10px;font:var(--type-micro);color:var(--text-meta)">Whatever you type here is treated as a fact you are asserting, and can be written about.</p>
+<textarea id="free-text" rows="3" value="{{ freeText }}" onChange="{{ onFreeText }}" placeholder="The hygienist remembered I hate the polish flavour." style="width:100%;padding:12px 14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs);resize:vertical"></textarea>
+<p aria-live="polite" style="margin:8px 0 0;font:var(--type-micro);color:{{ freeCountColor }}">{{ freeCountLabel }}</p>
+</section>
+
+<div style="margin-top:24px;padding:16px 20px;background:var(--surface-wash-sand);border-radius:var(--radius-sm)">
+<p style="margin:0;font:var(--type-caption);color:var(--text-body);text-wrap:pretty">Only the things you have selected or typed will be written about. Nothing else is added.</p>
+</div>
+
+<div style="margin-top:28px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onKeywordsNext }}" disabled="{{ keywordsDisabled }}" full-width="{{ true }}" hint-size="100%,44px">Choose a format</x-import></div>
+<p aria-live="polite" style="margin:12px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ keywordsBlockReason }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isParaphraseInput }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ stepLabel }}</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading);text-wrap:balance">Paste what you have written</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">Your facts are kept exactly as you wrote them. Only the wording changes — nothing is added, and nothing you did not say can appear in the result.</p>
+<label for="source-text" style="display:block;margin:28px 0 8px;font:var(--type-caption);color:var(--text-body)">Your review</label>
+<textarea id="source-text" rows="9" value="{{ sourceText }}" onChange="{{ onSourceText }}" placeholder="Write it however it comes out. Spelling and order do not matter." style="width:100%;padding:14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs);resize:vertical"></textarea>
+<p aria-live="polite" style="margin:8px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ sourceCountLabel }}</p>
+<div style="margin-top:24px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onSourceNext }}" disabled="{{ sourceDisabled }}" full-width="{{ true }}" hint-size="100%,44px">Choose a format</x-import></div>
+<p aria-live="polite" style="margin:12px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ sourceBlockReason }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isStyle }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ stepLabel }}</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">{{ styleHeading }}</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ styleLead }}</p>
+
+<div style="display:grid;gap:12px;margin-top:28px">
+<sc-for list="{{ styleOptions }}" as="s" hint-placeholder-count="3">
+<div style="{{ s.style }}">
+<button type="button" onClick="{{ s.onToggle }}" aria-pressed="{{ s.selected }}" disabled="{{ s.disabled }}" style="display:block;width:100%;text-align:left;background:transparent;border:0;padding:0;cursor:pointer;color:inherit">
+<span style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+<span style="font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">{{ s.displayName }}</span>
+<span style="font-family:var(--font-mono);font-size:11px;letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-meta)">{{ s.mark }}</span>
+</span>
+<span style="display:block;margin-top:6px;font:var(--type-body);color:var(--text-muted)">{{ s.description }}</span>
+<span style="display:block;margin-top:10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ s.constraintLabel }}</span>
+</button>
+<p style="margin:14px 0 0;padding:14px;background:var(--surface-wash-sand);border-radius:var(--radius-xs);font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">{{ s.sample }}</p>
+</div>
+</sc-for>
+</div>
+
+<p style="margin:20px 0 0;font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">{{ styleWithheldNote }}</p>
+<p aria-live="polite" style="margin:8px 0 0;font:var(--type-caption);color:var(--text-body)">{{ capLabel }}</p>
+<div style="margin-top:20px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onStyleNext }}" disabled="{{ styleDisabled }}" full-width="{{ true }}" hint-size="100%,44px">{{ styleCta }}</x-import></div>
+<p aria-live="polite" style="margin:12px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ styleBlockReason }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isGenerating }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Writing</p>
+<p style="margin:0;font-family:var(--font-mono);font-size:12px;color:var(--text-meta)">{{ elapsedLabel }}</p>
+</div>
+<div aria-live="polite" style="display:grid;gap:16px;margin-top:20px">
+<sc-for list="{{ pendingCards }}" as="c" hint-placeholder-count="1">
+<section style="border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:20px">
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+<h2 style="margin:0;font:var(--type-body);color:var(--text-heading)">{{ c.progressLabel }}</h2>
+<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-meta)">{{ c.pctLabel }}</span>
+</div>
+<div style="margin-top:12px;height:2px;background:var(--border-card)"><div style="{{ c.barStyle }}"></div></div>
+<p style="margin:14px 0 0;font:var(--type-body);color:var(--text-body);white-space:pre-wrap;min-height:3em">{{ c.text }}</p>
+</section>
+</sc-for>
+</div>
+<div style="margin-top:24px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" onClick="{{ onAbort }}" underline="hover" hint-size="120px,36px">Stop</x-import></div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isResults }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ resultsEyebrow }}</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">{{ resultsHeading }}</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ resultsLead }}</p>
+
+<div style="display:grid;gap:24px;margin-top:28px">
+<sc-for list="{{ resultCards }}" as="c" hint-placeholder-count="1">
+<section style="border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:20px">
+<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px">
+<h2 style="margin:0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">{{ c.styleName }}</h2>
+<span style="font-family:var(--font-mono);font-size:11px;letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-meta)">{{ c.provenance }}</span>
+</div>
+
+<sc-if value="{{ c.hasRemoved }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:16px;border:1px solid var(--marigold-soft);background:var(--surface-wash-sand);border-radius:var(--radius-xs);padding:16px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-taxonomy)">{{ strippedNotice }}</p>
+<sc-for list="{{ c.removed }}" as="r" hint-placeholder-count="1">
+<div style="margin-top:12px">
+<p style="margin:0;font:var(--type-body);color:var(--text-heading)">“{{ r.text }}”</p>
+<p style="margin:6px 0 0;font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">{{ r.reason }}</p>
+</div>
+</sc-for>
+<div style="margin-top:14px">
+<sc-if value="{{ c.restoreClosed }}" hint-placeholder-val="{{ true }}">
+<button type="button" onClick="{{ c.onRestoreOpen }}" style="min-height:44px;padding:10px 16px;border:1px solid var(--ink-900);background:transparent;border-radius:var(--radius-xl);font:var(--type-button);color:var(--ink-900);cursor:pointer">Type it yourself to put it back</button>
+</sc-if>
+<sc-if value="{{ c.restoreOpen }}" hint-placeholder-val="{{ false }}">
+<div>
+<label for="restore-field" style="display:block;font:var(--type-caption);color:var(--text-body)">If this is true, type it in your own words. It is not filled in for you.</label>
+<p style="margin:6px 0 10px;font:var(--type-micro);color:var(--text-meta)">The removed wording is not copied into this field, and cannot be. Whatever you type becomes a fact you are asserting.</p>
+<textarea id="restore-field" rows="2" value="{{ c.restoreText }}" onChange="{{ c.onRestoreText }}" placeholder="Type the fact in your own words" style="width:100%;padding:12px 14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs);resize:vertical"></textarea>
+<div style="display:flex;gap:16px;align-items:center;margin-top:12px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ c.onRestoreCommit }}" disabled="{{ c.restoreDisabled }}" hint-size="140px,38px">Add my wording</x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ c.onRestoreCancel }}" hint-size="80px,36px">Cancel</x-import>
+</div>
+</div>
+</sc-if>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ c.hasRestyleNote }}" hint-placeholder-val="{{ false }}">
+<p style="margin:16px 0 0;padding:12px 14px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:var(--type-caption);color:var(--text-body)">{{ c.restyleNote }}</p>
+</sc-if>
+
+<label for="{{ c.fieldId }}" style="display:block;margin:18px 0 8px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Your draft — edit it freely</label>
+<textarea id="{{ c.fieldId }}" rows="{{ c.rows }}" value="{{ c.draft }}" onChange="{{ c.onDraftChange }}" style="width:100%;padding:14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs);resize:vertical"></textarea>
+<p aria-live="polite" style="margin:8px 0 0;font:var(--type-micro);color:{{ c.countColor }}">{{ c.countLabel }}</p>
+
+<!-- editing: change ratio maps to generation_outcomes.edit_distance, the product's quality signal -->
+<sc-if value="{{ c.dirty }}" hint-placeholder-val="{{ false }}">
+<p style="margin:8px 0 0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-taxonomy)">{{ c.editLabel }}</p>
+</sc-if>
+
+<sc-if value="{{ c.showDisclosure }}" hint-placeholder-val="{{ false }}">
+<p style="margin:14px 0 0;padding:12px 14px;border-left:1px solid var(--border-rule);font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">{{ c.disclosure }}</p>
+</sc-if>
+
+<details style="margin-top:16px;border-top:1px solid var(--border-card);padding-top:12px">
+<summary style="font:var(--type-caption);color:var(--text-body);cursor:pointer">What this draft is built on ({{ c.claimCount }})</summary>
+<ul style="margin:10px 0 0;padding:0;list-style:none;display:grid;gap:8px">
+<sc-for list="{{ c.claimRows }}" as="cl" hint-placeholder-count="3">
+<li style="display:grid;gap:2px"><span style="font:var(--type-caption);color:var(--text-body)">{{ cl.text }}</span><span style="font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ cl.source }}</span></li>
+</sc-for>
+</ul>
+</details>
+
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border-card)">
+<sc-for list="{{ c.actions }}" as="a" hint-placeholder-count="4">
+<button type="button" onClick="{{ a.onClick }}" title="{{ a.note }}" style="{{ a.style }}">{{ a.label }}</button>
+</sc-for>
+</div>
+
+<sc-if value="{{ c.restyleOpen }}" hint-placeholder-val="{{ false }}">
+<div style="margin-top:16px;border-top:1px solid var(--border-card);padding-top:16px">
+<p style="margin:0 0 10px;font:var(--type-caption);color:var(--text-body)">Same facts, new format. Only formats that support restyling are listed.</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px">
+<sc-for list="{{ c.restyleOptions }}" as="o" hint-placeholder-count="2">
+<button type="button" onClick="{{ o.onPick }}" style="min-height:44px;padding:10px 16px;border:1px solid var(--border-rule);background:transparent;border-radius:var(--radius-xl);font:var(--type-caption);color:var(--text-body);cursor:pointer">{{ o.displayName }}</button>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ c.noActions }}" hint-placeholder-val="{{ false }}">
+<p style="margin:12px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ c.noActionsNote }}</p>
+</sc-if>
+</section>
+</sc-for>
+</div>
+
+<p style="margin:24px 0 0;font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">Copying puts the text on your clipboard and sends you to {{ targetLabel }}, where you post it yourself. Nothing is submitted from here.</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isRefine }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Refine</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">What else should it mention?</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">Anything you type here is treated as a new fact you are asserting, and is recorded as one. It is the only way a new fact can enter a draft at this stage.</p>
+<p style="margin:20px 0 0;padding:16px;background:var(--surface-wash-sand);border-radius:var(--radius-xs);font:var(--type-caption);color:var(--text-muted);white-space:pre-wrap">{{ refineSourceDraft }}</p>
+<label for="refine-input" style="display:block;margin:20px 0 8px;font:var(--type-caption);color:var(--text-body)">Your instruction</label>
+<input id="refine-input" type="text" value="{{ refineText }}" onChange="{{ onRefineText }}" placeholder="Also mention that parking was easy" style="width:100%;padding:12px 14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs)" />
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:20px;margin-top:20px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onRefineSubmit }}" disabled="{{ refineDisabled }}" hint-size="150px,44px">Refine the draft</x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ onRefineCancel }}" hint-size="80px,36px">Cancel</x-import>
+</div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-taxonomy)">{{ doneEyebrow }}</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">{{ doneHeading }}</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ doneBody }}</p>
+<p style="margin:24px 0 0;padding:16px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:var(--type-body);color:var(--text-body);white-space:pre-wrap">{{ finalText }}</p>
+<!-- Destinations come from location.destinations × style.targetPlatform. The place id
+     in each URL is the one held against this venue, not against the brand. -->
+<div style="display:grid;gap:10px;margin-top:24px">
+<sc-for list="{{ doneDestinations }}" as="d" hint-placeholder-count="2">
+<a href="{{ d.url }}" target="_blank" rel="noopener" style="{{ d.style }}"><span style="font:var(--type-body);color:var(--text-heading)">{{ d.label }} →</span><span style="font:var(--type-micro);font-family:var(--font-mono);color:var(--text-meta)">{{ d.note }}</span></a>
+</sc-for>
+</div>
+<div style="margin-top:20px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ onAnother }}" hint-size="200px,36px">Write another in a different format</x-import>
+</div>
+<p style="margin:20px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ doneFootnote }}</p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isRateLimited }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<h1 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Too many drafts at once</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">The assistant is catching up. Your selections are still here — nothing is lost.</p>
+<p aria-live="polite" style="margin:20px 0 0;font:var(--type-body-lg);font-family:var(--font-mono);color:var(--text-heading)">{{ countdownLabel }}</p>
+<div style="margin-top:24px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onRetryRun }}" disabled="{{ countdownActive }}" hint-size="140px,44px">Try again</x-import></div>
+<div style="margin-top:12px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ onBackToStyle }}" hint-size="160px,36px">Back to my choices</x-import></div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isBudget }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<h1 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Writing help is off for now</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ biz.name }} has paused drafting help. You can still write your review here and copy it — the box below works exactly as it always did.</p>
+<label for="unaided" style="display:block;margin:28px 0 8px;font:var(--type-caption);color:var(--text-body)">Your review, in your own words</label>
+<textarea id="unaided" rows="9" value="{{ unaidedText }}" onChange="{{ onUnaided }}" placeholder="Write whatever you want to say." style="width:100%;padding:14px;font:var(--type-body);color:var(--text-body);background:var(--surface-card);border:1px solid var(--border-input);border-radius:var(--radius-xs);resize:vertical"></textarea>
+<p aria-live="polite" style="margin:8px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ unaidedNote }}</p>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:20px;margin-top:20px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onCopyUnaided }}" disabled="{{ unaidedDisabled }}" hint-size="160px,44px">Copy my review</x-import>
+<a href="{{ targetUrl }}" target="_blank" rel="noopener" style="font:var(--type-body);color:var(--text-link)">Open {{ targetLabel }} →</a>
+</div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isProviderError }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<h1 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">That didn't come back</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">Something went wrong on our side, not yours. Your selections are still here. Trying again uses a second route.</p>
+<p aria-live="polite" style="margin:16px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ retryNote }}</p>
+<div style="margin-top:24px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onRetryRun }}" hint-size="140px,44px">Try again</x-import></div>
+<div style="margin-top:12px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ onBackToStyle }}" hint-size="160px,36px">Back to my choices</x-import></div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isRejected }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Nothing to write from yet</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading);text-wrap:balance">Tell us one more thing and it can write</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--type-muted);color:var(--text-muted);text-wrap:pretty">Nothing here could be supported by what you gave it, so it wrote nothing rather than making something up. Your rating, selections and text are all still there.</p>
+<p style="margin:16px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ rejectedRetained }}</p>
+<div style="margin-top:24px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onRejectedBack }}" hint-size="200px,44px">{{ rejectedCta }}</x-import></div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isInvalid }}" hint-placeholder-val="{{ false }}">
+<!-- Three causes, one screen. The copy names what to do about it and discloses
+     nothing about which tenants or locations exist. -->
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ invalidEyebrow }}</p>
+<h1 style="margin:16px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">{{ invalidHeading }}</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">{{ invalidBody }}</p>
+<p style="margin:20px 0 0;padding:12px 14px;background:var(--surface-wash-sand);border-radius:var(--radius-xs);font:var(--type-micro);font-family:var(--font-mono);color:var(--text-body);word-break:break-all">{{ invalidUrl }}</p>
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:20px">
+<sc-for list="{{ invalidCauses }}" as="c" hint-placeholder-count="3">
+<button type="button" onClick="{{ c.onPick }}" style="{{ c.style }}">{{ c.label }}</button>
+</sc-for>
+</div>
+</main>
+</sc-if>
+
+<sc-if value="{{ isExpired }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<h1 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">This link has expired</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted)">Review invitations stay open for 30 days. You can still write a review yourself, any time.</p>
+<p style="margin:20px 0 0"><a href="{{ targetUrl }}" target="_blank" rel="noopener" style="font:var(--type-body);color:var(--text-link)">Open {{ targetLabel }} →</a></p>
+</main>
+</sc-if>
+
+<sc-if value="{{ isNotConfigured }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:560px;margin:0 auto;padding:40px 20px 0">
+<h1 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Writing help isn't available here</h1>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);text-wrap:pretty">You can still leave a review in your own words on {{ targetLabel }}. Thanks for taking the time.</p>
+<p style="margin:20px 0 0"><a href="{{ targetUrl }}" target="_blank" rel="noopener" style="font:var(--type-body);color:var(--text-link)">Open {{ targetLabel }} →</a></p>
+<!-- The operator has published no active keywords. Nothing about the tenant's internal
+     configuration state is disclosed to the end user. -->
+</main>
+</sc-if>
+
+<sc-if value="{{ isUnknown }}" hint-placeholder-val="{{ false }}">
+<main style="max-width:720px;margin:0 auto;padding:40px 20px 0">
+<h1 style="margin:0;font:400 28px/1.1 var(--font-display);letter-spacing:-0.84px;color:var(--text-heading)">Unknown state</h1>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted)">“{{ unknownState }}” is not a state of this surface. Valid values for <code style="font-family:var(--font-mono)">?state=</code>:</p>
+<ul style="margin:20px 0 0;padding:0;list-style:none;display:grid;gap:2px">
+<sc-for list="{{ validStates }}" as="v" hint-placeholder-count="19">
+<li><button type="button" onClick="{{ v.onClick }}" style="background:transparent;border:0;padding:4px 0;font:var(--type-body);font-family:var(--font-mono);color:var(--text-link);cursor:pointer;text-align:left">{{ v.v }}</button></li>
+</sc-for>
+</ul>
+</main>
+</sc-if>
+
+<sc-if value="{{ toolbarVisible }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--maue-black);color:var(--on-dark);padding:10px 14px">
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:1280px;margin:0 auto">
+<span style="font-family:var(--font-mono);font-size:11px;letter-spacing:var(--track-mono-label);text-transform:uppercase;color:rgba(255,255,255,.64)">Simulating</span>
+<code style="font-family:var(--font-mono);font-size:12px;color:#fff;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 8px">{{ simulatedUrl }}</code>
+<span style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.48)">tenant · location · visit token all travel in the link</span>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:1280px;margin:8px auto 0">
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Tenant
+<select value="{{ tenantSlug }}" onChange="{{ onTenant }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px">
+<sc-for list="{{ tenantOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.k }}">{{ o.name }}</option></sc-for>
+</select></label>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Location
+<select value="{{ locationSlug }}" onChange="{{ onLocation }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px">
+<sc-for list="{{ locationOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.k }}">{{ o.name }}</option></sc-for>
+</select></label>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Visit token
+<select value="{{ visitCode }}" onChange="{{ onToken }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px">
+<sc-for list="{{ tokenOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.v }}">{{ o.label }}</option></sc-for>
+</select></label>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">State
+<select value="{{ view }}" onChange="{{ onJump }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px">
+<sc-for list="{{ validStates }}" as="v" hint-placeholder-count="19"><option value="{{ v.v }}">{{ v.v }}</option></sc-for>
+</select></label>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Latency
+<select value="{{ latency }}" onChange="{{ onLatency }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px">
+<sc-for list="{{ latencyOptions }}" as="l" hint-placeholder-count="4"><option value="{{ l }}">{{ l }}</option></sc-for>
+</select></label>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Failure
+<select value="{{ failure }}" onChange="{{ onFailure }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px">
+<sc-for list="{{ failureOptions }}" as="f" hint-placeholder-count="5"><option value="{{ f }}">{{ f }}</option></sc-for>
+</select></label>
+<button type="button" onClick="{{ onReplay }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:5px 10px;font-size:12px;cursor:pointer">Replay</button>
+<button type="button" onClick="{{ onReset }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:5px 10px;font-size:12px;cursor:pointer">Reset session</button>
+<a href="Admin.dc.html" style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Admin →</a>
+<button type="button" onClick="{{ onDismissToolbar }}" aria-label="Dismiss harness" style="margin-left:auto;background:transparent;color:#fff;border:0;font-size:16px;cursor:pointer">×</button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ toolbarHidden }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ onShowToolbar }}" style="position:fixed;bottom:12px;right:12px;z-index:60;background:var(--maue-black);color:#fff;border:0;border-radius:var(--radius-xl);padding:8px 14px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;cursor:pointer">Harness</button>
+</sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:420,&quot;height&quot;:900}}">
+/* ===== FIXTURES — contract proposal. These shapes become the project's Zod
+   schemas in packages/contracts. Field names are load-bearing; do not rename. ===== */
+const FIXTURES = {
+  /* ===== SCOPE ONE — PLATFORM. Owned by the vendor. No tenant operator ever
+     sees these fields, and no tenant-scope screen may render them. ===== */
+  platform: {
+    providers: [
+      { id: "anthropic", displayName: "Anthropic", role: "default", credential: "active · key rotated 2026-07-02", health: "healthy", p95Ms: 4120,
+        models: [
+          { id: "claude-sonnet-4-5", streaming: true, structuredOutput: true, maxTokens: 64000 },
+          { id: "claude-haiku-4-5", streaming: true, structuredOutput: true, maxTokens: 32000 }
+        ] },
+      { id: "openai", displayName: "OpenAI", role: "fallback", credential: "active · key rotated 2026-05-19", health: "healthy", p95Ms: 3380,
+        models: [{ id: "gpt-4-1-mini", streaming: true, structuredOutput: true, maxTokens: 32000 }] },
+      { id: "fake", displayName: "Fake provider", role: "bench only", credential: "not required", health: "healthy", p95Ms: 0,
+        models: [{ id: "none", streaming: false, structuredOutput: true, maxTokens: 0 }] }
+    ],
+    priceTable: [
+      { provider: "anthropic", model: "claude-sonnet-4-5", inputPerMTokMicros: 3000000, outputPerMTokMicros: 15000000, effectiveFrom: "2026-06-01" },
+      { provider: "anthropic", model: "claude-sonnet-4-5", inputPerMTokMicros: 3300000, outputPerMTokMicros: 16500000, effectiveFrom: "2026-01-01" },
+      { provider: "anthropic", model: "claude-haiku-4-5", inputPerMTokMicros: 800000, outputPerMTokMicros: 4000000, effectiveFrom: "2026-06-01" },
+      { provider: "openai", model: "gpt-4-1-mini", inputPerMTokMicros: 400000, outputPerMTokMicros: 1600000, effectiveFrom: "2026-04-15" }
+    ],
+    routing: { defaultProvider: "anthropic", fallbackProvider: "openai" },
+    defaultPolicyTemplate: { requireDisclosure: true, requireVerifiedExperience: false, maxDraftsPerSession: 2, bannedTerms: [] },
+    rateLimits: { draftsPerSessionPerHour: 12, requestsPerTenantPerMinute: 240 },
+    featureFlags: [
+      { key: "paraphrase.spanMapping", on: true, note: "Map every paraphrased claim to a character span in the customer's own text." },
+      { key: "distribution.qrDownload", on: false, note: "Print-ready QR download. Off until the render service ships." },
+      { key: "location.keywordAdditions", on: true, note: "Locations may add keywords on top of the tenant set." }
+    ],
+    logRetentionDays: 400
+  },
+
+  /* Who is operating. Role decides which scopes are reachable at all. */
+  session: { role: "platform_admin", operatorName: "Ada Vermeer", assignedTenants: ["brightsmile", "speicher-neun"] },
+  roles: {
+    platform_admin: { key: "platform_admin", label: "Platform admin", sees: "Every tenant, plus platform scope", switcher: "all", platformScreens: true },
+    agency_operator: { key: "agency_operator", label: "Agency operator", sees: "Assigned tenants only", switcher: "assigned", platformScreens: false },
+    tenant_operator: { key: "tenant_operator", label: "Tenant operator", sees: "One tenant", switcher: "none", platformScreens: false }
+  },
+
+  /* ===== SCOPE TWO — TENANT. Owned by the business account. ===== */
+  tenants: {
+    brightsmile: {
+      slug: "brightsmile", locale: "en-GB", plan: "Practice", status: "active", createdAt: "2026-02-03",
+      business: {
+        name: "Brightsmile Dental", category: "Dental practice",
+        description: "A three-surgery NHS and private practice.",
+        toneGuidelines: "Plain, calm, first person. No superlatives. Never imply a clinical outcome."
+      },
+      entryMode: "invite",
+      policy: {
+        requireDisclosure: true, requireVerifiedExperience: true, maxDraftsPerSession: 2,
+        bannedTerms: ["painless", "guaranteed", "cure", "cheapest", "best in London"]
+      },
+      keywordCategories: [
+        { id: "service", label: "Service" }, { id: "staff", label: "People" },
+        { id: "ambience", label: "Place" }, { id: "value", label: "Value" }, { id: "speed", label: "Timing" }
+      ],
+      enabledStyles: ["concise-blurb", "detailed-narrative"],
+      enabledActions: ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"],
+      contextVersion: 7, monthlyBudgetMicros: 40000000, monthToDateCostMicros: 26480000, alertThresholdPct: 90
+    },
+    "speicher-neun": {
+      slug: "speicher-neun", locale: "de-DE", plan: "Standard", status: "active", createdAt: "2026-06-11",
+      business: {
+        name: "Speicher Neun", category: "Restaurant",
+        description: "Hafenküche mit zwei Häusern in Hamburg.",
+        toneGuidelines: "Kurz, gesprochen, ohne Superlative. Nie ein Gericht beschreiben, das nicht bestellt wurde."
+      },
+      entryMode: "open-qr",
+      policy: {
+        requireDisclosure: false, requireVerifiedExperience: false, maxDraftsPerSession: 3,
+        bannedTerms: ["bestes Restaurant der Stadt", "gratis"]
+      },
+      /* A restaurant does not have a dental practice's categories. This is why
+         categories became a tenant-owned table rather than a Postgres enum. */
+      keywordCategories: [
+        { id: "essen", label: "Essen" }, { id: "service", label: "Service" },
+        { id: "atmosphäre", label: "Atmosphäre" }, { id: "preis", label: "Preis" }, { id: "wartezeit", label: "Wartezeit" }
+      ],
+      enabledStyles: ["social-short", "concise-blurb"],
+      enabledActions: ["generate", "paraphrase", "regenerate", "restyle", "condense"],
+      contextVersion: 3, monthlyBudgetMicros: 18000000, monthToDateCostMicros: 9240000, alertThresholdPct: 85
+    }
+  },
+
+  /* ===== SCOPE THREE — LOCATION. One physical venue under a tenant. Values not
+     set here inherit from the tenant; overrides[] records what was changed. ===== */
+  locations: {
+    brightsmile: [
+      { slug: "downtown", tenantSlug: "brightsmile", name: "Downtown Clinic",
+        address: "18 Bayham Street, Camden, London NW1", active: true, entryMode: null,
+        destinations: ["google", "facebook"],
+        platformIds: { googlePlaceId: "ChIJ-fake-bs-downtown", facebookPageId: "brightsmile.camden" },
+        overrides: {},
+        keywordAdditions: [
+          { id: "bs-dt-k1", label: "The clinic is two minutes from the tube", category: "ambience", polarity: "positive", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 1840, opened: 1102, completed: 714 } },
+      { slug: "riverside", tenantSlug: "brightsmile", name: "Riverside Clinic",
+        address: "4 Wharf Road, Islington, London N1", active: true, entryMode: null,
+        destinations: ["google"],
+        platformIds: { googlePlaceId: "ChIJ-fake-bs-riverside" },
+        overrides: { maxDraftsPerSession: 1 },
+        keywordAdditions: [
+          { id: "bs-rv-k1", label: "There is parking on site", category: "ambience", polarity: "positive", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 906, opened: 528, completed: 331 } }
+    ],
+    "speicher-neun": [
+      { slug: "hafencity", tenantSlug: "speicher-neun", name: "Speicher Neun · HafenCity",
+        address: "Am Kaiserkai 9, 20457 Hamburg", active: true, entryMode: null,
+        destinations: ["google", "tripadvisor"],
+        platformIds: { googlePlaceId: "ChIJ-fake-s9-hafencity", tripadvisorId: "d-fake-s9-hafencity" },
+        overrides: {},
+        keywordAdditions: [
+          { id: "s9-hc-k1", label: "Tisch direkt am Wasser", category: "atmosphäre", polarity: "positive", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 4210, opened: 3106, completed: 2188 } },
+      { slug: "sternschanze", tenantSlug: "speicher-neun", name: "Speicher Neun · Sternschanze",
+        address: "Susannenstraße 14, 20357 Hamburg", active: true, entryMode: null,
+        destinations: ["google"],
+        platformIds: { googlePlaceId: "ChIJ-fake-s9-schanze" },
+        overrides: { requireDisclosure: true },
+        keywordAdditions: [
+          { id: "s9-st-k1", label: "Kein Tisch ohne Reservierung", category: "wartezeit", polarity: "negative", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 1980, opened: 1402, completed: 903 } }
+    ]
+  },
+
+  /* Where a finished review can be posted. The id lives on the location, never
+     on the tenant: two venues of one brand are two places on a map. */
+  destinations: {
+    google: { key: "google", label: "Google Maps", idField: "googlePlaceId", idLabel: "Place id" },
+    tripadvisor: { key: "tripadvisor", label: "Tripadvisor", idField: "tripadvisorId", idLabel: "Location id" },
+    facebook: { key: "facebook", label: "Facebook", idField: "facebookPageId", idLabel: "Page id" },
+    yelp: { key: "yelp", label: "Yelp", idField: "yelpBusinessId", idLabel: "Business id" }
+  },
+
+  /* The ?v= token in an invited link. Single use: a token that already produced
+     a review resolves to entry-token-used, not to a second draft. */
+  visitTokens: {
+    "BS-DT-8842": { tenantSlug: "brightsmile", locationSlug: "downtown", visitedOn: "12 August", status: "valid" },
+    "BS-RV-2231": { tenantSlug: "brightsmile", locationSlug: "riverside", visitedOn: "9 August", status: "valid" },
+    "BS-DT-1104": { tenantSlug: "brightsmile", locationSlug: "downtown", visitedOn: "2 August", status: "used" }
+  },
+
+  entryModes: {
+    invite: { key: "invite", label: "Invited link", distribution: "SMS or email after the visit", token: "Embedded, single use" },
+    "open-qr": { key: "open-qr", label: "Open QR", distribution: "QR on the table, the receipt and the counter", token: "None" },
+    both: { key: "both", label: "Both", distribution: "Either route", token: "Required only on the invited path" }
+  },
+
+  keywords: {
+    brightsmile: [
+      { id: "bs-k1", label: "The dentist explained the treatment before starting", category: "service", polarity: "positive", isActive: true, sortOrder: 10 },
+      { id: "bs-k2", label: "The hygienist was gentle", category: "staff", polarity: "positive", isActive: true, sortOrder: 20 },
+      { id: "bs-k3", label: "The front desk booked my follow-up there and then", category: "staff", polarity: "positive", isActive: true, sortOrder: 30 },
+      { id: "bs-k4", label: "I was called through at my appointment time", category: "speed", polarity: "positive", isActive: true, sortOrder: 40 },
+      { id: "bs-k5", label: "The cost was quoted before any work started", category: "value", polarity: "positive", isActive: true, sortOrder: 50 },
+      { id: "bs-k6", label: "The waiting room was quiet and clean", category: "ambience", polarity: "neutral", isActive: true, sortOrder: 60 },
+      { id: "bs-k7", label: "I waited forty minutes past my appointment time", category: "speed", polarity: "negative", isActive: true, sortOrder: 70 },
+      { id: "bs-k8", label: "The filling had to be redone at a second visit", category: "service", polarity: "negative", isActive: true, sortOrder: 80 },
+      { id: "bs-k9", label: "Parking was easier than I expected", category: "ambience", polarity: "positive", isActive: false, sortOrder: 90 }
+    ],
+    /* Different language, different taxonomy, same table. */
+    "speicher-neun": [
+      { id: "s1", label: "Frischer Fisch", category: "essen", polarity: "positive", isActive: true, sortOrder: 10 },
+      { id: "s2", label: "Gut gewürzt", category: "essen", polarity: "positive", isActive: true, sortOrder: 20 },
+      { id: "s3", label: "Essen war kalt", category: "essen", polarity: "negative", isActive: true, sortOrder: 30 },
+      { id: "s4", label: "Aufmerksamer Service", category: "service", polarity: "positive", isActive: true, sortOrder: 40 },
+      { id: "s5", label: "Freundliches Personal", category: "service", polarity: "positive", isActive: true, sortOrder: 50 },
+      { id: "s6", label: "Lange Wartezeit", category: "wartezeit", polarity: "negative", isActive: true, sortOrder: 60 },
+      { id: "s7", label: "Essen kam schnell", category: "wartezeit", polarity: "positive", isActive: true, sortOrder: 70 },
+      { id: "s8", label: "Blick auf den Hafen", category: "atmosphäre", polarity: "positive", isActive: true, sortOrder: 80 },
+      { id: "s9", label: "Zu laut", category: "atmosphäre", polarity: "negative", isActive: true, sortOrder: 90 },
+      { id: "s10", label: "Fairer Preis", category: "preis", polarity: "positive", isActive: true, sortOrder: 100 }
+    ]
+  },
+
+  /* Style manifests are platform scope; tenants enable from this catalogue and
+     cannot author into it. targetPlatform is how "a Google style" and "a
+     Tripadvisor style" exist without imitating either brand: the style declares
+     the shape it was written for, and done routes to a matching destination.
+     locale "any" carries per-locale copy — the one manifest field that had to
+     become a map when the second tenant was not English. */
+  styles: [
+    { key: "concise-blurb", version: "1.4.0", displayName: "Concise blurb", targetPlatform: "google", locale: "any",
+      description: {
+        "en-GB": "Two or three sentences. What happened, in the order it happened.",
+        "de-DE": "Zwei oder drei Sätze. Was passiert ist, in der Reihenfolge, in der es passiert ist."
+      },
+      constraints: { minChars: 180, maxChars: 420, paragraphs: 1, emojiPolicy: "none", secondPerson: false },
+      supportedActions: ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"],
+      sample: {
+        "en-GB": "Called through on time for a check-up and clean. The dentist explained the treatment before starting and the cost was quoted before any work began.",
+        "de-DE": "Frischer Fisch, gut gewürzt, und der Service war aufmerksam. Der Blick auf den Hafen hat den Abend gemacht."
+      } },
+    { key: "detailed-narrative", version: "2.1.0", displayName: "Detailed narrative", targetPlatform: "google", locale: "en-GB",
+      description: { "en-GB": "Three short paragraphs: the visit, the specifics, whether you would go back." },
+      constraints: { minChars: 520, maxChars: 1200, paragraphs: 3, emojiPolicy: "none", secondPerson: false },
+      supportedActions: ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"],
+      sample: { "en-GB": "I went in for a check-up and a clean.\n\nThe dentist explained the treatment before starting, and the hygienist was gentle. The cost was quoted before any work began.\n\nI would go back." } },
+    { key: "social-short", version: "1.0.0", displayName: "Social short", targetPlatform: "tripadvisor", locale: "any",
+      description: {
+        "en-GB": "One line, for listing sites with a hard character limit.",
+        "de-DE": "Eine Zeile, für Portale mit harter Zeichenbegrenzung."
+      },
+      constraints: { minChars: 40, maxChars: 140, paragraphs: 1, emojiPolicy: "allowed", secondPerson: false },
+      supportedActions: ["generate", "paraphrase", "regenerate", "restyle", "condense"],
+      sample: {
+        "en-GB": "Seen on time, treatment explained before it started, cost quoted up front.",
+        "de-DE": "Frischer Fisch, aufmerksamer Service, Blick auf den Hafen."
+      } }
+  ],
+
+  /* Customer-facing copy is locale-bound. Only the strings below exist in de-DE;
+     every other German-tenant string is structural. Recorded in DECISIONS.md. */
+  copy: {
+    "en-GB": {
+      ask: "Write your review of {business}",
+      ratingAsk: "How was it?",
+      ratingWords: ["", "Poor", "Not good", "Mixed", "Good", "Very good"],
+      conjunction: "and",
+      trust: "You supply the facts. Everything on the next screens is a draft you read, change and copy yourself. Nothing is posted anywhere for you.",
+      visitAck: "Thanks for visiting {location} on {date}.",
+      openAck: "You are at {location}.",
+      pathGenerate: { eyebrow: "Path one", title: "Help me write one", body: "Choose the things that actually happened. The draft is built only from those.", cta: "Pick what to mention" },
+      pathParaphrase: { eyebrow: "Path two", title: "I have written one", body: "Paste your own review. Your facts stay exactly as you wrote them; only the wording changes.", cta: "Improve my wording" },
+      needRating: "Choose a rating first. It sets the register of the draft, and it is the one thing the assistant will not decide for you.",
+      keywordsHeading: "What stood out?",
+      keywordsHeadingNegative: "What went wrong?",
+      keywordsLead: "Pick everything that actually happened. The order you pick them is the order they are written in.",
+      keywordsLeadNegative: "Start with the problem. Reporting it plainly is more useful to the next customer than softening it.",
+      minSelection: "Pick at least two things. One fact is not a review, and the assistant will not invent the rest.",
+      styleHeading: "Pick a format",
+      styleLead: "Formats this business has enabled, for what you are doing.",
+      stepGenerate: "What happened", stepParaphrase: "Your own words",
+      styleCta: "Write the draft",
+      strippedEyebrow: "One claim removed",
+      strippedHeading: "Read this before you copy it",
+      strippedNotice: "Removed before you saw it",
+      doneEyebrow: "On your clipboard",
+      doneHeading: "Copied. Now post it yourself.",
+      doneBody: "Your review is on the clipboard, disclosure included where this business requires one. Choose where to paste it and post it in your own name.",
+      disclosure: "Written with drafting help from {business}'s review assistant. The experience described is my own.",
+      tableRef: "Reference {ref}"
+    },
+    "de-DE": {
+      ask: "Bewerten Sie Ihren Besuch bei {business}",
+      ratingAsk: "Wie war es?",
+      ratingWords: ["", "Schlecht", "Nicht gut", "Gemischt", "Gut", "Sehr gut"],
+      conjunction: "und",
+      trust: "Die Fakten kommen von Ihnen. Alles Weitere ist ein Entwurf, den Sie lesen, ändern und selbst kopieren. Nichts wird für Sie veröffentlicht.",
+      visitAck: "Danke für Ihren Besuch am {date}.",
+      openAck: "Sie sind bei {location}.",
+      pathGenerate: { eyebrow: "Weg eins", title: "Hilf mir beim Schreiben", body: "Wählen Sie aus, was tatsächlich passiert ist. Der Entwurf entsteht nur daraus.", cta: "Auswählen, was erwähnt wird" },
+      pathParaphrase: { eyebrow: "Weg zwei", title: "Ich habe schon etwas geschrieben", body: "Fügen Sie Ihren eigenen Text ein. Ihre Fakten bleiben genau so, wie Sie sie geschrieben haben — nur die Formulierung ändert sich.", cta: "Meine Formulierung verbessern" },
+      needRating: "Wählen Sie zuerst eine Bewertung. Sie bestimmt den Ton des Entwurfs, und sie ist das Einzige, was der Assistent nicht für Sie entscheidet.",
+      keywordsHeading: "Was ist Ihnen aufgefallen?",
+      keywordsHeadingNegative: "Was ist schiefgelaufen?",
+      keywordsLead: "Wählen Sie alles, was tatsächlich passiert ist. Die Reihenfolge Ihrer Auswahl ist die Reihenfolge im Text.",
+      keywordsLeadNegative: "Beginnen Sie mit dem Problem. Klar benannt hilft es dem nächsten Gast mehr als beschönigt.",
+      minSelection: "Wählen Sie mindestens zwei Punkte. Eine einzelne Tatsache ist keine Bewertung, und der Assistent erfindet den Rest nicht.",
+      styleHeading: "Format wählen",
+      styleLead: "Formate, die dieses Haus freigegeben hat, für das, was Sie gerade tun.",
+      stepGenerate: "Was passiert ist", stepParaphrase: "Ihre eigenen Worte",
+      styleCta: "Entwurf schreiben",
+      strippedEyebrow: "Eine Aussage entfernt",
+      strippedHeading: "Lesen Sie das, bevor Sie kopieren",
+      strippedNotice: "Entfernt, bevor Sie es gesehen haben",
+      doneEyebrow: "In der Zwischenablage",
+      doneHeading: "Kopiert. Jetzt veröffentlichen Sie sie selbst.",
+      doneBody: "Ihre Bewertung liegt in der Zwischenablage. Wählen Sie, wo Sie sie einfügen, und veröffentlichen Sie sie in Ihrem eigenen Namen.",
+      disclosure: "Mit Schreibhilfe des Bewertungsassistenten von {business} verfasst. Das Erlebnis ist mein eigenes.",
+      tableRef: "Tisch {ref}"
+    }
+  },
+
+  promptVersions: [
+    { hash: "p_9f2ad1", key: "review.generate", action: "generate", createdAt: "2026-05-02", status: "in-experiment", evalScore: 0.82, body: "Compose a review using ONLY the asserted keywords and free text supplied. Emit one claim object per fact with its source id. Never introduce a fact not in the input." },
+    { hash: "p_4c81be", key: "review.generate", action: "generate", createdAt: "2026-06-18", status: "candidate", evalScore: 0.86, body: "Open with the strongest asserted keyword rather than the visit frame. Same grounding contract as p_9f2ad1." },
+    { hash: "p_1a77c5", key: "review.generate", action: "generate", createdAt: "2026-01-20", status: "retired", evalScore: 0.61, body: "First-generation generate prompt. Retired for embellishing offers and staff names." },
+    { hash: "p_71d0aa", key: "review.paraphrase", action: "paraphrase", createdAt: "2026-04-11", status: "in-experiment", evalScore: 0.91, body: "Restate the reviewer's own text. Preserve every fact and its span. Do not add, do not remove, do not evaluate." },
+    { hash: "p_2ee934", key: "review.restyle", action: "restyle", createdAt: "2026-05-29", status: "candidate", evalScore: 0.78, body: "Re-render the source draft's claims in the target style. The output claim set must be a subset of the input claim set." },
+    { hash: "p_5d3f90", key: "review.condense", action: "condense", createdAt: "2026-03-14", status: "in-experiment", evalScore: 0.88, body: "Drop whole claims to reach the target length. Never compress two claims into an ambiguous one." },
+    { hash: "p_bb5107", key: "review.expand", action: "expand", createdAt: "2026-06-02", status: "draft", evalScore: null, body: "Elaborate the existing claims with more words. Adding a fact is a hard failure." },
+    { hash: "p_08cd42", key: "review.refine", action: "refine", createdAt: "2026-06-21", status: "candidate", evalScore: 0.74, body: "Treat the instruction as a newly asserted fact by the reviewer, record it as such, and integrate it." }
+  ],
+
+  experiment: {
+    key: "exp_generate_opener", action: "generate", status: "running", startedAt: "2026-07-28",
+    variants: [
+      { key: "A", promptVersionHash: "p_9f2ad1", weight: 50, n: 1840, acceptanceRate: 0.61 },
+      { key: "B", promptVersionHash: "p_4c81be", weight: 50, n: 1794, acceptanceRate: 0.68 }
+    ]
+  },
+
+  generations: {
+    clean: {
+      id: "gen_7f31c2", tenantSlug: "brightsmile", locationSlug: "downtown", action: "generate", createdAt: "2026-08-09T10:12:04Z",
+      draft: "Called through at my appointment time for a check-up and clean. The dentist explained the treatment before starting and the hygienist was gentle. The cost was quoted before any work started.",
+      claims: [
+        { text: "I was called through at my appointment time", sourceKeywordId: "bs-k4", sourceSpan: null },
+        { text: "The dentist explained the treatment before starting", sourceKeywordId: "bs-k1", sourceSpan: null },
+        { text: "The hygienist was gentle", sourceKeywordId: "bs-k2", sourceSpan: null },
+        { text: "The cost was quoted before any work started", sourceKeywordId: "bs-k5", sourceSpan: null }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 2140, inputTokens: 412, outputTokens: 118, costMicros: 2640, fallbackUsed: false,
+      promptVersionHash: "p_9f2ad1", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: ["bs-k4", "bs-k1", "bs-k2", "bs-k5"], freeText: "", sourceText: null,
+      outcome: { status: "accepted", editDistance: 0 }
+    },
+    stripped: {
+      id: "gen_9a04e7", tenantSlug: "brightsmile", locationSlug: "downtown", action: "generate", createdAt: "2026-08-09T11:41:55Z",
+      draft: "Called through at my appointment time for a check-up and clean. The dentist explained the treatment before starting and the cost was quoted before any work started.",
+      claims: [
+        { text: "I was called through at my appointment time", sourceKeywordId: "bs-k4", sourceSpan: null },
+        { text: "The dentist explained the treatment before starting", sourceKeywordId: "bs-k1", sourceSpan: null },
+        { text: "The cost was quoted before any work started", sourceKeywordId: "bs-k5", sourceSpan: null }
+      ],
+      removedClaims: [{ text: "and they knocked 20% off my next hygienist appointment", reason: "No discount, offer or price was entered. The system cannot infer one." }],
+      groundingVerdict: "stripped", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 2610, inputTokens: 402, outputTokens: 131, costMicros: 2810, fallbackUsed: false,
+      promptVersionHash: "p_4c81be", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: ["bs-k4", "bs-k1", "bs-k5"], freeText: "", sourceText: null,
+      outcome: { status: "edited", editDistance: 0.18 }
+    },
+    rejected: {
+      id: "gen_3c77b1", tenantSlug: "brightsmile", locationSlug: "riverside", action: "generate", createdAt: "2026-08-09T12:02:19Z",
+      draft: null, claims: [],
+      removedClaims: [{ text: "the whole draft", reason: "No asserted keyword and no free text. There was nothing to write from." }],
+      groundingVerdict: "rejected", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 980, inputTokens: 188, outputTokens: 0, costMicros: 340, fallbackUsed: false,
+      promptVersionHash: "p_9f2ad1", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: [], freeText: "", sourceText: null,
+      outcome: { status: "discarded", editDistance: null }
+    },
+    paraphrased: {
+      id: "gen_5b12da", tenantSlug: "brightsmile", locationSlug: "downtown", action: "paraphrase", createdAt: "2026-08-09T13:20:41Z",
+      sourceText: "went in for a filling, the dentist told me what she was doing the whole way through which i needed. waited about 10 mins. front desk sorted my next appointment before i left.",
+      draft: "I went in for a filling, and the dentist talked me through what she was doing the whole way through, which I needed. I waited about ten minutes. The front desk sorted my next appointment before I left.",
+      claims: [
+        { text: "Went in for a filling", sourceKeywordId: null, sourceSpan: "chars 0-24" },
+        { text: "The dentist explained the work throughout", sourceKeywordId: null, sourceSpan: "chars 26-104" },
+        { text: "Waited about ten minutes", sourceKeywordId: null, sourceSpan: "chars 106-125" },
+        { text: "The front desk booked the next appointment", sourceKeywordId: null, sourceSpan: "chars 127-186" }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 1870, inputTokens: 268, outputTokens: 96, costMicros: 1920, fallbackUsed: false,
+      promptVersionHash: "p_71d0aa", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: [], freeText: "",
+      outcome: { status: "accepted", editDistance: 0.04 }
+    },
+    restyled: {
+      id: "gen_c40f88", tenantSlug: "brightsmile", locationSlug: "downtown", action: "restyle", createdAt: "2026-08-09T10:19:37Z",
+      draft: "Seen at my appointment time, treatment explained before it started, cost quoted up front.",
+      claims: [
+        { text: "I was called through at my appointment time", sourceKeywordId: "bs-k4", sourceSpan: null },
+        { text: "The dentist explained the treatment before starting", sourceKeywordId: "bs-k1", sourceSpan: null },
+        { text: "The cost was quoted before any work started", sourceKeywordId: "bs-k5", sourceSpan: null }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "openai", model: "gpt-4-1-mini",
+      latencyMs: 1240, inputTokens: 344, outputTokens: 42, costMicros: 810, fallbackUsed: true,
+      promptVersionHash: "p_2ee934", contextVersion: 7, styleKey: "social-short", styleVersion: "1.0.0",
+      sourceGenerationId: "gen_7f31c2", assertedKeywordIds: ["bs-k4", "bs-k1", "bs-k2", "bs-k5"], freeText: "", sourceText: null,
+      outcome: { status: "accepted", editDistance: 0 }
+    },
+    hamburg: {
+      id: "gen_2d90f4", tenantSlug: "speicher-neun", locationSlug: "hafencity", action: "generate", createdAt: "2026-08-10T19:44:12Z",
+      draft: "Frischer Fisch, gut gewürzt, und aufmerksamer Service. Blick auf den Hafen.",
+      claims: [
+        { text: "Frischer Fisch", sourceKeywordId: "s1", sourceSpan: null },
+        { text: "Gut gewürzt", sourceKeywordId: "s2", sourceSpan: null },
+        { text: "Aufmerksamer Service", sourceKeywordId: "s4", sourceSpan: null },
+        { text: "Blick auf den Hafen", sourceKeywordId: "s8", sourceSpan: null }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 1180, inputTokens: 296, outputTokens: 38, costMicros: 1460, fallbackUsed: false,
+      promptVersionHash: "p_4c81be", contextVersion: 3, styleKey: "social-short", styleVersion: "1.0.0",
+      sourceGenerationId: null, assertedKeywordIds: ["s1", "s2", "s4", "s8"], freeText: "", sourceText: null,
+      outcome: { status: "accepted", editDistance: 0 }
+    }
+  },
+
+  /* location × action × style × variant. The two venues of one tenant do not
+     perform alike, which is the whole reason location is in the row key. */
+  analytics: {
+    brightsmile: [
+      { locationSlug: "downtown", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 1180, acceptanceRate: 0.69, avgEditDistance: 0.13, p50Ms: 1980, p95Ms: 4120, totalCostMicros: 3180000, costPerAcceptedMicros: 3906 },
+      { locationSlug: "downtown", styleKey: "concise-blurb", action: "generate", variantKey: "A", n: 1204, acceptanceRate: 0.62, avgEditDistance: 0.18, p50Ms: 2040, p95Ms: 4380, totalCostMicros: 3260000, costPerAcceptedMicros: 4368 },
+      { locationSlug: "downtown", styleKey: "concise-blurb", action: "paraphrase", variantKey: "A", n: 604, acceptanceRate: 0.82, avgEditDistance: 0.06, p50Ms: 1710, p95Ms: 3260, totalCostMicros: 1160000, costPerAcceptedMicros: 2342 },
+      { locationSlug: "downtown", styleKey: "detailed-narrative", action: "generate", variantKey: "A", n: 388, acceptanceRate: 0.55, avgEditDistance: 0.26, p50Ms: 3120, p95Ms: 6740, totalCostMicros: 1970000, costPerAcceptedMicros: 9235 },
+      { locationSlug: "downtown", styleKey: "detailed-narrative", action: "expand", variantKey: "A", n: 121, acceptanceRate: 0.48, avgEditDistance: 0.30, p50Ms: 2870, p95Ms: 5910, totalCostMicros: 605000, costPerAcceptedMicros: 10412 },
+      { locationSlug: "riverside", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 614, acceptanceRate: 0.66, avgEditDistance: 0.15, p50Ms: 2010, p95Ms: 4210, totalCostMicros: 1640000, costPerAcceptedMicros: 4046 },
+      { locationSlug: "riverside", styleKey: "concise-blurb", action: "generate", variantKey: "A", n: 636, acceptanceRate: 0.59, avgEditDistance: 0.21, p50Ms: 2080, p95Ms: 4460, totalCostMicros: 1720000, costPerAcceptedMicros: 4585 },
+      { locationSlug: "riverside", styleKey: "concise-blurb", action: "paraphrase", variantKey: "A", n: 302, acceptanceRate: 0.79, avgEditDistance: 0.07, p50Ms: 1740, p95Ms: 3310, totalCostMicros: 580000, costPerAcceptedMicros: 2432 },
+      { locationSlug: "riverside", styleKey: "detailed-narrative", action: "generate", variantKey: "A", n: 224, acceptanceRate: 0.51, avgEditDistance: 0.29, p50Ms: 3180, p95Ms: 6820, totalCostMicros: 1140000, costPerAcceptedMicros: 9979 }
+    ],
+    "speicher-neun": [
+      { locationSlug: "hafencity", styleKey: "social-short", action: "generate", variantKey: "A", n: 2140, acceptanceRate: 0.74, avgEditDistance: 0.09, p50Ms: 1120, p95Ms: 2290, totalCostMicros: 2280000, costPerAcceptedMicros: 1440 },
+      { locationSlug: "hafencity", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 1310, acceptanceRate: 0.67, avgEditDistance: 0.16, p50Ms: 1890, p95Ms: 3980, totalCostMicros: 3410000, costPerAcceptedMicros: 3885 },
+      { locationSlug: "hafencity", styleKey: "social-short", action: "paraphrase", variantKey: "A", n: 702, acceptanceRate: 0.83, avgEditDistance: 0.05, p50Ms: 1080, p95Ms: 2140, totalCostMicros: 760000, costPerAcceptedMicros: 1305 },
+      { locationSlug: "hafencity", styleKey: "concise-blurb", action: "condense", variantKey: "A", n: 486, acceptanceRate: 0.85, avgEditDistance: 0.04, p50Ms: 940, p95Ms: 1870, totalCostMicros: 340000, costPerAcceptedMicros: 823 },
+      { locationSlug: "sternschanze", styleKey: "social-short", action: "generate", variantKey: "A", n: 806, acceptanceRate: 0.71, avgEditDistance: 0.11, p50Ms: 1150, p95Ms: 2360, totalCostMicros: 880000, costPerAcceptedMicros: 1538 },
+      { locationSlug: "sternschanze", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 402, acceptanceRate: 0.63, avgEditDistance: 0.19, p50Ms: 1930, p95Ms: 4040, totalCostMicros: 1060000, costPerAcceptedMicros: 4186 },
+      { locationSlug: "sternschanze", styleKey: "social-short", action: "restyle", variantKey: "A", n: 188, acceptanceRate: 0.78, avgEditDistance: 0.06, p50Ms: 1010, p95Ms: 2050, totalCostMicros: 150000, costPerAcceptedMicros: 1023 }
+    ]
+  },
+
+  actionCatalog: [
+    { key: "generate", label: "Generate", intent: "Write it for me from what I pick", input: "Asserted keywords plus optional free text", groundingRule: "Only claims tracing to an asserted keyword or the free text", costWeight: "1.0x", needsDraft: false, needsSourceText: false, verb: "Writing" },
+    { key: "paraphrase", label: "Paraphrase", intent: "I wrote it, make it read better", input: "The reviewer's own written text", groundingRule: "Only claims present in the reviewer's text", costWeight: "0.7x", needsDraft: false, needsSourceText: true, verb: "Paraphrasing" },
+    { key: "regenerate", label: "Regenerate", intent: "Try that again", input: "Identical inputs, new sample", groundingRule: "Same rule as the originating action", costWeight: "1.0x", needsDraft: true, needsSourceText: false, verb: "Rewriting" },
+    { key: "restyle", label: "Restyle", intent: "Same review, different format", input: "An existing draft plus a different style", groundingRule: "No new claims. Claims must be a subset of the source draft", costWeight: "0.8x", needsDraft: true, needsSourceText: false, verb: "Restyling" },
+    { key: "condense", label: "Condense", intent: "Shorter", input: "An existing draft plus a lower target length", groundingRule: "No new claims. Subset only", costWeight: "0.5x", needsDraft: true, needsSourceText: false, verb: "Shortening" },
+    { key: "expand", label: "Expand", intent: "Longer", input: "An existing draft plus a higher target length", groundingRule: "No new claims. Expansion adds words, not facts", costWeight: "1.2x", needsDraft: true, needsSourceText: false, verb: "Expanding" },
+    { key: "refine", label: "Refine", intent: "Also mention the parking", input: "An existing draft plus a free-text instruction", groundingRule: "Only claims tracing to the instruction, which is recorded as a newly asserted fact", costWeight: "1.1x", needsDraft: true, needsSourceText: false, verb: "Refining" }
+  ],
+
+  embellishments: [
+    { text: "and they knocked 20% off my next appointment", reason: "No discount, offer or price was entered. The system cannot infer one." },
+    { text: "and Dr. Halpern checked the work personally afterwards", reason: "No staff member was named in your input. Names cannot be inferred." },
+    { text: "easily the best in the area", reason: "A comparison with other businesses was never asserted and cannot be supported." }
+  ]
+};
+/* ===== END FIXTURES ===== */
+
+/* ===== SHARED STORE — both surfaces read and write this, so an admin edit is
+   observable in the survey. Duplicated verbatim in admin.dc.html by design. ===== */
+const STORE_KEY = "maue.reviewwriter.store.v2";
+const SESSION_KEY = "maue.reviewwriter.session.v2";
+const clone = (o) => JSON.parse(JSON.stringify(o));
+/* Bumped whenever the fixture shape changes. A store stamped with anything else is
+   a stale or hand-mutated demo and is discarded rather than silently rendered. */
+const STORE_REV = 2;
+
+function defaultStore() {
+  return {
+    rev: STORE_REV,
+    tenantSlug: "brightsmile", locationSlug: "downtown", role: FIXTURES.session.role,
+    platform: clone(FIXTURES.platform),
+    tenants: clone(FIXTURES.tenants),
+    locations: clone(FIXTURES.locations),
+    keywords: clone(FIXTURES.keywords),
+    styles: clone(FIXTURES.styles),
+    promptVersions: clone(FIXTURES.promptVersions),
+    experiment: clone(FIXTURES.experiment),
+    generationLog: []
+  };
+}
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s && s.rev === STORE_REV && s.tenants && s.keywords && s.styles && s.locations && s.platform) return s;
+    }
+  } catch (e) { /* fall through to fixtures */ }
+  return defaultStore();
+}
+function saveStore(s) { try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {} }
+
+function defaultSession() {
+  return {
+    rating: 0, path: null, verified: false, code: "",
+    assertedKeywordIds: [], freeText: "", sourceText: "",
+    selectedStyleKeys: [], cards: [], history: [],
+    retryCount: 0, copiedText: "", activeCardId: null, seeded: false
+  };
+}
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY) || localStorage.getItem(SESSION_KEY);
+    if (raw) return Object.assign(defaultSession(), JSON.parse(raw));
+  } catch (e) {}
+  return defaultSession();
+}
+function saveSession(s) { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) {} }
+
+/* On an invited link the token is normally present and already validated, so that
+   is what the harness simulates by default; verification is the exception path. */
+function defaultToken(store) {
+  const t = store.tenants[store.tenantSlug];
+  if (!t || t.entryMode !== "invite") return null;
+  const k = Object.keys(FIXTURES.visitTokens).find((x) => {
+    const v = FIXTURES.visitTokens[x];
+    return v.tenantSlug === store.tenantSlug && v.locationSlug === store.locationSlug && v.status === "valid";
+  });
+  return k ? Object.assign({ code: k }, FIXTURES.visitTokens[k]) : null;
+}
+
+/* ===== STATE MACHINE ===== */
+const SURVEY_STATES = [
+  "entry", "entry-token-used", "verification", "verification-unavailable", "keywords",
+  "paraphrase-input", "style", "generating", "results", "results-grounding-stripped",
+  "refine", "editing", "done", "rate-limited", "budget-exceeded", "provider-error",
+  "grounding-rejected", "invalid-link", "expired", "not-configured"
+];
+const LATENCIES = { instant: 140, "800ms": 800, "3s": 3000, "12s": 12000 };
+const FAILURES = ["none", "provider-error", "rate-limited", "budget-exceeded", "grounding-rejected"];
+const LINK_FAULTS = ["tenant", "location", "token"];
+const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+const low1 = (s) => s.charAt(0).toLowerCase() + s.slice(1);
+const money = (m) => "$" + (m / 1000000).toFixed(2);
+/* A manifest field that is locale-keyed resolves against the tenant's locale. */
+const L = (v, loc) => (v && typeof v === "object" && !Array.isArray(v)) ? (v[loc] || v["en-GB"] || v[Object.keys(v)[0]]) : v;
+const fmt = (s, vars) => String(s == null ? "" : s).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? vars[k] : ""));
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const q = new URLSearchParams(location.search);
+    /* ?fresh=1 renders a state without touching the shared session — used by the
+       gallery so 30-odd embedded previews cannot overwrite each other. */
+    this.ephemeral = q.get("fresh") === "1";
+    const store = this.ephemeral ? defaultStore() : loadStore();
+    /* THE LINK IS THE ENTRY MODEL. /s/<tenant>/<location>?v=<visit>&t=<ref>
+       resolves, in order: tenant configuration, location destinations and
+       keywords, then the visit token on the invited path. Each can fail
+       separately, and each failure has its own copy in invalid-link. */
+    const tq = q.get("tenant"), lq = q.get("location");
+    let fault = null;
+    if (tq) { if (store.tenants[tq]) store.tenantSlug = tq; else fault = "tenant"; }
+    const locs = store.locations[store.tenantSlug] || [];
+    if (lq) { if (locs.some((l) => l.slug === lq)) store.locationSlug = lq; else if (!fault) fault = "location"; }
+    if (!locs.some((l) => l.slug === store.locationSlug)) store.locationSlug = locs.length ? locs[0].slug : null;
+    const code = q.get("v") || "";
+    const rec = code ? FIXTURES.visitTokens[code] : null;
+    if (code && !rec && !fault) fault = "token";
+    if (rec && rec.tenantSlug !== store.tenantSlug && !fault) fault = "token";
+    if (rec && !fault) store.locationSlug = rec.locationSlug;
+    const dflt = (!code && !fault) ? defaultToken(store) : null;
+    const tok = rec && !fault ? Object.assign({ code }, rec) : dflt;
+    const fq = q.get("fault");
+    if (LINK_FAULTS.indexOf(fq) >= 0) fault = fq;
+    if (!this.ephemeral) saveStore(store);
+    const requested = q.get("state");
+    let entryView = "entry";
+    if (fault) entryView = "invalid-link";
+    else if (tok && tok.status === "used") entryView = "entry-token-used";
+    /* ?t= is the product's free reference (table, chair, order). The preview host
+       also uses ?t=, so anything that is not reference-shaped is ignored. */
+    const rawRef = q.get("t") || "";
+    this.state = {
+      store,
+      linkFault: fault,
+      visitCode: fault ? code : (tok ? tok.code : ""),
+      visitToken: fault ? null : tok,
+      tableRef: /^[\w .-]{1,12}$/.test(rawRef) ? rawRef : "",
+      session: this.ephemeral ? defaultSession() : loadSession(),
+      view: requested || entryView,
+      latency: LATENCIES[q.get("latency")] ? q.get("latency") : "800ms",
+      failure: FAILURES.indexOf(q.get("fail")) > 0 ? q.get("fail") : "none",
+      toolbar: q.get("toolbar") !== "off",
+      toolbarOpen: true,
+      elapsed: 0,
+      code: "",
+      refineText: "",
+      restoreFor: null,
+      restoreText: "",
+      restyleFor: null,
+      copiedNote: "",
+      countdown: 0,
+      unaidedText: ""
+    };
+    this.timers = [];
+    this.retries = 0;
+    this.lastJobs = null;
+    this.lastOpts = null;
+    this.cd = null;
+  }
+
+  startCountdown(n) {
+    if (this.cd) clearInterval(this.cd);
+    this.setState({ countdown: n });
+    this.cd = setInterval(() => {
+      const v = this.state.countdown - 1;
+      if (v <= 0) this.stopCountdown(); else this.setState({ countdown: v });
+    }, 1000);
+  }
+  stopCountdown() { if (this.cd) clearInterval(this.cd); this.cd = null; this.setState({ countdown: 0 }); }
+
+  retryRun() {
+    this.retries += 1;
+    const wasRate = this.state.view === "rate-limited";
+    this.stopCountdown();
+    const jobs = this.lastJobs;
+    if (!jobs || !jobs.length) return this.go(this.state.session.selectedStyleKeys.length ? "style" : "entry");
+    const o = Object.assign({}, this.lastOpts || {}, wasRate ? { forceOk: true } : {});
+    this.patchSession({ retryCount: this.retries });
+    this.startRun(jobs, o);
+  }
+
+  /* The restore affordance never reinserts removed text. It opens an empty field and
+     records whatever the user types as their own assertion. */
+  restoreByTyping(card) {
+    const text = this.state.restoreText.trim();
+    if (text.length < 4) return;
+    const cards = this.state.session.cards.map((c) => {
+      if (c.id !== card.id) return c;
+      const draft = c.draft.replace(/\s*$/, "") + " " + (/[.!?]$/.test(text) ? text : text + ".");
+      return Object.assign({}, c, {
+        draft, dirty: true,
+        claims: c.claims.concat([{ text, sourceKeywordId: null, sourceSpan: "restored-by-typing" }]),
+        removedClaims: [],
+        note: "You typed this yourself, so it is recorded as your own assertion: \u201c" + text + "\u201d."
+      });
+    });
+    this.setState({ restoreFor: null, restoreText: "" });
+    this.go("editing", { cards, activeCardId: card.id });
+  }
+
+  derivationNote(job, rec) {
+    const src = job.sourceCard;
+    if (!src) return null;
+    const outN = rec.claims.length, srcN = src.claims.length;
+    if (job.action === "restyle") return "Same facts, new format. " + outN + " of " + srcN + " facts carried over from the previous draft. Nothing was added.";
+    if (job.action === "condense") return "Shorter: " + outN + " of " + srcN + " facts kept whole. Nothing was added.";
+    if (job.action === "expand") return "Longer: the same " + outN + " facts in more words. Anything the model tried to add is listed above.";
+    if (job.action === "refine") return "Recorded as a fact you asserted: \u201c" + String(job.instruction || "").trim() + "\u201d.";
+    return null;
+  }
+
+  componentDidMount() {
+    this.seedForDeepLink();
+    this.onStorage = (e) => {
+      if (e.key === STORE_KEY && !this.ephemeral) this.setState({ store: loadStore() });
+    };
+    window.addEventListener("storage", this.onStorage);
+  }
+  componentWillUnmount() {
+    this.clearTimers();
+    if (this.cd) clearInterval(this.cd);
+    window.removeEventListener("storage", this.onStorage);
+  }
+  persist(s) { if (!this.ephemeral) saveSession(s); }
+  clearTimers() { this.timers.forEach((t) => clearInterval(t)); this.timers = []; }
+
+  /* --- store / tenant / location helpers --- */
+  tenant() { return this.state.store.tenants[this.state.store.tenantSlug]; }
+  locations() { return this.state.store.locations[this.state.store.tenantSlug] || []; }
+  location() {
+    const list = this.locations();
+    return list.find((l) => l.slug === this.state.store.locationSlug) || list[0] || null;
+  }
+  /* Location inherits the tenant policy and may override named fields. */
+  policy() {
+    const t = this.tenant(), loc = this.location();
+    const base = Object.assign({}, t.policy, { entryMode: t.entryMode });
+    const ov = (loc && loc.overrides) || {};
+    Object.keys(ov).forEach((k) => { base[k] = ov[k]; });
+    if (loc && loc.entryMode) base.entryMode = loc.entryMode;
+    return base;
+  }
+  copy() { return FIXTURES.copy[this.tenant().locale] || FIXTURES.copy["en-GB"]; }
+  allKeywords() {
+    const loc = this.location();
+    const tenantSet = (this.state.store.keywords[this.state.store.tenantSlug] || []).map((k) => Object.assign({ scope: "tenant" }, k));
+    const locSet = ((loc && loc.keywordAdditions) || []).map((k) => Object.assign({ scope: "location" }, k));
+    return tenantSet.concat(locSet);
+  }
+  activeKeywords() {
+    return this.allKeywords().filter((k) => k.isActive).slice().sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+  keywordById(id) { return this.allKeywords().find((k) => k.id === id); }
+  styleByKey(key) { return this.state.store.styles.find((s) => s.key === key); }
+  /* A style whose locale is neither "any" nor the tenant's is never offered. */
+  enabledStyles() {
+    const t = this.tenant();
+    return this.state.store.styles.filter((s) => t.enabledStyles.indexOf(s.key) >= 0 && (s.locale === "any" || s.locale === t.locale));
+  }
+  withheldStyles() {
+    const t = this.tenant();
+    return this.state.store.styles.filter((s) => s.locale !== "any" && s.locale !== t.locale);
+  }
+  /* done routes on location.destinations × style.targetPlatform. */
+  destinationsFor(styleKey) {
+    const loc = this.location();
+    if (!loc) return [];
+    const sy = this.styleByKey(styleKey);
+    const target = sy ? sy.targetPlatform : "any";
+    const q = encodeURIComponent(this.tenant().business.name + " " + loc.name);
+    const build = {
+      google: (id) => "https://www.google.com/maps/search/?api=1&query=" + q + (id ? "&query_place_id=" + encodeURIComponent(id) : ""),
+      tripadvisor: () => "https://www.tripadvisor.com/Search?q=" + q,
+      facebook: () => "https://www.facebook.com/search/top?q=" + q,
+      yelp: () => "https://www.yelp.com/search?find_desc=" + q
+    };
+    return (loc.destinations || []).map((k) => {
+      const d = FIXTURES.destinations[k] || { label: k, idField: "", idLabel: "id" };
+      const id = (loc.platformIds || {})[d.idField] || null;
+      return { key: k, label: d.label, id, idLabel: d.idLabel, url: (build[k] || build.google)(id), recommended: target === k };
+    }).sort((a, b) => (b.recommended ? 1 : 0) - (a.recommended ? 1 : 0));
+  }
+  surveyUrl() {
+    const loc = this.location();
+    let u = "/s/" + this.state.store.tenantSlug + "/" + (loc ? loc.slug : "—");
+    const qs = [];
+    if (this.state.visitCode) qs.push("v=" + this.state.visitCode);
+    if (this.state.tableRef) qs.push("t=" + this.state.tableRef);
+    return u + (qs.length ? "?" + qs.join("&") : "");
+  }
+  actionAllowed(key) {
+    const t = this.tenant();
+    return t.enabledActions.indexOf(key) >= 0;
+  }
+  actionMeta(key) { return FIXTURES.actionCatalog.find((a) => a.key === key); }
+  stylesFor(action) {
+    return this.enabledStyles().filter((s) => s.supportedActions.indexOf(action) >= 0);
+  }
+
+  /* --- transitions --- */
+  go(view, payload) {
+    const next = Object.assign({}, this.state.session, payload || {});
+    this.persist(next);
+    const url = new URL(location.href);
+    url.searchParams.set("state", view);
+    url.searchParams.set("tenant", this.state.store.tenantSlug);
+    if (this.state.store.locationSlug) url.searchParams.set("location", this.state.store.locationSlug);
+    history.replaceState({}, "", url);
+    this.setState({ view, session: next, copiedNote: "" });
+    if (view === "rate-limited") this.startCountdown(24);
+    else if (this.cd) this.stopCountdown();
+  }
+  patchSession(payload) {
+    const next = Object.assign({}, this.state.session, payload);
+    this.persist(next);
+    this.setState({ session: next });
+  }
+  setTenant(slug) {
+    const locs = this.state.store.locations[slug] || [];
+    const store = Object.assign({}, this.state.store, { tenantSlug: slug, locationSlug: locs.length ? locs[0].slug : null });
+    if (!this.ephemeral) saveStore(store);
+    const url = new URL(location.href);
+    url.searchParams.set("tenant", slug);
+    if (store.locationSlug) url.searchParams.set("location", store.locationSlug);
+    url.searchParams.delete("v");
+    history.replaceState({}, "", url);
+    this.clearTimers();
+    const session = defaultSession();
+    this.persist(session);
+    const tok = defaultToken(store);
+    this.setState({ store, session, view: "entry", linkFault: null, visitToken: tok, visitCode: tok ? tok.code : "" });
+  }
+  setLocation(slug) {
+    const store = Object.assign({}, this.state.store, { locationSlug: slug });
+    if (!this.ephemeral) saveStore(store);
+    const url = new URL(location.href);
+    url.searchParams.set("location", slug);
+    url.searchParams.delete("v");
+    history.replaceState({}, "", url);
+    this.clearTimers();
+    const session = defaultSession();
+    this.persist(session);
+    const tok = defaultToken(store);
+    this.setState({ store, session, view: "entry", linkFault: null, visitToken: tok, visitCode: tok ? tok.code : "" });
+  }
+  /* Simulating a different link is simulating a different customer arriving. */
+  setVisitCode(code) {
+    const rec = code ? FIXTURES.visitTokens[code] : null;
+    const store = Object.assign({}, this.state.store);
+    if (rec) store.locationSlug = rec.locationSlug;
+    if (!this.ephemeral) saveStore(store);
+    const url = new URL(location.href);
+    if (code) url.searchParams.set("v", code); else url.searchParams.delete("v");
+    if (store.locationSlug) url.searchParams.set("location", store.locationSlug);
+    history.replaceState({}, "", url);
+    const session = defaultSession();
+    this.persist(session);
+    this.setState({
+      store, session, visitCode: code, visitToken: rec ? Object.assign({ code }, rec) : null,
+      linkFault: code && !rec ? "token" : null,
+      view: code && !rec ? "invalid-link" : rec && rec.status === "used" ? "entry-token-used" : "entry"
+    });
+  }
+
+  /* --- deep-link seeding: every state must render on its own --- */
+  seedForDeepLink() {
+    const v = this.state.view;
+    const s = this.state.session;
+    const needsCards = ["results", "results-grounding-stripped", "editing", "refine", "done", "generating"];
+    if (needsCards.indexOf(v) < 0) return;
+    if (s.cards && s.cards.length) return;
+    const kws = this.activeKeywords().slice(0, 4).map((k) => k.id);
+    const stripped = v === "results-grounding-stripped";
+    const patch = {
+      rating: 5, path: "generate", verified: true, assertedKeywordIds: kws,
+      selectedStyleKeys: [this.stylesFor("generate")[0] ? this.stylesFor("generate")[0].key : "concise-blurb"], seeded: true
+    };
+    const styleKey = patch.selectedStyleKeys[0];
+    const rec = this.compose({ action: "generate", styleKey, assertedKeywordIds: kws, freeText: "", rating: 5, embellish: stripped });
+    const card = this.cardFromRecord(rec);
+    card.text = card.fullText;
+    card.done = true;
+    if (v === "editing") {
+      card.draft = card.draft.replace("Called through", "Got called through");
+      card.dirty = true;
+    }
+    patch.cards = [card];
+    patch.activeCardId = card.id;
+    if (v === "done") patch.copiedText = this.copyPayload(card);
+    this.patchSession(patch);
+  }
+
+  /* ===== COMPOSITION — the seven actions are one pipeline with different
+     input bindings and different grounding rules. ===== */
+  claimFromKeyword(id) {
+    const k = this.keywordById(id);
+    if (!k) return null;
+    return { text: k.label, sourceKeywordId: k.id, sourceSpan: null };
+  }
+  splitSentences(text) {
+    return String(text).split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length > 1);
+  }
+  /* English lowercases a clause mid-sentence; German does not, and doing it there
+     turns nouns into errors. The connective is locale copy, not a literal. */
+  lowerable() { return this.tenant().locale === "en-GB"; }
+  /* Lowercasing a clause mid-sentence is an English habit, and even there the
+     first-person pronoun is exempt. */
+  lowerClause(text) { return this.lowerable() ? String(text).replace(/^([A-Z])(?![ ])/, (m, c) => c.toLowerCase()) : text; }
+  render_micro(claims) {
+    const parts = claims.map((c) => this.lowerClause(c.text).replace(/^I /, ""));
+    return cap1(parts.join(", ")) + ".";
+  }
+  render_concise(claims, rating) {
+    const and = this.copy().conjunction;
+    const parts = claims.map((c) => this.lowerClause(c.text));
+    if (parts.length === 1) return cap1(parts[0]) + ".";
+    if (parts.length === 2) return cap1(parts[0]) + ", " + and + " " + parts[1] + ".";
+    const tail = parts.slice(1);
+    const last = tail.pop();
+    return cap1(parts[0]) + ". " + cap1(tail.join(", ")) + (tail.length > 1 && this.lowerable() ? "," : "") + " " + and + " " + last + ".";
+  }
+  render_detailed(claims, rating) {
+    const t = this.tenant();
+    const first = claims.slice(0, 1).map((c) => this.lowerClause(c.text));
+    const rest = claims.slice(1).map((c) => this.lowerClause(c.text));
+    const loc = this.location();
+    const p1 = "I used " + (loc ? loc.name : t.business.name) + ", and this is how it went.";
+    const p2 = (first.length ? cap1(first[0]) + ". " : "") + (rest.length ? cap1(rest.join(", and ")) + "." : "");
+    const p3 = rating >= 4 ? "On that basis I would go back." : rating <= 2 ? "I would want that sorted before I went back." : "I would go back, with that noted.";
+    return [p1, p2, p3].filter((p) => p.trim()).join("\n\n");
+  }
+  renderStyle(styleKey, claims, rating) {
+    if (styleKey === "social-short") return this.render_micro(claims);
+    if (styleKey === "detailed-narrative") return this.render_detailed(claims, rating);
+    return this.render_concise(claims, rating);
+  }
+  fitToStyle(styleKey, claims, rating) {
+    /* Drop whole claims until the rendered draft fits the style's maxChars.
+       Claims are never merged or truncated mid-fact. */
+    const st = this.styleByKey(styleKey) || this.state.store.styles[0];
+    let kept = claims.slice();
+    let draft = this.renderStyle(styleKey, kept, rating);
+    while (kept.length > 1 && draft.length > st.constraints.maxChars) {
+      kept = kept.slice(0, kept.length - 1);
+      draft = this.renderStyle(styleKey, kept, rating);
+    }
+    return { kept, draft };
+  }
+  costFor(action, chars) {
+    const meta = this.actionMeta(action);
+    const w = parseFloat(meta ? meta.costWeight : "1") || 1;
+    const inputTokens = Math.round(180 + chars * 0.42);
+    const outputTokens = Math.round(chars / 3.6);
+    return { inputTokens, outputTokens, costMicros: Math.round((inputTokens * 3 + outputTokens * 15) * w) };
+  }
+  promptFor(action) {
+    const pool = this.state.store.promptVersions.filter((p) => p.action === action && p.status !== "retired");
+    return pool.length ? pool[pool.length - 1].hash : "p_9f2ad1";
+  }
+  compose(opts) {
+    const t = this.tenant();
+    const action = opts.action;
+    const rating = opts.rating != null ? opts.rating : this.state.session.rating || 5;
+    let styleKey = opts.styleKey;
+    let claims = [];
+    let removed = [];
+    let sourceText = null;
+    let sourceGenerationId = opts.sourceGenerationId || null;
+
+    if (action === "generate") {
+      claims = (opts.assertedKeywordIds || []).map((id) => this.claimFromKeyword(id)).filter(Boolean);
+      if (opts.freeText && opts.freeText.trim().length > 2) {
+        claims.push({ text: opts.freeText.trim(), sourceKeywordId: null, sourceSpan: "free-text chars 0-" + opts.freeText.trim().length });
+      }
+    } else if (action === "paraphrase") {
+      sourceText = opts.sourceText || "";
+      let at = 0;
+      claims = this.splitSentences(sourceText).map((sent) => {
+        const start = sourceText.indexOf(sent, at);
+        at = start + sent.length;
+        return { text: cap1(sent.replace(/[.!?]$/, "")), sourceKeywordId: null, sourceSpan: "chars " + start + "-" + at };
+      });
+    } else {
+      /* regenerate · restyle · condense · expand · refine all operate on an existing
+         draft. Their claim set starts as the source's claim set — nothing else can enter. */
+      const src = opts.sourceCard;
+      claims = clone(src.claims);
+      sourceGenerationId = src.id;
+      sourceText = src.sourceText || null;
+      styleKey = opts.styleKey || src.styleKey;
+      if (action === "condense") {
+        claims = claims.slice(0, Math.max(1, Math.ceil(claims.length / 2)));
+      }
+      if (action === "refine" && opts.instruction) {
+        claims.push({ text: opts.instruction.trim(), sourceKeywordId: null, sourceSpan: "instruction" });
+      }
+    }
+
+    if (!claims.length) {
+      const g = { id: "gen_" + Math.random().toString(16).slice(2, 8), tenantSlug: t.slug, action, styleKey: styleKey || "concise-blurb", draft: null, claims: [], removedClaims: [{ text: "the whole draft", reason: "Nothing was asserted, so there was nothing to write from." }], groundingVerdict: "rejected" };
+      return Object.assign(g, this.envelope(action, 0, styleKey, sourceGenerationId, sourceText, opts));
+    }
+
+    const fit = this.fitToStyle(styleKey, claims, rating);
+    claims = fit.kept;
+    let draft = fit.draft;
+
+    if (action === "expand") {
+      const st = this.styleByKey(styleKey);
+      draft = draft.replace(/\.$/, ".") + " Taking the visit as a whole, those are the parts worth putting on record, and they are the reason for the rating I have given.";
+      if (st && st.constraints.paragraphs > 1) draft = draft + "\n\nNothing else was added here: this is the same set of facts, at greater length.";
+    }
+    if (action === "paraphrase" && styleKey === "detailed-narrative") {
+      draft = this.render_detailed(claims, rating);
+    }
+
+    /* Grounding pass. An embellishment is generated, then removed, and the removal
+       is reported. Never silently stripped, never silently kept. */
+    if (opts.embellish) {
+      const emb = FIXTURES.embellishments[(opts.embellishIndex || 0) % FIXTURES.embellishments.length];
+      removed.push({ text: emb.text, reason: emb.reason });
+    }
+    const banned = (t.policy.bannedTerms || []).filter((term) => draft.toLowerCase().indexOf(String(term).toLowerCase()) >= 0);
+    banned.forEach((term) => {
+      removed.push({ text: term, reason: "\"" + term + "\" is on this business's banned-terms list and cannot appear in an assisted draft." });
+      draft = draft.replace(new RegExp(term, "gi"), "").replace(/\s{2,}/g, " ");
+    });
+
+    const rec = {
+      id: "gen_" + Math.random().toString(16).slice(2, 8),
+      tenantSlug: t.slug, action, draft, claims,
+      removedClaims: removed,
+      groundingVerdict: removed.length ? "stripped" : "clean",
+      styleKey
+    };
+    return Object.assign(rec, this.envelope(action, draft ? draft.length : 0, styleKey, sourceGenerationId, sourceText, opts));
+  }
+  envelope(action, chars, styleKey, sourceGenerationId, sourceText, opts) {
+    const t = this.tenant();
+    const st = this.styleByKey(styleKey) || this.state.store.styles[0];
+    const c = this.costFor(action, chars);
+    const fallback = action === "restyle" || this.retries >= 2;
+    return {
+      provider: fallback ? "openai" : "anthropic",
+      model: fallback ? "gpt-4-1-mini" : "claude-sonnet-4-5",
+      fallbackUsed: fallback,
+      latencyMs: LATENCIES[this.state.latency],
+      inputTokens: c.inputTokens, outputTokens: c.outputTokens, costMicros: c.costMicros,
+      promptVersionHash: this.promptFor(action),
+      contextVersion: t.contextVersion,
+      styleVersion: st.version,
+      sourceGenerationId: sourceGenerationId || null,
+      sourceText: sourceText || null,
+      assertedKeywordIds: (opts && opts.assertedKeywordIds) || this.state.session.assertedKeywordIds || [],
+      freeText: (opts && opts.freeText) || "",
+      instruction: (opts && opts.instruction) || null,
+      createdAt: new Date().toISOString()
+    };
+  }
+  cardFromRecord(rec) {
+    const full = rec.draft || "";
+    return Object.assign({}, rec, {
+      fullText: full, text: "", words: full.split(/(\s+)/), done: false,
+      draft: full, originalDraft: full, dirty: false, aborted: false, restyleNote: null
+    });
+  }
+
+  /* ===== STREAMING ===== */
+  startRun(jobs, opts) {
+    const o = opts || {};
+    this.lastJobs = jobs;
+    this.lastOpts = o;
+    const t = this.tenant();
+    const fail = this.state.failure;
+    /* real policy check first, then injected failures */
+    if (t.monthToDateCostMicros >= t.monthlyBudgetMicros) return this.failTo("budget-exceeded");
+    if (!o.forceOk) {
+      if (fail === "budget-exceeded") return this.failTo("budget-exceeded");
+      if (fail === "rate-limited") return this.failTo("rate-limited");
+      if (fail === "provider-error" && this.retries < 2) return this.failTo("provider-error");
+      if (fail === "grounding-rejected") return this.failTo("grounding-rejected");
+    }
+
+    const cards = jobs.map((j) => {
+      const rec = this.compose(j);
+      const card = this.cardFromRecord(rec);
+      card.actionLabel = this.actionMeta(j.action).verb;
+      card.replacesId = j.replacesId || null;
+      card.note = this.derivationNote(j, rec);
+      return card;
+    });
+    if (cards.every((c) => c.groundingVerdict === "rejected")) return this.failTo("grounding-rejected");
+
+    const prev = this.state.session.cards.filter((c) => !cards.some((n) => n.replacesId === c.id));
+    const merged = o.replaceAll ? cards : prev.concat(cards.filter((c) => !prev.some((p) => p.id === c.id)));
+    const history = this.state.session.history.concat(jobs.map((j) => ({ action: j.action, styleKey: j.styleKey, at: new Date().toISOString() })));
+    this.go("generating", { cards: merged, history, returnTo: o.returnTo || "style" });
+    this.setState({ elapsed: 0 });
+    this.runStreams(cards.map((c) => c.id));
+  }
+  failTo(state) {
+    this.clearTimers();
+    this.go(state);
+  }
+  runStreams(ids) {
+    this.clearTimers();
+    const total = LATENCIES[this.state.latency];
+    const t0 = Date.now();
+    const clock = setInterval(() => this.setState({ elapsed: Date.now() - t0 }), 100);
+    this.timers.push(clock);
+    ids.forEach((id, i) => {
+      const dur = total * (1 + 0.45 * i);
+      const card = this.state.session.cards.find((c) => c.id === id);
+      if (!card) return;
+      const steps = Math.max(1, card.words.length);
+      const step = Math.max(10, Math.round(dur / steps));
+      let n = 0;
+      const timer = setInterval(() => {
+        n += 1;
+        const cards = this.state.session.cards.map((c) => c.id === id ? Object.assign({}, c, { text: c.words.slice(0, n).join(""), done: n >= steps }) : c);
+        const next = Object.assign({}, this.state.session, { cards });
+        this.setState({ session: next });
+        if (n >= steps) {
+          clearInterval(timer);
+          if (cards.every((c) => c.done)) this.finishRun();
+        }
+      }, step);
+      this.timers.push(timer);
+    });
+  }
+  finishRun() {
+    this.clearTimers();
+    const cards = this.state.session.cards;
+    const anyStripped = cards.some((c) => c.removedClaims && c.removedClaims.length);
+    this.persist(this.state.session);
+    this.go(anyStripped ? "results-grounding-stripped" : "results");
+  }
+  abort() {
+    this.clearTimers();
+    const cards = this.state.session.cards.filter((c) => c.done).map((c) => Object.assign({}, c, { aborted: false }));
+    const back = cards.length ? "results" : (this.state.session.returnTo || "style");
+    this.go(back, { cards });
+  }
+
+  copyPayload(card) {
+    let text = card.draft;
+    if (this.policy().requireDisclosure) text += "\n\n" + this.disclosure();
+    return text;
+  }
+  disclosure() { return fmt(this.copy().disclosure, { business: this.tenant().business.name }); }
+  copyCard(card) {
+    const text = this.copyPayload(card);
+    try {
+      if (navigator.clipboard) navigator.clipboard.writeText(text);
+    } catch (e) {}
+    this.go("done", { copiedText: text, activeCardId: card.id });
+  }
+  editDistance(a, b) {
+    if (!a || !b) return 0;
+    const aw = a.split(/\s+/), bw = b.split(/\s+/);
+    let same = 0;
+    const pool = bw.slice();
+    aw.forEach((w) => { const i = pool.indexOf(w); if (i >= 0) { pool.splice(i, 1); same += 1; } });
+    return Math.min(1, Math.max(0, 1 - same / Math.max(aw.length, bw.length)));
+  }
+  updateDraft(card, value) {
+    const cards = this.state.session.cards.map((c) => c.id === card.id ? Object.assign({}, c, { draft: value, dirty: value !== c.originalDraft }) : c);
+    const next = Object.assign({}, this.state.session, { cards, activeCardId: card.id });
+    this.persist(next);
+    if (value !== card.originalDraft && this.state.view !== "editing") this.go("editing", { cards, activeCardId: card.id });
+    else this.setState({ session: next });
+  }
+
+  /* --- per-card actions --- */
+  cardAction(card, action, extra) {
+    const meta = this.actionMeta(action);
+    const job = Object.assign({ action, styleKey: card.styleKey, sourceCard: card, replacesId: card.id, rating: this.state.session.rating }, extra || {});
+    if (action === "regenerate") job.embellish = false;
+    if (action === "expand") { job.embellish = true; job.embellishIndex = 1; }
+    this.setState({ restyleFor: null, restoreFor: null, refineText: "" });
+    this.startRun([job], { returnTo: "results" });
+  }
+
+  renderVals() {
+    const st = this.state, s = st.session, t = this.tenant();
+    const view = st.view;
+    const pol = this.policy(), loc = this.location(), C = this.copy();
+    const valid = SURVEY_STATES.indexOf(view) >= 0;
+    const ratingWords = C.ratingWords;
+
+    const chip = (on, dim) => "display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:10px 16px;border-radius:var(--radius-xl);border:1px solid " + (on ? "var(--ink-900)" : "var(--border-rule)") + ";background:" + (on ? "var(--ink-900)" : "transparent") + ";color:" + (on ? "var(--on-primary)" : "var(--text-body)") + ";font:var(--type-caption);text-align:left;cursor:" + (dim ? "not-allowed" : "pointer") + ";opacity:" + (dim ? ".4" : "1");
+
+    const kwGroups = [];
+    const negFirst = s.rating > 0 && s.rating <= 2;
+    /* Categories are tenant data. A dental practice and a restaurant do not share
+       a taxonomy, which is why this is a table and not an enum. */
+    const catLabel = {};
+    (t.keywordCategories || []).forEach((c) => { catLabel[c.id] = c.label; });
+    const order = (t.keywordCategories || []).map((c) => c.id);
+    const actKw = this.activeKeywords().slice().sort((a, b) => {
+      if (negFirst) {
+        const rank = (k) => k.polarity === "negative" ? 0 : k.polarity === "neutral" ? 2 : 1;
+        if (rank(a) !== rank(b)) return rank(a) - rank(b);
+      }
+      return a.sortOrder - b.sortOrder;
+    });
+    const cats = [];
+    actKw.forEach((k) => { if (cats.indexOf(k.category) < 0) cats.push(k.category); });
+    cats.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    cats.forEach((cat) => {
+      kwGroups.push({
+        category: cat,
+        label: catLabel[cat] || cat,
+        items: actKw.filter((k) => k.category === cat).map((k) => {
+          const i = s.assertedKeywordIds.indexOf(k.id);
+          return {
+            id: k.id, label: k.label, selected: i >= 0,
+            mark: i >= 0 ? String(i + 1) : (k.polarity === "negative" ? "-" : ""),
+            style: chip(i >= 0, false),
+            onToggle: () => {
+              const next = i >= 0 ? s.assertedKeywordIds.filter((x) => x !== k.id) : s.assertedKeywordIds.concat([k.id]);
+              this.patchSession({ assertedKeywordIds: next });
+            }
+          };
+        })
+      });
+    });
+
+    const action = s.path === "paraphrase" ? "paraphrase" : "generate";
+    const availStyles = this.stylesFor(action);
+    const cap = pol.maxDraftsPerSession;
+    const styleOptions = availStyles.map((sy) => {
+      const on = s.selectedStyleKeys.indexOf(sy.key) >= 0;
+      const atCap = !on && s.selectedStyleKeys.length >= cap;
+      const c = sy.constraints;
+      const words = Math.round(c.maxChars / 5.6);
+      return {
+        key: sy.key, displayName: sy.displayName, description: L(sy.description, t.locale), sample: L(sy.sample, t.locale),
+        selected: on, disabled: atCap,
+        mark: on ? "selected" : atCap ? "at cap" : "v" + sy.version,
+        constraintLabel: "up to ~" + words + " words · " + c.paragraphs + (c.paragraphs > 1 ? " paragraphs" : " paragraph") + " · " + (c.emojiPolicy === "none" ? "no emoji" : "emoji allowed"),
+        style: "border:1px solid " + (on ? "var(--ink-900)" : "var(--border-rule)") + ";border-radius:var(--radius-sm);padding:20px;background:" + (on ? "var(--surface-wash-lilac)" : "var(--surface-card)") + ";opacity:" + (atCap ? ".45" : "1"),
+        onToggle: () => {
+          if (atCap) return;
+          const next = on ? s.selectedStyleKeys.filter((x) => x !== sy.key) : s.selectedStyleKeys.concat([sy.key]);
+          this.patchSession({ selectedStyleKeys: next });
+        }
+      };
+    });
+
+    const pending = s.cards.filter((c) => !c.done || st.view === "generating").map((c) => {
+      const pct = Math.round((c.text.length / Math.max(1, c.fullText.length)) * 100);
+      const sy = this.styleByKey(c.styleKey);
+      return {
+        id: c.id, text: c.text, pctLabel: pct + "%",
+        progressLabel: (c.actionLabel || "Writing") + " in " + (sy ? sy.displayName : c.styleKey) + (c.done ? " — done" : "…"),
+        barStyle: "height:2px;width:" + pct + "%;background:var(--ink-900);transition:width .12s linear"
+      };
+    });
+
+    const entryPaths = [];
+    if (this.actionAllowed("generate")) entryPaths.push(Object.assign({}, C.pathGenerate, {
+      disabled: !s.rating, onClick: () => this.startPath("generate")
+    }));
+    if (this.actionAllowed("paraphrase")) entryPaths.push(Object.assign({}, C.pathParaphrase, {
+      disabled: !s.rating, onClick: () => this.startPath("paraphrase")
+    }));
+
+    const activeStyleKey = (s.cards[0] || {}).styleKey || s.selectedStyleKeys[0] || (this.enabledStyles()[0] || {}).key;
+    const dests = this.destinationsFor(activeStyleKey);
+    const primary = dests[0] || null;
+    const destStyle = "display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:56px;padding:14px 18px;border:1px solid var(--border-rule);border-radius:var(--radius-sm);text-decoration:none";
+    const doneDestinations = dests.map((d) => Object.assign({}, d, {
+      style: destStyle + (d.recommended ? ";background:var(--surface-wash-lilac)" : ""),
+      note: (d.id ? d.idLabel.toLowerCase() + " " + d.id : d.key) + (d.recommended ? " · shaped for this format" : "")
+    }));
+    const faultCopy = {
+      tenant: ["Unknown link", "This link doesn't lead anywhere", "The address in your message doesn't match a business we can serve. Check it, or write your review directly on the platform."],
+      location: ["Unknown venue", "That venue isn't recognised", "The business exists, but the venue in the link doesn't. If you have the paper card or the message it came from, check the last part of the address."],
+      token: ["Unreadable code", "The visit code in this link didn't read", "The link is for this venue, but the code that proves the visit is unreadable. You can enter the reference from your confirmation instead."]
+    };
+    const fault = st.linkFault || "tenant";
+    const fc = faultCopy[fault];
+
+    return {
+      /* identity + chrome — every value here was resolved from the link */
+      biz: t.business, policy: pol, tenantSlug: t.slug, locale: t.locale,
+      locName: loc ? loc.name : "—",
+      targetLabel: primary ? primary.label : "the review site",
+      targetUrl: primary ? primary.url : "https://www.google.com/maps",
+      headerNote: pol.entryMode === "open-qr" ? "OPEN QR" : "INVITED VISIT",
+      stepLabel: s.path === "paraphrase" ? C.stepParaphrase : C.stepGenerate,
+
+      /* view flags */
+      isEntry: view === "entry", isTokenUsed: view === "entry-token-used",
+      isVerification: view === "verification",
+      isVerificationUnavailable: view === "verification-unavailable",
+      isKeywords: view === "keywords", isParaphraseInput: view === "paraphrase-input",
+      isStyle: view === "style", isGenerating: view === "generating",
+      isResults: view === "results" || view === "results-grounding-stripped" || view === "editing",
+      isEditing: view === "editing", isRefine: view === "refine", isDone: view === "done",
+      isRateLimited: view === "rate-limited", isBudget: view === "budget-exceeded",
+      isProviderError: view === "provider-error", isRejected: view === "grounding-rejected",
+      isInvalid: view === "invalid-link", isExpired: view === "expired",
+      isNotConfigured: view === "not-configured", isUnknown: !valid,
+
+      /* entry */
+      ratingButtons: [1, 2, 3, 4, 5].map((n) => ({
+        n, selected: s.rating === n, aria: n + " of 5",
+        style: "min-width:52px;min-height:52px;border-radius:var(--radius-xs);border:1px solid " + (s.rating === n ? "var(--ink-900)" : "var(--border-rule)") + ";background:" + (s.rating === n ? "var(--ink-900)" : "transparent") + ";color:" + (s.rating === n ? "var(--on-primary)" : "var(--text-body)") + ";font:var(--type-body-lg);cursor:pointer",
+        onClick: () => this.patchSession({ rating: n })
+      })),
+      askHeading: fmt(C.ask, { business: t.business.name }),
+      ratingAsk: C.ratingAsk,
+      trustText: C.trust,
+      entryAck: st.visitToken && st.visitToken.status === "valid"
+        ? fmt(C.visitAck, { location: loc ? loc.name : "", date: st.visitToken.visitedOn })
+        : fmt(C.openAck, { location: loc ? loc.name : "" }),
+      hasTableRef: !!st.tableRef,
+      tableRefLabel: fmt(C.tableRef, { ref: st.tableRef }),
+      ratingLabel: s.rating ? s.rating + " / 5 — " + ratingWords[s.rating] : "",
+      entryPaths,
+      entryBlockReason: s.rating ? "" : C.needRating,
+
+      /* verification */
+      code: st.code,
+      onCode: (e) => this.setState({ code: e.target.value }),
+      verifyDisabled: !st.code.trim(),
+      verifyReason: st.code.trim() ? "" : "Enter the code from your confirmation to continue.",
+      onVerify: () => this.go(s.path === "paraphrase" ? "paraphrase-input" : "keywords", { verified: true, code: st.code }),
+      onNoCode: () => this.go("verification-unavailable"),
+      onBackToVerify: () => this.go("verification"),
+
+      /* keywords */
+      keywordGroups: kwGroups,
+      keywordsHeading: negFirst ? C.keywordsHeadingNegative : C.keywordsHeading,
+      keywordsLead: negFirst ? C.keywordsLeadNegative : C.keywordsLead,
+      selectionCountLabel: s.assertedKeywordIds.length + " selected" + (s.assertedKeywordIds.length ? " · written in the order you picked" : ""),
+      freeText: s.freeText,
+      onFreeText: (e) => this.patchSession({ freeText: e.target.value.slice(0, 400) }),
+      freeCountLabel: s.freeText.length + " / 400" + (s.freeText.length > 280 ? " — getting long, the draft may not use all of it" : ""),
+      freeCountColor: s.freeText.length > 280 ? "var(--text-error)" : "var(--text-meta)",
+      keywordsDisabled: s.assertedKeywordIds.length < 2,
+      keywordsBlockReason: s.assertedKeywordIds.length < 2 ? C.minSelection : "",
+      onKeywordsNext: () => this.go("style"),
+
+      /* paraphrase */
+      sourceText: s.sourceText,
+      onSourceText: (e) => this.patchSession({ sourceText: e.target.value }),
+      sourceCountLabel: s.sourceText.length + " characters" + (s.sourceText.length < 40 ? " · 40 needed" : " · every fact in here is preserved"),
+      sourceDisabled: s.sourceText.trim().length < 40,
+      sourceBlockReason: s.sourceText.trim().length < 40 ? "Write at least 40 characters. Paraphrasing needs your words to work from — it has no other source." : "",
+      onSourceNext: () => this.go("style"),
+
+      /* style */
+      styleOptions,
+      styleHeading: C.styleHeading,
+      styleLead: C.styleLead,
+      styleWithheldNote: this.withheldStyles().length
+        ? this.withheldStyles().map((x) => x.key + " · " + x.locale).join("  ·  ") + "  ·  locale ≠ " + t.locale + " — withheld"
+        : "",
+      capLabel: s.selectedStyleKeys.length + " of " + cap + " drafts chosen. This business allows " + cap + " per session.",
+      styleDisabled: !s.selectedStyleKeys.length,
+      styleBlockReason: s.selectedStyleKeys.length ? "" : "Choose at least one format.",
+      styleCta: s.path === "paraphrase" ? C.pathParaphrase.cta : C.styleCta,
+      onStyleNext: () => this.startPath2(),
+
+      /* generating */
+      pendingCards: pending,
+      elapsedLabel: (st.elapsed / 1000).toFixed(1) + "s elapsed",
+      onAbort: () => this.abort(),
+
+      /* results · editing · the stripped variant */
+      strippedNotice: C.strippedNotice,
+      resultsEyebrow: view === "results-grounding-stripped" ? C.strippedEyebrow : view === "editing" ? "Your edit" : "Your draft",
+      resultsHeading: view === "results-grounding-stripped" ? C.strippedHeading : s.cards.length > 1 ? "Two drafts, same facts" : "Here it is",
+      resultsLead: view === "editing"
+        ? "This is your text now. The count and the change indicator update as you type."
+        : "Change anything you like. Nothing leaves this page until you copy it yourself.",
+      resultCards: s.cards.map((c) => {
+        const sy = this.styleByKey(c.styleKey) || { displayName: c.styleKey, constraints: { maxChars: 400 } };
+        const meta = this.actionMeta(c.action);
+        const over = c.draft.length > sy.constraints.maxChars;
+        const acts = [{ key: "copy", label: "Copy", note: "Puts the text on your clipboard. Nothing is posted for you.", onClick: () => this.copyCard(c) }];
+        ["regenerate", "restyle", "condense", "expand", "refine"].forEach((a) => {
+          if (sy.supportedActions && sy.supportedActions.indexOf(a) < 0) return;
+          if (!this.actionAllowed(a)) return;
+          const m = this.actionMeta(a);
+          acts.push({
+            key: a, label: m.label, note: m.groundingRule,
+            onClick: a === "restyle" ? () => this.setState({ restyleFor: c.id, restoreFor: null })
+              : a === "refine" ? () => this.go("refine", { activeCardId: c.id })
+                : () => this.cardAction(c, a)
+          });
+        });
+        const pill = (primary) => "min-height:44px;padding:10px 16px;border-radius:var(--radius-xl);border:1px solid " + (primary ? "transparent" : "var(--border-rule)") + ";background:" + (primary ? "var(--ink-900)" : "transparent") + ";color:" + (primary ? "var(--on-primary)" : "var(--text-body)") + ";font:var(--type-button);cursor:pointer";
+        const restoreOpen = st.restoreFor === c.id;
+        return {
+          id: c.id, fieldId: "draft-" + c.id, styleName: sy.displayName, draft: c.draft,
+          rows: c.styleKey === "social-short" ? 3 : c.styleKey === "detailed-narrative" ? 10 : 5,
+          provenance: (meta ? meta.label : c.action) + " · v" + (c.styleVersion || "") + " · " + c.id,
+          countLabel: c.draft.length + " / " + sy.constraints.maxChars + " characters" + (over ? " — longer than this format allows. It is your text, so it is not blocked." : ""),
+          countColor: over ? "var(--text-error)" : "var(--text-meta)",
+          hasRemoved: !!(c.removedClaims && c.removedClaims.length),
+          removed: c.removedClaims || [],
+          restoreOpen, restoreClosed: !restoreOpen,
+          restoreText: st.restoreText,
+          restoreDisabled: st.restoreText.trim().length < 4,
+          onRestoreOpen: () => this.setState({ restoreFor: c.id, restoreText: "" }),
+          onRestoreText: (e) => this.setState({ restoreText: e.target.value }),
+          onRestoreCancel: () => this.setState({ restoreFor: null, restoreText: "" }),
+          onRestoreCommit: () => this.restoreByTyping(c),
+          hasRestyleNote: !!c.note, restyleNote: c.note,
+          claimCount: (c.claims || []).length + " facts, each traceable",
+          claimRows: (c.claims || []).map((cl) => ({
+            text: cl.text,
+            source: cl.sourceKeywordId ? "you selected this" : cl.sourceSpan === "instruction" ? "your instruction" : cl.sourceSpan ? "your own words" : "unsupported"
+          })),
+          dirty: c.dirty,
+          editLabel: "Edited — about " + Math.round(this.editDistance(c.originalDraft, c.draft) * 100) + "% of the wording has changed",
+          showDisclosure: pol.requireDisclosure,
+          disclosure: this.disclosure(),
+          actions: acts.map((a) => Object.assign({}, a, { style: pill(a.key === "copy") })),
+          noActions: acts.length === 1,
+          noActionsNote: "This business has switched off the other draft actions, so Copy is the only one offered.",
+          restyleOpen: st.restyleFor === c.id,
+          restyleOptions: this.enabledStyles().filter((x) => x.key !== c.styleKey && x.supportedActions.indexOf("restyle") >= 0)
+            .map((x) => ({ key: x.key, displayName: x.displayName, onPick: () => this.cardAction(c, "restyle", { styleKey: x.key }) })),
+          onDraftChange: (e) => this.updateDraft(c, e.target.value)
+        };
+      }),
+
+      /* refine */
+      refineText: st.refineText,
+      refineDisabled: st.refineText.trim().length < 4,
+      refineSourceDraft: (s.cards.find((c) => c.id === s.activeCardId) || s.cards[0] || { draft: "" }).draft,
+      onRefineText: (e) => this.setState({ refineText: e.target.value }),
+      onRefineSubmit: () => {
+        const c = s.cards.find((x) => x.id === s.activeCardId) || s.cards[0];
+        if (c) this.cardAction(c, "refine", { instruction: st.refineText });
+      },
+      onRefineCancel: () => this.go(s.cards.some((c) => c.dirty) ? "editing" : "results"),
+
+      /* done · entry-token-used · invalid-link */
+      finalText: s.copiedText || (s.cards[0] ? this.copyPayload(s.cards[0]) : ""),
+      doneEyebrow: C.doneEyebrow, doneHeading: C.doneHeading, doneBody: C.doneBody,
+      doneDestinations,
+      doneFootnote: "Each link opens in a new tab. Posting is yours to do — nothing is submitted from this page.",
+      tokenUsedNote: "Link " + (st.visitCode || "BS-DT-1104") + " · already redeemed. Tokens are single use.",
+      invalidEyebrow: fc[0], invalidHeading: fc[1], invalidBody: fc[2],
+      invalidUrl: "/s/" + (st.linkFault === "tenant" ? "—" : t.slug) + "/" + (st.linkFault === "location" || st.linkFault === "tenant" ? "—" : (loc ? loc.slug : "—")) + (st.linkFault === "token" ? "?v=—" : ""),
+      invalidCauses: LINK_FAULTS.map((k) => ({
+        key: k, label: k === "tenant" ? "Unknown business" : k === "location" ? "Unknown venue" : "Unreadable code",
+        style: "min-height:44px;padding:10px 16px;border-radius:var(--radius-xl);border:1px solid " + (fault === k ? "var(--ink-900)" : "var(--border-rule)") + ";background:" + (fault === k ? "var(--ink-900)" : "transparent") + ";color:" + (fault === k ? "var(--on-primary)" : "var(--text-body)") + ";font:var(--type-caption);cursor:pointer",
+        onPick: () => this.setState({ linkFault: k })
+      })),
+      onAnother: () => this.go("style"),
+
+      /* failures */
+      countdownLabel: st.countdown > 0 ? "Ready again in " + st.countdown + "s" : "You can try again now.",
+      countdownActive: st.countdown > 0,
+      onRetryRun: () => this.retryRun(),
+      onBackToStyle: () => this.go(s.selectedStyleKeys.length ? "style" : "entry"),
+      retryNote: "Attempt " + (this.retries + 1) + " of this draft. The first retry takes the same route; after that it falls back to a second provider.",
+      unaidedText: st.unaidedText,
+      onUnaided: (e) => this.setState({ unaidedText: e.target.value }),
+      unaidedDisabled: st.unaidedText.trim().length < 10,
+      unaidedNote: st.copiedNote || st.unaidedText.length + " characters. This box is yours — no assistance involved.",
+      onCopyUnaided: () => {
+        try { if (navigator.clipboard) navigator.clipboard.writeText(st.unaidedText); } catch (e) {}
+        this.setState({ copiedNote: "Copied. Paste it into " + (primary ? primary.label : "the review site") + " and post it yourself." });
+      },
+      rejectedRetained: "Retained: rating " + (s.rating || "—") + " · " + s.assertedKeywordIds.length + " selections · " + (s.freeText.length + s.sourceText.length) + " characters of your own text.",
+      rejectedCta: s.path === "paraphrase" ? "Back to my own words" : "Back to my selections",
+      onRejectedBack: () => this.go(s.path === "paraphrase" ? "paraphrase-input" : "keywords"),
+      unknownState: view,
+
+      /* toolbar */
+      view: view,
+      simulatedUrl: this.surveyUrl(),
+      locationSlug: loc ? loc.slug : "",
+      locationOptions: this.locations().map((l) => ({ k: l.slug, name: l.name })),
+      onLocation: (e) => this.setLocation(e.target.value),
+      visitCode: st.visitCode,
+      tokenOptions: [{ v: "", label: "no token (open)" }].concat(Object.keys(FIXTURES.visitTokens)
+        .filter((k) => FIXTURES.visitTokens[k].tenantSlug === t.slug)
+        .map((k) => ({ v: k, label: k + " · " + FIXTURES.visitTokens[k].status }))),
+      onToken: (e) => this.setVisitCode(e.target.value),
+      onTenant: (e) => this.setTenant(e.target.value),
+      onJump: (e) => this.go(e.target.value),
+      toolbarVisible: st.toolbar && st.toolbarOpen,
+      toolbarHidden: st.toolbar && !st.toolbarOpen,
+      validStates: SURVEY_STATES.map((v) => ({ v, current: v === view, onClick: () => this.go(v) })),
+      tenantOptions: Object.keys(st.store.tenants).map((k) => ({ k, name: st.store.tenants[k].business.name, current: k === t.slug, onClick: () => this.setTenant(k) })),
+      latency: st.latency, failure: st.failure,
+      latencyOptions: Object.keys(LATENCIES), failureOptions: FAILURES,
+      onLatency: (e) => this.setState({ latency: e.target.value }),
+      onFailure: (e) => this.setState({ failure: e.target.value }),
+      onReplay: () => { const c = s.cards[0]; if (c) this.cardAction(c, "regenerate"); else this.go("entry"); },
+      onDismissToolbar: () => this.setState({ toolbarOpen: false }),
+      onShowToolbar: () => this.setState({ toolbarOpen: true }),
+      onReset: () => { this.clearTimers(); this.persist(defaultSession()); this.setState({ session: defaultSession() }); this.go("entry"); }
+    };
+  }
+
+  startPath(path) {
+    const pol = this.policy();
+    const tok = this.state.visitToken;
+    if (path === "generate" && !this.activeKeywords().length) return this.go("not-configured", { path });
+    /* Verification is a fallback, not a step. A valid ?v= already proved the visit;
+       an open-qr venue has no appointment to prove and never reaches it. */
+    const proven = !!(tok && tok.status === "valid") || this.state.session.verified;
+    if (pol.entryMode !== "open-qr" && pol.requireVerifiedExperience && !proven) return this.go("verification", { path, selectedStyleKeys: [] });
+    this.go(path === "paraphrase" ? "paraphrase-input" : "keywords", { path, selectedStyleKeys: [] });
+  }
+  startPath2() {
+    const s = this.state.session;
+    const action = s.path === "paraphrase" ? "paraphrase" : "generate";
+    const jobs = s.selectedStyleKeys.map((k, i) => ({
+      action, styleKey: k, rating: s.rating,
+      assertedKeywordIds: s.assertedKeywordIds, freeText: s.freeText, sourceText: s.sourceText,
+      embellish: action === "generate" && i === 0 && !s.history.length, embellishIndex: 0
+    }));
+    this.startRun(jobs, { replaceAll: true, returnTo: "style" });
+  }
+}
+
+</script>
+</body>
+</html>

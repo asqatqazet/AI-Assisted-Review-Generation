@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+body{margin:0;background:#ffffff;color:var(--text-body,#1f2023);font:400 16px/1.5 "Inter","Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--text-body,#1f2023)}
+a:hover{opacity:.7}
+</style>
+</helmet>
+<div style="max-width:1100px;margin:0 auto;padding:64px 24px 96px">
+
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Prototype catalog</p>
+<h1 style="margin:16px 0 0;font:400 72px/1 var(--font-display);letter-spacing:-1.44px;color:var(--text-heading);max-width:16ch;text-wrap:balance">Assisted review writing</h1>
+<p style="margin:24px 0 0;font:var(--type-body-lg);color:var(--text-muted);max-width:64ch;text-wrap:pretty">These prototypes are the interaction source of truth for the implementation: where a screen here and a specification disagree, the screen is correct.</p>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);max-width:64ch;text-wrap:pretty">The product helps a customer write their own review from facts they supply. It never invents one, it never publishes on their behalf, and an unsupported claim is removed with the removal shown.</p>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:56px">
+<sc-for list="{{ surfaces }}" as="s" hint-placeholder-count="3">
+<a href="{{ s.href }}" style="display:block;border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:24px;text-decoration:none">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ s.eyebrow }}</p>
+<p style="margin:12px 0 0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">{{ s.title }}</p>
+<p style="margin:8px 0 0;font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">{{ s.body }}</p>
+<p style="margin:16px 0 0;font:var(--type-caption);color:var(--text-link)">{{ s.cta }}</p>
+</a>
+</sc-for>
+</div>
+
+<section style="margin-top:80px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Three scopes</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:64ch;text-wrap:pretty">Every configurable thing in this product belongs to exactly one scope, and the console says which one on every field it renders. A tenant operator never sees platform scope; a location inherits its tenant and marks what it overrides.</p>
+<table style="width:100%;border-collapse:collapse;margin-top:24px">
+<thead><tr>
+<th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Scope</th>
+<th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Owner</th>
+<th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">What lives here</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ scopes }}" as="s" hint-placeholder-count="3">
+<tr>
+<td style="padding:11px 12px;border-bottom:1px solid var(--border-card)"><span style="{{ s.badge }}">{{ s.name }}</span></td>
+<td style="padding:11px 12px;border-bottom:1px solid var(--border-card);font:var(--type-caption);color:var(--text-body)">{{ s.owner }}</td>
+<td style="padding:11px 12px;border-bottom:1px solid var(--border-card);font:var(--type-caption);color:var(--text-muted)">{{ s.holds }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<h3 style="margin:40px 0 0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">The link is the entry model</h3>
+<p style="margin:10px 0 0;font:var(--type-body);color:var(--text-muted);max-width:64ch;text-wrap:pretty">A customer never types an address. They arrive from an invitation or a QR code, and that link carries everything the survey knows about who they are.</p>
+<p style="margin:16px 0 0;padding:14px 16px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:14px/1.7 var(--font-mono);color:var(--text-body);word-break:break-all">/s/&lt;tenantSlug&gt;/&lt;locationSlug&gt;?v=&lt;visitToken&gt;&amp;t=&lt;tableRef&gt;</p>
+<ul style="margin:16px 0 0;padding:0;list-style:none;display:grid;gap:8px">
+<sc-for list="{{ linkParts }}" as="p" hint-placeholder-count="4">
+<li style="display:grid;grid-template-columns:160px 1fr;gap:20px">
+<span style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-heading)">{{ p.name }}</span>
+<span style="font:var(--type-caption);color:var(--text-muted)">{{ p.note }}</span>
+</li>
+</sc-for>
+</ul>
+</section>
+
+<section style="margin-top:80px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">The seven actions</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:64ch">One pipeline, different input bindings, different grounding rules. Expansion adds words, not facts.</p>
+<table style="width:100%;border-collapse:collapse;margin-top:24px">
+<thead><tr>
+<th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Action</th>
+<th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Bound input</th>
+<th style="text-align:left;padding:10px 12px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">New claims permitted</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ actions }}" as="a" hint-placeholder-count="7">
+<tr>
+<td style="padding:11px 12px;border-bottom:1px solid var(--border-card);font:var(--type-body);color:var(--text-heading)">{{ a.label }}</td>
+<td style="padding:11px 12px;border-bottom:1px solid var(--border-card);font:var(--type-caption);color:var(--text-muted)">{{ a.input }}</td>
+<td style="padding:11px 12px;border-bottom:1px solid var(--border-card);font:var(--type-caption);color:var(--text-body)">{{ a.rule }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</section>
+
+<section style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Valid deep links</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:64ch">Every state is reachable by <code style="font-family:var(--font-mono)">?state=</code> and by interacting through the flow. Add <code style="font-family:var(--font-mono)">&amp;tenant=speicher-neun</code> for the German tenant, <code style="font-family:var(--font-mono)">&amp;location=</code> for a venue, <code style="font-family:var(--font-mono)">&amp;v=</code> for a visit token, <code style="font-family:var(--font-mono)">&amp;role=</code> for an operator role, <code style="font-family:var(--font-mono)">&amp;toolbar=off</code> to hide the harness, <code style="font-family:var(--font-mono)">&amp;fresh=1</code> to render detached from the shared session.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:24px">
+<div>
+<h3 style="margin:0 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Survey · {{ surveyCount }}</h3>
+<ul style="margin:0;padding:0;list-style:none;display:grid;gap:6px">
+<sc-for list="{{ surveyStates }}" as="s" hint-placeholder-count="20">
+<li><a href="{{ s.href }}" style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-link);text-decoration:none">?state={{ s.name }}</a></li>
+</sc-for>
+</ul>
+</div>
+<div>
+<h3 style="margin:0 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Admin · {{ adminCount }}</h3>
+<ul style="margin:0;padding:0;list-style:none;display:grid;gap:6px">
+<sc-for list="{{ adminStates }}" as="s" hint-placeholder-count="23">
+<li><a href="{{ s.href }}" style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-link);text-decoration:none">?state={{ s.name }}</a></li>
+</sc-for>
+</ul>
+</div>
+</div>
+</section>
+
+<section style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Harness</h2>
+<div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:32px;margin-top:20px">
+<sc-for list="{{ harness }}" as="h" hint-placeholder-count="4">
+<div>
+<p style="margin:0;font:var(--type-caption);color:var(--text-heading)">{{ h.title }}</p>
+<p style="margin:6px 0 0;font:var(--type-caption);color:var(--text-muted);text-wrap:pretty">{{ h.body }}</p>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="margin-top:64px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Files</h2>
+<ul style="margin:20px 0 0;padding:0;list-style:none;display:grid;gap:10px">
+<sc-for list="{{ files }}" as="f" hint-placeholder-count="6">
+<li style="display:grid;grid-template-columns:220px 1fr;gap:24px;padding-bottom:10px;border-bottom:1px solid var(--border-card)">
+<span style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-heading)">{{ f.name }}</span>
+<span style="font:var(--type-caption);color:var(--text-muted)">{{ f.note }}</span>
+</li>
+</sc-for>
+</ul>
+</section>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const SURVEY_STATES = ["entry", "entry-token-used", "verification", "verification-unavailable", "keywords", "paraphrase-input", "style", "generating", "results", "results-grounding-stripped", "refine", "editing", "done", "rate-limited", "budget-exceeded", "provider-error", "grounding-rejected", "invalid-link", "expired", "not-configured"];
+const ADMIN_STATES = ["login", "overview", "platform-tenants", "platform-providers", "platform-styles", "platform-settings", "locations", "distribution", "context", "keywords", "styles", "style-detail", "actions", "settings-tenant", "settings-location", "prompts", "experiments", "bench", "analytics", "generation-detail", "cross-tenant-404", "budget-warning", "provider-degraded"];
+const SCOPE_BADGE = (scope) => "display:inline-block;padding:3px 9px;border-radius:var(--radius-xl);font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;border:1px solid " +
+  (scope === "platform" ? "var(--ink-900);color:var(--text-heading)" : scope === "location" ? "var(--marigold-soft);color:var(--text-taxonomy)" : "var(--border-rule);color:var(--text-body)");
+const ACTIONS = [
+  ["Generate", "Asserted keywords plus optional free text", "Only claims tracing to an asserted keyword or the free text"],
+  ["Paraphrase", "The customer's own written text", "Only claims present in the customer's text"],
+  ["Regenerate", "Identical inputs, new sample", "Same rule as the originating action"],
+  ["Restyle", "An existing draft plus a different style", "None — claims must be a subset of the source draft"],
+  ["Condense", "An existing draft plus a lower target length", "None — subset only"],
+  ["Expand", "An existing draft plus a higher target length", "None — expansion adds words, not facts"],
+  ["Refine", "An existing draft plus a free-text instruction", "Only claims tracing to the instruction, which is itself recorded as a newly asserted fact"]
+];
+
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      surfaces: [
+        { eyebrow: "End user", title: "Survey", body: "The customer flow, mobile-first: rating, entry paths, drafting, grounding, copy.", cta: "Open the survey →", href: "Survey.dc.html" },
+        { eyebrow: "Operator", title: "Admin", body: "The console: context, keywords, styles, actions, prompts, experiments, bench, analytics.", cta: "Open the console →", href: "Admin.dc.html" },
+        { eyebrow: "Reference", title: "Gallery", body: "Every state of both surfaces, live, labelled, each linking to its deep link.", cta: "Open the gallery →", href: "Gallery.dc.html" }
+      ],
+      actions: ACTIONS.map(([label, input, rule]) => ({ label, input, rule })),
+      scopes: [
+        { name: "Platform", badge: SCOPE_BADGE("platform"), owner: "Us, the vendor", holds: "Provider registry and credentials, the versioned price table, the built-in style catalogue, the default policy template, tenant provisioning, global rate limits, feature flags." },
+        { name: "Tenant", badge: SCOPE_BADGE("tenant"), owner: "The business account", holds: "Identity, locale, tone, banned terms, keyword categories, enabled styles and actions, disclosure and verification policy, drafts per session, budget, prompt versions, experiments." },
+        { name: "Location", badge: SCOPE_BADGE("location"), owner: "One physical venue", holds: "Venue name and address, platform destinations and their ids, location keywords, entry mode, distribution links and QR, per-venue analytics. Inherits the tenant; overrides are marked." }
+      ],
+      linkParts: [
+        { name: "tenantSlug", note: "Resolves tenant configuration. Required." },
+        { name: "locationSlug", note: "Resolves destinations, location keywords and the analytics scope. Required." },
+        { name: "v", note: "Visit token. Required only where the tenant requires a verified experience; single use." },
+        { name: "t", note: "Free reference — table, chair, order. Display only, never used for anything else." }
+      ],
+      surveyStates: SURVEY_STATES.map((name) => ({ name, href: "Survey.dc.html?state=" + name })),
+      adminStates: ADMIN_STATES.map((name) => ({ name, href: "Admin.dc.html?state=" + name })),
+      surveyCount: SURVEY_STATES.length + " states",
+      adminCount: ADMIN_STATES.length + " views",
+      harness: [
+        { title: "Scope", body: "Tenant, location and visit token in the survey; tenant, location and operator role in the console. All three travel in the URL, and the survey shows the link it is simulating." },
+        { title: "Role", body: "platform_admin, agency_operator or tenant_operator. Switching one changes the console navigation: a tenant operator has no platform screens and no tenant switcher." },
+        { title: "Latency and failure", body: "instant, 800ms, 3s or 12s; none, provider-error, rate-limited, budget-exceeded or grounding-rejected — each routes the next run to that state." },
+        { title: "Replay and reset", body: "Replay re-runs the last draft with the current settings. Reset clears the session; the admin harness can reset the shared store to fixtures." }
+      ],
+      files: [
+        { name: "Survey.dc.html", note: "End-user flow. Fixtures, state machine, streaming and grounding in one file." },
+        { name: "Admin.dc.html", note: "Operator console. The same fixture block and state machine, duplicated deliberately." },
+        { name: "Gallery.dc.html", note: "Every state of both surfaces, embedded live from its own deep link." },
+        { name: "Index.dc.html", note: "This catalog." },
+        { name: "DECISIONS.md", note: "Every ambiguity in the brief, resolved, one line each." },
+        { name: "README.md", note: "What these are, how to run them, and what they are authoritative about." }
+      ]
+    };
+  }
+}
+
+</script>
+</body>
+</html>

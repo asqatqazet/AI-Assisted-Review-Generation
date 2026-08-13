@@ -1,0 +1,2331 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+body{margin:0;background:#ffffff;color:var(--text-body,#1f2023);font:400 14px/1.5 "Inter","Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--text-body,#1f2023)}
+a:hover{opacity:.7}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--ring-focus,#4c6ee6);outline-offset:2px}
+textarea,input,select,button{font-family:inherit}
+</style>
+</helmet>
+
+<sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+<!-- No tenant selector. Tenant binding happens server-side at authentication and is
+     never accepted from client input. -->
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--surface-page)">
+<div style="width:100%;max-width:380px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Review assistant</p>
+<h1 style="margin:12px 0 0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Operator console</h1>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted)">Sign in with your operator account. Your workspace is decided by your credentials.</p>
+<label for="op-email" style="display:block;margin:28px 0 6px;font:var(--type-caption);color:var(--text-body)">Email</label>
+<input id="op-email" type="email" value="{{ email }}" onChange="{{ onEmail }}" placeholder="you@practice.co.uk" style="width:100%;padding:11px 13px;font:var(--type-body);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body)" />
+<label for="op-pass" style="display:block;margin:16px 0 6px;font:var(--type-caption);color:var(--text-body)">Password</label>
+<input id="op-pass" type="password" value="{{ password }}" onChange="{{ onPassword }}" style="width:100%;padding:11px 13px;font:var(--type-body);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body)" />
+<div style="margin-top:20px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onLogin }}" full-width="{{ true }}" hint-size="100%,44px">Sign in</x-import></div>
+<p style="margin:14px 0 0;font:var(--type-micro);color:var(--text-meta)">Any credentials sign in to the prototype.</p>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isConsole }}" hint-placeholder-val="{{ false }}">
+<div style="min-height:100vh;background:var(--surface-page)">
+
+<!-- SCOPE BAR. Platform › Tenant › Location, always populated, always the way
+     context changes. Every screen below reads from what is selected here. -->
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--border-card)">
+<span style="font:400 18px/1 var(--font-display);letter-spacing:-0.5px;color:var(--maue-black);margin-right:6px">Maue</span>
+
+<span style="{{ badgePlatform }}">Platform</span>
+<sc-if value="{{ canPlatform }}" hint-placeholder-val="{{ true }}">
+<button type="button" onClick="{{ onPlatformScope }}" style="background:transparent;border:0;padding:0;font:var(--type-caption);color:var(--text-link);cursor:pointer">All tenants</button>
+</sc-if>
+<sc-if value="{{ noPlatform }}" hint-placeholder-val="{{ false }}">
+<span style="font:var(--type-caption);color:var(--text-meta)" title="Platform scope is not visible to this role">Not your scope</span>
+</sc-if>
+
+<span aria-hidden="true" style="color:var(--text-meta)">›</span>
+<span style="{{ badgeTenant }}">Tenant</span>
+<sc-if value="{{ canSwitchTenant }}" hint-placeholder-val="{{ true }}">
+<select value="{{ tenantSlug }}" onChange="{{ onTenant }}" aria-label="Tenant" style="padding:6px 8px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body)">
+<sc-for list="{{ tenantOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.k }}">{{ o.name }}</option></sc-for>
+</select>
+</sc-if>
+<sc-if value="{{ fixedTenant }}" hint-placeholder-val="{{ false }}">
+<span style="font:var(--type-caption);color:var(--text-body)">{{ tenantName }}</span>
+</sc-if>
+<span style="font:var(--type-micro);font-family:var(--font-mono);color:var(--text-meta)">{{ tenantScopeNote }}</span>
+
+<span aria-hidden="true" style="color:var(--text-meta)">›</span>
+<span style="{{ badgeLocation }}">Location</span>
+<select value="{{ locationSlug }}" onChange="{{ onLocation }}" aria-label="Location" style="padding:6px 8px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body)">
+<sc-for list="{{ locationOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.k }}">{{ o.name }}</option></sc-for>
+</select>
+<span style="font:var(--type-micro);font-family:var(--font-mono);color:var(--text-meta)">{{ locationScopeNote }}</span>
+
+<span style="margin-left:auto;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ operatorLabel }}</span>
+</div>
+
+<div style="display:flex;min-height:calc(100vh - 53px)">
+
+<nav aria-label="Console" style="width:224px;flex:none;border-right:1px solid var(--border-card);padding:20px 0 96px">
+<div style="padding:0 20px 20px">
+<p style="margin:0;font:var(--type-caption);color:var(--text-heading)">{{ tenantName }}</p>
+<p style="margin:6px 0 0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ roleLabel }}</p>
+</div>
+<sc-for list="{{ navGroups }}" as="g" hint-placeholder-count="3">
+<div style="padding:12px 20px 4px">
+<p style="margin:0 0 6px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-meta)">{{ g.label }}</p>
+<sc-for list="{{ g.items }}" as="i" hint-placeholder-count="4">
+<button type="button" onClick="{{ i.onClick }}" style="{{ i.style }}">{{ i.label }}</button>
+</sc-for>
+</div>
+</sc-for>
+<div style="padding:20px">
+<a href="Survey.dc.html" target="_blank" rel="noopener" style="font:var(--type-caption);color:var(--text-link)">Open the survey →</a>
+</div>
+</nav>
+
+<main style="flex:1;min-width:0;padding:28px 32px 96px">
+
+<sc-if value="{{ showBudgetBanner }}" hint-placeholder-val="{{ false }}">
+<div style="margin-bottom:20px;padding:14px 16px;border:1px solid var(--marigold-soft);background:var(--surface-wash-sand);border-radius:var(--radius-xs)">
+<p style="margin:0;font:var(--type-caption);color:var(--text-heading)">{{ budgetBannerText }}</p>
+</div>
+</sc-if>
+<sc-if value="{{ showProviderBanner }}" hint-placeholder-val="{{ false }}">
+<div style="margin-bottom:20px;padding:14px 16px;border:1px solid var(--hairline);background:var(--surface-wash-lilac);border-radius:var(--radius-xs)">
+<p style="margin:0;font:var(--type-caption);color:var(--text-heading)">{{ providerBannerText }}</p>
+</div>
+</sc-if>
+
+<header style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:16px;border-bottom:1px solid var(--border-rule)">
+<div>
+<p style="margin:0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ viewEyebrow }}</p>
+<h1 style="margin:8px 0 0;font:400 28px/1.1 var(--font-display);letter-spacing:-0.84px;color:var(--text-heading)">{{ viewTitle }}</h1>
+</div>
+<p style="margin:0;font:var(--type-micro);font-family:var(--font-mono);color:var(--text-meta);text-align:right">{{ viewMeta }}</p>
+</header>
+<p aria-live="polite" style="margin:12px 0 0;font:var(--type-caption);color:var(--text-taxonomy);min-height:20px">{{ toast }}</p>
+
+<sc-if value="{{ isOverview }}" hint-placeholder-val="{{ false }}">
+<div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">
+<label for="ov-scope" style="font:var(--type-caption);color:var(--text-body)">Scope</label>
+<select id="ov-scope" value="{{ scope }}" onChange="{{ onScope }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ scopeOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<p style="margin:0;font:var(--type-micro);color:var(--text-meta)">{{ scopeNote }}</p>
+</div>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-top:20px;background:var(--border-rule);border:1px solid var(--border-rule)">
+<sc-for list="{{ tiles }}" as="t" hint-placeholder-count="3">
+<div style="background:var(--surface-card);padding:20px">
+<p style="margin:0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ t.label }}</p>
+<p style="margin:10px 0 0;font:400 32px/1 var(--font-display);letter-spacing:-0.64px;color:var(--text-heading)">{{ t.value }}</p>
+<p style="margin:8px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ t.note }}</p>
+</div>
+</sc-for>
+</div>
+
+<div style="margin-top:28px;display:grid;grid-template-columns:1.4fr 1fr;gap:28px">
+<section>
+<h2 style="margin:0 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ breakdownTitle }}</h2>
+<table style="width:100%;border-collapse:collapse">
+<thead><tr>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">{{ breakdownKeyLabel }}</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Runs</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Acceptance</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Cost</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Per accepted</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ breakdownRows }}" as="r" hint-placeholder-count="2">
+<tr>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card)">{{ r.label }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.n }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.acceptance }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.cost }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.perAccepted }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<h2 style="margin:28px 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Cost by action</h2>
+<table style="width:100%;border-collapse:collapse">
+<thead><tr>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Action</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Runs</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Cost</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Per accepted</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ actionBreakdown }}" as="r" hint-placeholder-count="4">
+<tr>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card)">{{ r.label }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.n }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.cost }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:13px">{{ r.perAccepted }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</section>
+<section>
+<h2 style="margin:0 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Experiment</h2>
+<p style="margin:0;font:var(--type-body);color:var(--text-heading)">{{ experimentSummary }}</p>
+<sc-for list="{{ experimentVariants }}" as="v" hint-placeholder-count="2">
+<p style="margin:8px 0 0;font:var(--type-caption);color:var(--text-muted);font-family:var(--font-mono)">{{ v.line }}</p>
+</sc-for>
+<h2 style="margin:24px 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Providers</h2>
+<sc-for list="{{ providerStatus }}" as="p" hint-placeholder-count="2">
+<p style="margin:6px 0 0;font:var(--type-caption);color:var(--text-body)"><span aria-hidden="true" style="{{ p.dot }}"></span>{{ p.line }}</p>
+</sc-for>
+</section>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isContext }}" hint-placeholder-val="{{ false }}">
+<div style="max-width:720px">
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted)">Saving publishes a new immutable context snapshot. Drafts already written keep the version they were written against.</p>
+<div style="display:grid;gap:16px;margin-top:20px">
+<sc-for list="{{ contextFields }}" as="f" hint-placeholder-count="5">
+<div>
+<label for="{{ f.id }}" style="display:block;margin-bottom:6px;font:var(--type-caption);color:var(--text-body)">{{ f.label }}</label>
+<textarea id="{{ f.id }}" rows="{{ f.rows }}" value="{{ f.value }}" onChange="{{ f.onChange }}" style="width:100%;padding:10px 12px;font:var(--type-body);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body);resize:vertical"></textarea>
+<p style="margin:6px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ f.help }}</p>
+</div>
+</sc-for>
+</div>
+<div style="display:flex;align-items:center;gap:20px;margin-top:24px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onSaveContext }}" hint-size="180px,44px">Publish new version</x-import>
+<p style="margin:0;font:var(--type-caption);font-family:var(--font-mono);color:var(--text-meta)">{{ contextVersionLabel }}</p>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isKeywords }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">Tenant keywords are offered at every venue. Location additions are offered only at {{ locationName }}. Both are the same table with a different owner.</p>
+<table style="width:100%;border-collapse:collapse;margin-top:20px">
+<thead><tr>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Scope</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary);width:36%">Label</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Category</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Polarity</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Active</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Order</th>
+<th style="padding:8px 10px;border-bottom:1px solid var(--border-rule)"></th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ keywordRows }}" as="k" hint-placeholder-count="7">
+<tr>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card)"><span style="{{ k.badgeStyle }}">{{ k.scope }}</span></td>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card);width:36%"><input type="text" value="{{ k.label }}" onChange="{{ k.onLabel }}" aria-label="Keyword label" style="width:100%;min-width:200px;padding:7px 9px;font:var(--type-caption);border:1px solid var(--border-card);border-radius:var(--radius-xs);background:transparent;color:var(--text-body)" /></td>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card)"><select value="{{ k.category }}" onChange="{{ k.onCategory }}" aria-label="Category" style="padding:7px 8px;font:var(--type-caption);border:1px solid var(--border-card);border-radius:var(--radius-xs);background:transparent"><sc-for list="{{ categoryOptions }}" as="c" hint-placeholder-count="5"><option value="{{ c }}">{{ c }}</option></sc-for></select></td>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card)"><select value="{{ k.polarity }}" onChange="{{ k.onPolarity }}" aria-label="Polarity" style="padding:7px 8px;font:var(--type-caption);border:1px solid var(--border-card);border-radius:var(--radius-xs);background:transparent"><sc-for list="{{ polarityOptions }}" as="p" hint-placeholder-count="3"><option value="{{ p }}">{{ p }}</option></sc-for></select></td>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card)"><input type="checkbox" checked="{{ k.isActive }}" onChange="{{ k.onActive }}" aria-label="Active" style="width:18px;height:18px" /></td>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ k.sortOrder }}</td>
+<td style="padding:6px 10px;border-bottom:1px solid var(--border-card);text-align:right;white-space:nowrap">
+<button type="button" onClick="{{ k.onUp }}" aria-label="Move up" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 9px;cursor:pointer">↑</button>
+<button type="button" onClick="{{ k.onDown }}" aria-label="Move down" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 9px;cursor:pointer;margin-left:4px">↓</button>
+<button type="button" onClick="{{ k.onDelete }}" aria-label="Delete" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 9px;cursor:pointer;margin-left:4px;color:var(--text-error)">×</button>
+</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<label for="new-kw" style="font:var(--type-caption);color:var(--text-body)">New keyword</label>
+<input id="new-kw" type="text" value="{{ newKeyword }}" onChange="{{ onNewKeyword }}" placeholder="The nurse talked me through the X-ray" style="flex:1;min-width:280px;padding:9px 11px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body)" />
+<select value="{{ newKeywordCategory }}" onChange="{{ onNewKeywordCategory }}" aria-label="New keyword category" style="padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ categoryOptions }}" as="c" hint-placeholder-count="5"><option value="{{ c }}">{{ c }}</option></sc-for></select>
+<select value="{{ newKeywordPolarity }}" onChange="{{ onNewKeywordPolarity }}" aria-label="New keyword polarity" style="padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ polarityOptions }}" as="p" hint-placeholder-count="3"><option value="{{ p }}">{{ p }}</option></sc-for></select>
+<select value="{{ newKeywordScope }}" onChange="{{ onNewKeywordScope }}" aria-label="New keyword scope" style="padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ keywordScopeOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onAddKeyword }}" disabled="{{ addKeywordDisabled }}" hint-size="90px,38px">Add</x-import>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isStyles }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted)">Enablement is per tenant. Supported actions are per style — a style that does not support an action never offers it in the survey.</p>
+<div style="display:grid;gap:12px;margin-top:20px">
+<sc-for list="{{ styleRows }}" as="s" hint-placeholder-count="3">
+<div style="border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:16px 18px">
+<div style="display:flex;align-items:center;gap:16px">
+<label style="display:flex;align-items:center;gap:8px;font:var(--type-body);color:var(--text-heading)"><input type="checkbox" checked="{{ s.enabled }}" onChange="{{ s.onEnable }}" disabled="{{ s.blocked }}" style="width:18px;height:18px" />{{ s.displayName }}</label>
+<span style="font-family:var(--font-mono);font-size:11px;color:var(--text-meta)">{{ s.meta }}</span>
+<span style="font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:{{ s.localeColor }}">{{ s.localeNote }}</span>
+<span style="margin-left:auto;display:flex;gap:4px">
+<button type="button" onClick="{{ s.onUp }}" aria-label="Move up" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 9px;cursor:pointer">↑</button>
+<button type="button" onClick="{{ s.onDown }}" aria-label="Move down" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 9px;cursor:pointer">↓</button>
+<button type="button" onClick="{{ s.onDetail }}" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 10px;cursor:pointer;font:var(--type-caption)">Manifest</button>
+</span>
+</div>
+<p style="margin:10px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ s.description }}</p>
+<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+<sc-for list="{{ s.actionToggles }}" as="a" hint-placeholder-count="7">
+<label style="{{ a.style }}"><input type="checkbox" checked="{{ a.on }}" onChange="{{ a.onToggle }}" style="width:14px;height:14px" />{{ a.label }}</label>
+</sc-for>
+</div>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isStyleDetail }}" hint-placeholder-val="{{ false }}">
+<div style="max-width:820px">
+<div style="display:flex;align-items:center;gap:12px;margin-top:20px">
+<label for="sd-pick" style="font:var(--type-caption);color:var(--text-body)">Style</label>
+<select id="sd-pick" value="{{ styleDetailKey }}" onChange="{{ onStyleDetailPick }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ styleKeyOptions }}" as="k" hint-placeholder-count="3"><option value="{{ k }}">{{ k }}</option></sc-for></select>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onValidateStyle }}" hint-size="120px,38px">Validate</x-import>
+</div>
+<pre style="margin:20px 0 0;padding:16px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:12px/1.6 var(--font-mono);color:var(--text-body);overflow:auto;white-space:pre-wrap">{{ styleManifestJson }}</pre>
+<h2 style="margin:24px 0 8px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Validation</h2>
+<ul aria-live="polite" style="margin:0;padding:0;list-style:none;display:grid;gap:6px">
+<sc-for list="{{ styleValidation }}" as="v" hint-placeholder-count="6">
+<li style="font:var(--type-caption);font-family:var(--font-mono);color:{{ v.color }}">{{ v.line }}</li>
+</sc-for>
+</ul>
+</div>
+</sc-if>
+
+<sc-if value="{{ isActions }}" hint-placeholder-val="{{ false }}">
+<div style="max-width:900px">
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted)">The action set is configuration, not a feature list. Switching one off removes it from the survey's entry paths and from every draft's action bar.</p>
+<div style="display:grid;gap:1px;margin-top:20px;background:var(--border-rule);border:1px solid var(--border-rule)">
+<sc-for list="{{ actionRows }}" as="a" hint-placeholder-count="7">
+<div style="background:var(--surface-card);padding:16px 18px;display:grid;grid-template-columns:200px 1fr 90px;gap:20px;align-items:start">
+<label style="display:flex;align-items:center;gap:10px;font:var(--type-body);color:var(--text-heading)"><input type="checkbox" checked="{{ a.on }}" onChange="{{ a.onToggle }}" style="width:18px;height:18px" />{{ a.label }}</label>
+<div>
+<p style="margin:0;font:var(--type-caption);color:var(--text-body)">{{ a.groundingRule }}</p>
+<p style="margin:6px 0 0;font:var(--type-micro);color:var(--text-meta)">Input: {{ a.input }}</p>
+</div>
+<p style="margin:0;font-family:var(--font-mono);font-size:12px;color:var(--text-meta);text-align:right">{{ a.costWeight }}</p>
+</div>
+</sc-for>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPrompts }}" hint-placeholder-val="{{ false }}">
+<div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">
+<label for="pf" style="font:var(--type-caption);color:var(--text-body)">Filter by action</label>
+<select id="pf" value="{{ promptFilter }}" onChange="{{ onPromptFilter }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ promptFilterOptions }}" as="o" hint-placeholder-count="8"><option value="{{ o }}">{{ o }}</option></sc-for></select>
+<p style="margin:0;font:var(--type-micro);color:var(--text-meta)">Select two rows to compare. Editing a body never mutates a version — it creates a new hash.</p>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-top:16px">
+<thead><tr>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Compare</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Hash</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Action</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Created</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Status</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Eval</th>
+<th style="padding:8px 10px;border-bottom:1px solid var(--border-rule)"></th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ promptRows }}" as="p" hint-placeholder-count="8">
+<tr>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card)"><input type="checkbox" checked="{{ p.picked }}" onChange="{{ p.onPick }}" aria-label="Compare this version" style="width:16px;height:16px" /></td>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ p.hash }}</td>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card)">{{ p.action }}</td>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ p.createdAt }}</td>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card)"><span style="{{ p.statusStyle }}">{{ p.status }}</span></td>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ p.evalScore }}</td>
+<td style="padding:8px 10px;border-bottom:1px solid var(--border-card);text-align:right"><button type="button" onClick="{{ p.onEdit }}" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:5px 10px;cursor:pointer;font:var(--type-caption)">Edit</button></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+
+<sc-if value="{{ promptEditing }}" hint-placeholder-val="{{ false }}">
+<section style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">Editing {{ promptEditHash }}</h2>
+<p style="margin:8px 0 12px;font:var(--type-caption);color:var(--text-muted)">Saving writes a new version with a new hash, at status draft. {{ promptEditHash }} is unchanged and stays addressable.</p>
+<textarea id="prompt-body" rows="6" value="{{ promptEditBody }}" onChange="{{ onPromptBody }}" aria-label="Prompt body" style="width:100%;padding:12px;font:13px/1.6 var(--font-mono);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body);resize:vertical"></textarea>
+<div style="display:flex;gap:16px;align-items:center;margin-top:12px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onSavePrompt }}" hint-size="160px,38px">Save as new version</x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ onCancelPrompt }}" hint-size="80px,36px">Cancel</x-import>
+</div>
+</section>
+</sc-if>
+
+<sc-if value="{{ promptComparing }}" hint-placeholder-val="{{ false }}">
+<section style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0 0 12px;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">Comparison</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+<sc-for list="{{ promptCompare }}" as="p" hint-placeholder-count="2">
+<div style="border:1px solid var(--border-rule);border-radius:var(--radius-xs);padding:16px">
+<p style="margin:0;font-family:var(--font-mono);font-size:12px;color:var(--text-heading)">{{ p.hash }} · {{ p.status }} · eval {{ p.evalScore }}</p>
+<p style="margin:10px 0 0;font:var(--type-caption);color:var(--text-body);white-space:pre-wrap">{{ p.body }}</p>
+</div>
+</sc-for>
+</div>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isExperiments }}" hint-placeholder-val="{{ false }}">
+<div style="max-width:900px">
+<section style="margin-top:20px;border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:20px">
+<div style="display:flex;align-items:center;justify-content:space-between;gap:16px">
+<div>
+<p style="margin:0;font:var(--type-body);color:var(--text-heading)">{{ expKey }}</p>
+<p style="margin:6px 0 0;font:var(--type-caption);color:var(--text-muted)">{{ expSummary }}</p>
+</div>
+<div style="display:flex;gap:12px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onToggleExperiment }}" hint-size="110px,38px">{{ expToggleLabel }}</x-import></div>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-top:16px">
+<thead><tr>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Variant</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Prompt</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Weight</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">n</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Acceptance</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ expRows }}" as="v" hint-placeholder-count="2">
+<tr>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card)">{{ v.key }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ v.promptVersionHash }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ v.weight }}%</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ v.n }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ v.acceptance }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<p style="margin:12px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ expLockNote }}</p>
+</section>
+
+<section style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0 0 12px;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">New experiment</h2>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end">
+<div><label for="ne-action" style="display:block;margin-bottom:6px;font:var(--type-caption)">Action</label><select id="ne-action" value="{{ newExpAction }}" onChange="{{ onNewExpAction }}" style="width:100%;padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ actionKeyOptions }}" as="a" hint-placeholder-count="7"><option value="{{ a }}">{{ a }}</option></sc-for></select></div>
+<div><label for="ne-a" style="display:block;margin-bottom:6px;font:var(--type-caption)">Variant A</label><select id="ne-a" value="{{ newExpA }}" onChange="{{ onNewExpA }}" style="width:100%;padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ newExpPromptOptions }}" as="p" hint-placeholder-count="3"><option value="{{ p }}">{{ p }}</option></sc-for></select></div>
+<div><label for="ne-b" style="display:block;margin-bottom:6px;font:var(--type-caption)">Variant B</label><select id="ne-b" value="{{ newExpB }}" onChange="{{ onNewExpB }}" style="width:100%;padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ newExpPromptOptions }}" as="p" hint-placeholder-count="3"><option value="{{ p }}">{{ p }}</option></sc-for></select></div>
+<div><label for="ne-w" style="display:block;margin-bottom:6px;font:var(--type-caption)">Weight A ({{ newExpWeightLabel }})</label><input id="ne-w" type="range" min="10" max="90" step="10" value="{{ newExpWeight }}" onChange="{{ onNewExpWeight }}" style="width:100%" /></div>
+</div>
+<div style="display:flex;align-items:center;gap:16px;margin-top:16px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onCreateExperiment }}" disabled="{{ createExpDisabled }}" hint-size="150px,38px">Create experiment</x-import>
+<p style="margin:0;font:var(--type-micro);color:var(--text-meta)">{{ createExpNote }}</p>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isBench }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted)">Bench runs are excluded from analytics, experiments and billing. Nothing here reaches a customer.</p>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:20px">
+<sc-for list="{{ benchSelects }}" as="b" hint-placeholder-count="5">
+<div>
+<label for="{{ b.id }}" style="display:block;margin-bottom:6px;font:var(--type-caption);color:var(--text-body)">{{ b.label }}</label>
+<select id="{{ b.id }}" value="{{ b.value }}" onChange="{{ b.onChange }}" disabled="{{ b.disabled }}" style="width:100%;padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card)">
+<sc-for list="{{ b.options }}" as="o" hint-placeholder-count="4"><option value="{{ o.v }}">{{ o.label }}</option></sc-for>
+</select>
+<p style="margin:6px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ b.note }}</p>
+</div>
+</sc-for>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px">
+<div>
+<p style="margin:0 0 8px;font:var(--type-caption);color:var(--text-body)">Asserted keywords</p>
+<div style="display:flex;flex-wrap:wrap;gap:6px">
+<sc-for list="{{ benchKeywords }}" as="k" hint-placeholder-count="6">
+<label style="{{ k.style }}"><input type="checkbox" checked="{{ k.on }}" onChange="{{ k.onToggle }}" style="width:14px;height:14px" />{{ k.label }}</label>
+</sc-for>
+</div>
+<label for="bench-free" style="display:block;margin:16px 0 6px;font:var(--type-caption);color:var(--text-body)">Free text</label>
+<input id="bench-free" type="text" value="{{ benchFreeText }}" onChange="{{ onBenchFreeText }}" style="width:100%;padding:9px 11px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body)" />
+</div>
+<div>
+<label for="bench-source" style="display:block;margin-bottom:6px;font:var(--type-caption);color:var(--text-body)">Source text {{ benchSourceNote }}</label>
+<textarea id="bench-source" rows="6" value="{{ benchSourceText }}" onChange="{{ onBenchSourceText }}" disabled="{{ benchSourceDisabled }}" style="width:100%;padding:10px 12px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body);resize:vertical"></textarea>
+</div>
+</div>
+
+<div style="display:flex;align-items:center;gap:16px;margin-top:16px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" onClick="{{ onRunBench }}" disabled="{{ benchRunDisabled }}" hint-size="120px,44px">Run</x-import>
+<p style="margin:0;font:var(--type-micro);color:var(--text-meta)">{{ benchRunNote }}</p>
+</div>
+
+<sc-if value="{{ benchHasResult }}" hint-placeholder-val="{{ false }}">
+<section aria-live="polite" style="margin-top:24px;border-top:1px solid var(--border-rule);padding-top:20px">
+<div style="display:grid;grid-template-columns:1.2fr 1fr;gap:24px">
+<div>
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Draft</h2>
+<p style="margin:0;padding:16px;background:var(--surface-wash-sand);border-radius:var(--radius-xs);font:var(--type-body);color:var(--text-body);white-space:pre-wrap">{{ benchDraft }}</p>
+<h2 style="margin:20px 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">claims[]</h2>
+<pre style="margin:0;padding:16px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:12px/1.6 var(--font-mono);overflow:auto;white-space:pre-wrap">{{ benchClaimsJson }}</pre>
+<sc-if value="{{ benchHasRemoved }}" hint-placeholder-val="{{ false }}">
+<div>
+<h2 style="margin:20px 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-taxonomy)">removedClaims[]</h2>
+<pre style="margin:0;padding:16px;border:1px solid var(--marigold-soft);border-radius:var(--radius-xs);font:12px/1.6 var(--font-mono);overflow:auto;white-space:pre-wrap">{{ benchRemovedJson }}</pre>
+</div>
+</sc-if>
+</div>
+<div>
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Record</h2>
+<sc-for list="{{ benchFacts }}" as="f" hint-placeholder-count="8">
+<div style="display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid var(--border-card)">
+<span style="font:var(--type-caption);color:var(--text-meta)">{{ f.k }}</span>
+<span style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-body);text-align:right">{{ f.v }}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</section>
+</sc-if>
+</div>
+</sc-if>
+
+<sc-if value="{{ isAnalytics }}" hint-placeholder-val="{{ false }}">
+<div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">
+<label for="an-scope" style="font:var(--type-caption);color:var(--text-body)">Scope</label>
+<select id="an-scope" value="{{ scope }}" onChange="{{ onScope }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ scopeOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+<label for="range" style="font:var(--type-caption);color:var(--text-body)">Range</label>
+<select id="range" value="{{ range }}" onChange="{{ onRange }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ rangeOptions }}" as="r" hint-placeholder-count="3"><option value="{{ r }}">{{ r }}</option></sc-for></select>
+<p style="margin:0;font:var(--type-micro);color:var(--text-meta)">Rows are location × action × style × variant. Bench runs are excluded.</p>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-top:16px">
+<thead><tr>
+<sc-for list="{{ analyticsColumns }}" as="c" hint-placeholder-count="9">
+<th style="{{ c.style }}"><button type="button" onClick="{{ c.onSort }}" style="background:transparent;border:0;padding:0;font:inherit;color:inherit;cursor:pointer;text-transform:inherit;letter-spacing:inherit">{{ c.label }}</button></th>
+</sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ analyticsRows }}" as="r" hint-placeholder-count="9">
+<tr>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);font-size:13px">{{ r.where }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card)">{{ r.action }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card)">{{ r.styleKey }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.variantKey }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.n }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.acceptanceRate }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.avgEditDistance }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.p50Ms }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.p95Ms }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.totalCost }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.costPerAccepted }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</sc-if>
+
+<sc-if value="{{ isGenerationDetail }}" hint-placeholder-val="{{ false }}">
+<!-- This view exists because every generation must be reproducible from its id alone. -->
+<div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:20px">
+<label for="gen-pick" style="font:var(--type-caption);color:var(--text-body)">Generation</label>
+<select id="gen-pick" value="{{ generationId }}" onChange="{{ onGenerationPick }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ generationOptions }}" as="g" hint-placeholder-count="5"><option value="{{ g.v }}">{{ g.label }}</option></sc-for></select>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onReplayOnBench }}" hint-size="140px,38px">Replay on bench</x-import>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-top:20px">
+<div>
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Reproduction</h2>
+<sc-for list="{{ generationFacts }}" as="f" hint-placeholder-count="16">
+<div style="display:flex;justify-content:space-between;gap:16px;padding:7px 0;border-bottom:1px solid var(--border-card)">
+<span style="font:var(--type-caption);color:var(--text-meta)">{{ f.k }}</span>
+<span style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-body);text-align:right;word-break:break-word">{{ f.v }}</span>
+</div>
+</sc-for>
+</div>
+<div>
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Raw output</h2>
+<p style="margin:0;padding:14px;background:var(--surface-wash-sand);border-radius:var(--radius-xs);font:var(--type-caption);white-space:pre-wrap">{{ generationDraft }}</p>
+<h2 style="margin:20px 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">claims[]</h2>
+<pre style="margin:0;padding:14px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:12px/1.6 var(--font-mono);overflow:auto;white-space:pre-wrap">{{ generationClaimsJson }}</pre>
+<sc-if value="{{ generationHasRemoved }}" hint-placeholder-val="{{ false }}">
+<div>
+<h2 style="margin:20px 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-taxonomy)">removedClaims[]</h2>
+<pre style="margin:0;padding:14px;border:1px solid var(--marigold-soft);border-radius:var(--radius-xs);font:12px/1.6 var(--font-mono);overflow:auto;white-space:pre-wrap">{{ generationRemovedJson }}</pre>
+</div>
+</sc-if>
+<h2 style="margin:20px 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Lineage</h2>
+<sc-for list="{{ lineage }}" as="l" hint-placeholder-count="1">
+<div style="padding:8px 0;border-bottom:1px solid var(--border-card)">
+<p style="margin:0;font:var(--type-caption);font-family:var(--font-mono);color:var(--text-body)">{{ l.line }}</p>
+<p style="margin:4px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ l.note }}</p>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+<!-- One field renderer, three scopes. The badge is not decoration: it is the
+     blast radius of the change the operator is about to make. -->
+<div style="max-width:820px">
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">{{ settingsLead }}</p>
+<div style="display:grid;gap:1px;margin-top:20px;background:var(--border-rule);border:1px solid var(--border-rule)">
+<sc-for list="{{ settingRows }}" as="s" hint-placeholder-count="6">
+<div style="background:var(--surface-card);padding:16px 18px;display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:center">
+<div>
+<div style="display:flex;align-items:center;gap:10px">
+<span style="{{ s.badgeStyle }}">{{ s.scope }}</span>
+<p style="margin:0;font:var(--type-body);color:var(--text-heading)">{{ s.label }}</p>
+</div>
+<p style="margin:6px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ s.note }}</p>
+<p style="margin:6px 0 0;font:var(--type-micro);font-family:var(--font-mono);color:{{ s.inheritColor }}">{{ s.inheritLabel }}</p>
+</div>
+<div style="display:flex;align-items:center;justify-content:flex-end;gap:12px">
+<sc-if value="{{ s.isToggle }}" hint-placeholder-val="{{ true }}">
+<label style="display:inline-flex;align-items:center;gap:8px;font:var(--type-caption)"><input type="checkbox" checked="{{ s.on }}" onChange="{{ s.onToggle }}" style="width:18px;height:18px" />{{ s.stateLabel }}</label>
+</sc-if>
+<sc-if value="{{ s.isNumber }}" hint-placeholder-val="{{ false }}">
+<input type="number" value="{{ s.value }}" onChange="{{ s.onNumber }}" aria-label="{{ s.label }}" style="width:130px;padding:8px 10px;font:var(--type-caption);font-family:var(--font-mono);border:1px solid var(--border-input);border-radius:var(--radius-xs);text-align:right" />
+</sc-if>
+<sc-if value="{{ s.isText }}" hint-placeholder-val="{{ false }}">
+<input type="text" value="{{ s.value }}" onChange="{{ s.onText }}" aria-label="{{ s.label }}" style="width:220px;padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)" />
+</sc-if>
+<sc-if value="{{ s.isSelect }}" hint-placeholder-val="{{ false }}">
+<select value="{{ s.value }}" onChange="{{ s.onSelect }}" aria-label="{{ s.label }}" style="padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ s.options }}" as="o" hint-placeholder-count="3"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select>
+</sc-if>
+<sc-if value="{{ s.overridden }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ s.onReset }}" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:7px 10px;cursor:pointer;font:var(--type-micro);color:var(--text-body);white-space:nowrap">Reset</button>
+</sc-if>
+</div>
+</div>
+</sc-for>
+</div>
+<p style="margin:16px 0 0;font:var(--type-micro);color:var(--text-meta);max-width:70ch">{{ settingsFootnote }}</p>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPlatformTenants }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">Tenants are rows, not deployments. Provisioning copies the platform policy template into a new record; nothing about the running system changes.</p>
+<table style="width:100%;border-collapse:collapse;margin-top:20px">
+<thead><tr>
+<sc-for list="{{ tenantColumns }}" as="c" hint-placeholder-count="8">
+<th style="{{ c.style }}">{{ c.label }}</th>
+</sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ tenantRows }}" as="r" hint-placeholder-count="2">
+<tr>
+<td style="padding:10px;border-bottom:1px solid var(--border-card)"><button type="button" onClick="{{ r.onSelect }}" style="background:transparent;border:0;padding:0;font:var(--type-body);color:var(--text-link);cursor:pointer;text-align:left">{{ r.name }}</button></td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.slug }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.locale }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card)">{{ r.category }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-size:13px">{{ r.locations }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card)">{{ r.plan }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px;white-space:nowrap">{{ r.spend }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card)"><span style="{{ r.statusStyle }}">{{ r.status }}</span></td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<section style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border-rule);max-width:820px">
+<h2 style="margin:0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">Provision a tenant</h2>
+<p style="margin:8px 0 14px;font:var(--type-caption);color:var(--text-muted)">{{ provisionNote }}</p>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end">
+<div><label for="pv-name" style="display:block;margin-bottom:6px;font:var(--type-caption)">Business name</label><input id="pv-name" type="text" value="{{ provName }}" onChange="{{ onProvName }}" style="width:100%;padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)" /></div>
+<div><label for="pv-slug" style="display:block;margin-bottom:6px;font:var(--type-caption)">Slug</label><input id="pv-slug" type="text" value="{{ provSlug }}" onChange="{{ onProvSlug }}" style="width:100%;padding:9px 10px;font:13px var(--font-mono);border:1px solid var(--border-input);border-radius:var(--radius-xs)" /></div>
+<div><label for="pv-locale" style="display:block;margin-bottom:6px;font:var(--type-caption)">Locale</label><select id="pv-locale" value="{{ provLocale }}" onChange="{{ onProvLocale }}" style="width:100%;padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ localeOptions }}" as="o" hint-placeholder-count="2"><option value="{{ o }}">{{ o }}</option></sc-for></select></div>
+<div><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onProvision }}" disabled="{{ provisionDisabled }}" hint-size="100%,38px">Provision</x-import></div>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPlatformProviders }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">Two providers, one contract. Routing is a platform decision; a tenant never picks a model.</p>
+<div style="display:grid;gap:1px;margin-top:20px;background:var(--border-rule);border:1px solid var(--border-rule)">
+<sc-for list="{{ providerRows }}" as="p" hint-placeholder-count="3">
+<div style="background:var(--surface-card);padding:18px 20px">
+<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:16px">
+<p style="margin:0;font:var(--type-body);color:var(--text-heading)"><span aria-hidden="true" style="{{ p.dot }}"></span>{{ p.id }}</p>
+<span style="font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ p.role }}</span>
+<span style="font:var(--type-caption);color:var(--text-muted)">{{ p.credential }}</span>
+<span style="margin-left:auto;font:var(--type-caption);font-family:var(--font-mono);color:var(--text-meta)">{{ p.health }}</span>
+</div>
+<table style="width:100%;border-collapse:collapse;margin-top:12px">
+<thead><tr>
+<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border-card);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Model</th>
+<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border-card);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Streaming</th>
+<th style="text-align:left;padding:6px 10px;border-bottom:1px solid var(--border-card);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Structured output</th>
+<th style="text-align:right;padding:6px 10px;border-bottom:1px solid var(--border-card);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Max tokens</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ p.models }}" as="m" hint-placeholder-count="2">
+<tr>
+<td style="padding:7px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ m.id }}</td>
+<td style="padding:7px 10px;border-bottom:1px solid var(--border-card);font-size:13px">{{ m.streaming }}</td>
+<td style="padding:7px 10px;border-bottom:1px solid var(--border-card);font-size:13px">{{ m.structured }}</td>
+<td style="padding:7px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ m.maxTokens }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+</div>
+</sc-for>
+</div>
+
+<section style="margin-top:24px;display:flex;flex-wrap:wrap;align-items:end;gap:16px">
+<div><label for="rt-default" style="display:block;margin-bottom:6px;font:var(--type-caption)">Default route</label><select id="rt-default" value="{{ routeDefault }}" onChange="{{ onRouteDefault }}" style="padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ providerKeys }}" as="k" hint-placeholder-count="3"><option value="{{ k }}">{{ k }}</option></sc-for></select></div>
+<div><label for="rt-fallback" style="display:block;margin-bottom:6px;font:var(--type-caption)">Fallback route</label><select id="rt-fallback" value="{{ routeFallback }}" onChange="{{ onRouteFallback }}" style="padding:9px 10px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)"><sc-for list="{{ providerKeys }}" as="k" hint-placeholder-count="3"><option value="{{ k }}">{{ k }}</option></sc-for></select></div>
+<p style="margin:0;font:var(--type-micro);color:var(--text-meta);max-width:44ch">A generation records which route served it. fallbackUsed is on the record, not inferred later.</p>
+</section>
+
+<section style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Price table · versioned</h2>
+<table style="width:100%;border-collapse:collapse">
+<thead><tr>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Provider</th>
+<th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Model</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Input / Mtok</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Output / Mtok</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">Effective from</th>
+<th style="text-align:right;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)">State</th>
+</tr></thead>
+<tbody>
+<sc-for list="{{ priceRows }}" as="r" hint-placeholder-count="4">
+<tr>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card)">{{ r.provider }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.model }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.input }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.output }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font-family:var(--font-mono);font-size:12px">{{ r.effectiveFrom }}</td>
+<td style="padding:9px 10px;border-bottom:1px solid var(--border-card);text-align:right;font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:{{ r.stateColor }}">{{ r.state }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+<p style="margin:12px 0 0;font:var(--type-micro);color:var(--text-meta)">A superseded row is kept so a generation priced under it can still be re-costed exactly.</p>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isPlatformStyles }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">The built-in catalogue. Tenants enable from it; they do not author into it. A style declares the platform it is shaped for and the locale it is written in.</p>
+<table style="width:100%;border-collapse:collapse;margin-top:20px">
+<thead><tr>
+<sc-for list="{{ catalogueColumns }}" as="c" hint-placeholder-count="7">
+<th style="{{ c.style }}">{{ c.label }}</th>
+</sc-for>
+</tr></thead>
+<tbody>
+<sc-for list="{{ catalogueRows }}" as="r" hint-placeholder-count="3">
+<tr>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.key }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card)">{{ r.displayName }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.version }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card)"><span style="{{ r.targetStyle }}">{{ r.targetPlatform }}</span></td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-family:var(--font-mono);font-size:12px">{{ r.locale }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-size:13px">{{ r.actions }}</td>
+<td style="padding:10px;border-bottom:1px solid var(--border-card);font-size:13px">{{ r.enabledBy }}</td>
+</tr>
+</sc-for>
+</tbody>
+</table>
+
+<section style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border-rule);max-width:820px">
+<h2 style="margin:0;font:var(--type-feature-heading);letter-spacing:-0.24px;color:var(--text-heading)">Add a style from a manifest</h2>
+<p style="margin:8px 0 12px;font:var(--type-caption);color:var(--text-muted)">Validated before it is accepted. Authoring is platform scope; enablement is the tenant's.</p>
+<textarea id="manifest" rows="8" value="{{ manifestText }}" onChange="{{ onManifestText }}" aria-label="Style manifest JSON" style="width:100%;padding:12px;font:13px/1.5 var(--font-mono);border:1px solid var(--border-input);border-radius:var(--radius-xs);background:var(--surface-card);color:var(--text-body);resize:vertical"></textarea>
+<div style="display:flex;align-items:center;gap:16px;margin-top:12px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onAddManifest }}" hint-size="150px,38px">Validate and add</x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" underline="hover" onClick="{{ onFillManifest }}" hint-size="140px,36px">Insert an example</x-import>
+</div>
+<ul aria-live="polite" style="margin:14px 0 0;padding:0;list-style:none;display:grid;gap:6px">
+<sc-for list="{{ manifestErrors }}" as="e" hint-placeholder-count="0">
+<li style="font:var(--type-caption);color:var(--text-error);font-family:var(--font-mono)">{{ e }}</li>
+</sc-for>
+</ul>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isLocations }}" hint-placeholder-val="{{ false }}">
+<div>
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">A location is a venue, not a label. Its destinations and platform ids are its own — two clinics of one practice are two places on a map.</p>
+<div style="display:grid;gap:1px;margin-top:20px;background:var(--border-rule);border:1px solid var(--border-rule)">
+<sc-for list="{{ locationRows }}" as="l" hint-placeholder-count="2">
+<div style="background:var(--surface-card);padding:18px 20px">
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+<input type="text" value="{{ l.name }}" onChange="{{ l.onName }}" aria-label="Location name" style="flex:1;min-width:220px;padding:8px 10px;font:var(--type-body);border:1px solid var(--border-card);border-radius:var(--radius-xs);background:transparent;color:var(--text-heading)" />
+<span style="font-family:var(--font-mono);font-size:12px;color:var(--text-meta)">{{ l.slug }}</span>
+<span style="{{ l.modeStyle }}">{{ l.entryMode }}</span>
+<label style="display:inline-flex;align-items:center;gap:8px;font:var(--type-caption);color:var(--text-body)"><input type="checkbox" checked="{{ l.active }}" onChange="{{ l.onActive }}" style="width:16px;height:16px" />Active</label>
+<button type="button" onClick="{{ l.onOpen }}" style="border:1px solid var(--border-card);background:transparent;border-radius:var(--radius-xs);padding:6px 10px;cursor:pointer;font:var(--type-caption)">Distribution</button>
+</div>
+<input type="text" value="{{ l.address }}" onChange="{{ l.onAddress }}" aria-label="Address" style="width:100%;margin-top:10px;padding:8px 10px;font:var(--type-caption);border:1px solid var(--border-card);border-radius:var(--radius-xs);background:transparent;color:var(--text-muted)" />
+<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+<sc-for list="{{ l.destinations }}" as="d" hint-placeholder-count="2">
+<span style="{{ d.style }}">{{ d.label }} · {{ d.id }}</span>
+</sc-for>
+</div>
+<p style="margin:10px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ l.note }}</p>
+</div>
+</sc-for>
+</div>
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border-rule)">
+<label for="new-loc" style="font:var(--type-caption);color:var(--text-body)">New location</label>
+<input id="new-loc" type="text" value="{{ newLocation }}" onChange="{{ onNewLocation }}" placeholder="Venue name" style="flex:1;min-width:240px;padding:9px 11px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)" />
+<input type="text" value="{{ newLocationAddress }}" onChange="{{ onNewLocationAddress }}" placeholder="Address" aria-label="New location address" style="flex:1;min-width:240px;padding:9px 11px;font:var(--type-caption);border:1px solid var(--border-input);border-radius:var(--radius-xs)" />
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" onClick="{{ onAddLocation }}" disabled="{{ addLocationDisabled }}" hint-size="90px,38px">Add</x-import>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ isDistribution }}" hint-placeholder-val="{{ false }}">
+<div style="max-width:920px">
+<p style="margin:20px 0 0;font:var(--type-body);color:var(--text-muted);max-width:70ch">How a customer reaches the survey at this venue. The link carries the tenant and the location; on the invited path it also carries the visit token.</p>
+
+<section style="margin-top:24px">
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Live survey link</h2>
+<p style="margin:0;padding:14px 16px;background:var(--surface-wash-lilac);border-radius:var(--radius-xs);font:14px/1.6 var(--font-mono);color:var(--text-body);word-break:break-all">{{ distUrl }}</p>
+<div style="display:flex;flex-wrap:wrap;gap:20px;align-items:center;margin-top:12px">
+<a href="{{ distOpenHref }}" target="_blank" rel="noopener" style="font:var(--type-caption);color:var(--text-link)">Open this venue's survey →</a>
+<span style="font:var(--type-micro);color:var(--text-meta)">{{ distUrlNote }}</span>
+</div>
+</section>
+
+<div style="display:grid;grid-template-columns:260px 1fr;gap:32px;margin-top:28px">
+<section>
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">QR</h2>
+<!-- Deliberately not a real code: an unscannable render would be worse than an
+     honest placeholder, and a fake one would be a lie in a print pack. -->
+<div style="width:220px;height:220px;display:flex;align-items:center;justify-content:center;text-align:center;padding:16px;border:1px dashed var(--border-rule);border-radius:var(--radius-sm);background:var(--surface-wash-sand)">
+<span style="font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary);text-wrap:balance">QR placeholder · not scannable · rendered server-side in production</span>
+</div>
+<p style="margin:10px 0 0;font:12px/1.5 var(--font-mono);color:var(--text-body);word-break:break-all">{{ distUrl }}</p>
+<div style="margin-top:12px"><x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" onClick="{{ onQrDownload }}" hint-size="170px,36px">Download print pack</x-import></div>
+<p style="margin:8px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ qrNote }}</p>
+</section>
+
+<section>
+<h2 style="margin:0 0 10px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ distTemplatesTitle }}</h2>
+<div style="display:grid;gap:16px">
+<sc-for list="{{ distTemplates }}" as="t" hint-placeholder-count="2">
+<div style="border:1px solid var(--border-rule);border-radius:var(--radius-sm);padding:16px 18px">
+<p style="margin:0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ t.label }}</p>
+<p style="margin:10px 0 0;font:var(--type-body);color:var(--text-body);white-space:pre-wrap">{{ t.body }}</p>
+<p style="margin:10px 0 0;font:var(--type-micro);color:var(--text-meta)">{{ t.note }}</p>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+
+<section style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0 0 12px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">This venue</h2>
+<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border-rule);border:1px solid var(--border-rule)">
+<sc-for list="{{ distCounters }}" as="c" hint-placeholder-count="4">
+<div style="background:var(--surface-card);padding:18px">
+<p style="margin:0;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ c.label }}</p>
+<p style="margin:10px 0 0;font:400 28px/1 var(--font-display);letter-spacing:-0.56px;color:var(--text-heading)">{{ c.value }}</p>
+</div>
+</sc-for>
+</div>
+</section>
+</div>
+</sc-if>
+
+<sc-if value="{{ isCrossTenant }}" hint-placeholder-val="{{ false }}">
+<!-- Deliberate: another tenant's resource returns not-found, never forbidden, so the
+     existence of the resource is not disclosed. -->
+<div style="max-width:560px;margin-top:24px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">404</p>
+<h2 style="margin:12px 0 0;font:400 24px/1.2 var(--font-display);letter-spacing:-0.5px;color:var(--text-heading)">Not found</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted)">No such generation in this workspace. Check the id, or ask the person who sent it to export it from their own console.</p>
+<p style="margin:12px 0 0;font:var(--type-micro);font-family:var(--font-mono);color:var(--text-meta)">{{ crossTenantId }}</p>
+</div>
+</sc-if>
+
+</main>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ toolbarVisible }}" hint-placeholder-val="{{ false }}">
+<div style="position:fixed;bottom:0;left:0;right:0;z-index:60;background:var(--maue-black);color:var(--on-dark);padding:10px 14px">
+<div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px">
+<span style="font-family:var(--font-mono);font-size:11px;letter-spacing:var(--track-mono-label);text-transform:uppercase;color:rgba(255,255,255,.64)">Admin harness</span>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Role
+<select value="{{ role }}" onChange="{{ onRole }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px"><sc-for list="{{ roleOptions }}" as="o" hint-placeholder-count="3"><option value="{{ o.v }}">{{ o.label }}</option></sc-for></select></label>
+<label style="display:flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">View
+<select value="{{ view }}" onChange="{{ onJump }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:4px 6px;font-size:12px"><sc-for list="{{ validStates }}" as="v" hint-placeholder-count="23"><option value="{{ v.v }}">{{ v.v }}</option></sc-for></select></label>
+<button type="button" onClick="{{ onResetStore }}" style="background:rgba(255,255,255,.06);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:5px 10px;font-size:12px;cursor:pointer">Reset to fixtures</button>
+<a href="Survey.dc.html" style="font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:rgba(255,255,255,.64)">Survey →</a>
+<button type="button" onClick="{{ onDismissToolbar }}" aria-label="Dismiss harness" style="margin-left:auto;background:transparent;color:#fff;border:0;font-size:16px;cursor:pointer">×</button>
+</div>
+</div>
+</sc-if>
+<sc-if value="{{ toolbarHidden }}" hint-placeholder-val="{{ false }}">
+<button type="button" onClick="{{ onShowToolbar }}" style="position:fixed;bottom:12px;right:12px;z-index:60;background:var(--maue-black);color:#fff;border:0;border-radius:var(--radius-xl);padding:8px 14px;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;cursor:pointer">Harness</button>
+</sc-if>
+
+<sc-if value="{{ isUnknown }}" hint-placeholder-val="{{ false }}">
+<div style="max-width:720px;margin:40px auto;padding:0 24px">
+<h1 style="margin:0;font:400 28px/1.1 var(--font-display);letter-spacing:-0.84px;color:var(--text-heading)">Unknown state</h1>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted)">“{{ unknownState }}” is not a state of this surface. Valid values for <code style="font-family:var(--font-mono)">?state=</code>:</p>
+<ul style="margin:20px 0 0;padding:0;list-style:none;display:grid;gap:2px">
+<sc-for list="{{ validStates }}" as="v" hint-placeholder-count="16">
+<li><button type="button" onClick="{{ v.onClick }}" style="background:transparent;border:0;padding:4px 0;font:var(--type-body);font-family:var(--font-mono);color:var(--text-link);cursor:pointer">{{ v.v }}</button></li>
+</sc-for>
+</ul>
+</div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+/* ===== FIXTURES — contract proposal. These shapes become the project's Zod
+   schemas in packages/contracts. Field names are load-bearing; do not rename.
+   Duplicated verbatim from Survey.dc.html: each surface is self-contained. ===== */
+const FIXTURES = {
+  /* ===== SCOPE ONE — PLATFORM. Owned by the vendor. No tenant operator ever
+     sees these fields, and no tenant-scope screen may render them. ===== */
+  platform: {
+    providers: [
+      { id: "anthropic", displayName: "Anthropic", role: "default", credential: "active · key rotated 2026-07-02", health: "healthy", p95Ms: 4120,
+        models: [
+          { id: "claude-sonnet-4-5", streaming: true, structuredOutput: true, maxTokens: 64000 },
+          { id: "claude-haiku-4-5", streaming: true, structuredOutput: true, maxTokens: 32000 }
+        ] },
+      { id: "openai", displayName: "OpenAI", role: "fallback", credential: "active · key rotated 2026-05-19", health: "healthy", p95Ms: 3380,
+        models: [{ id: "gpt-4-1-mini", streaming: true, structuredOutput: true, maxTokens: 32000 }] },
+      { id: "fake", displayName: "Fake provider", role: "bench only", credential: "not required", health: "healthy", p95Ms: 0,
+        models: [{ id: "none", streaming: false, structuredOutput: true, maxTokens: 0 }] }
+    ],
+    priceTable: [
+      { provider: "anthropic", model: "claude-sonnet-4-5", inputPerMTokMicros: 3000000, outputPerMTokMicros: 15000000, effectiveFrom: "2026-06-01" },
+      { provider: "anthropic", model: "claude-sonnet-4-5", inputPerMTokMicros: 3300000, outputPerMTokMicros: 16500000, effectiveFrom: "2026-01-01" },
+      { provider: "anthropic", model: "claude-haiku-4-5", inputPerMTokMicros: 800000, outputPerMTokMicros: 4000000, effectiveFrom: "2026-06-01" },
+      { provider: "openai", model: "gpt-4-1-mini", inputPerMTokMicros: 400000, outputPerMTokMicros: 1600000, effectiveFrom: "2026-04-15" }
+    ],
+    routing: { defaultProvider: "anthropic", fallbackProvider: "openai" },
+    defaultPolicyTemplate: { requireDisclosure: true, requireVerifiedExperience: false, maxDraftsPerSession: 2, bannedTerms: [] },
+    rateLimits: { draftsPerSessionPerHour: 12, requestsPerTenantPerMinute: 240 },
+    featureFlags: [
+      { key: "paraphrase.spanMapping", on: true, note: "Map every paraphrased claim to a character span in the customer's own text." },
+      { key: "distribution.qrDownload", on: false, note: "Print-ready QR download. Off until the render service ships." },
+      { key: "location.keywordAdditions", on: true, note: "Locations may add keywords on top of the tenant set." }
+    ],
+    logRetentionDays: 400
+  },
+
+  /* Who is operating. Role decides which scopes are reachable at all. */
+  session: { role: "platform_admin", operatorName: "Ada Vermeer", assignedTenants: ["brightsmile", "speicher-neun"] },
+  roles: {
+    platform_admin: { key: "platform_admin", label: "Platform admin", sees: "Every tenant, plus platform scope", switcher: "all", platformScreens: true },
+    agency_operator: { key: "agency_operator", label: "Agency operator", sees: "Assigned tenants only", switcher: "assigned", platformScreens: false },
+    tenant_operator: { key: "tenant_operator", label: "Tenant operator", sees: "One tenant", switcher: "none", platformScreens: false }
+  },
+
+  /* ===== SCOPE TWO — TENANT. Owned by the business account. ===== */
+  tenants: {
+    brightsmile: {
+      slug: "brightsmile", locale: "en-GB", plan: "Practice", status: "active", createdAt: "2026-02-03",
+      business: {
+        name: "Brightsmile Dental", category: "Dental practice",
+        description: "A three-surgery NHS and private practice.",
+        toneGuidelines: "Plain, calm, first person. No superlatives. Never imply a clinical outcome."
+      },
+      entryMode: "invite",
+      policy: {
+        requireDisclosure: true, requireVerifiedExperience: true, maxDraftsPerSession: 2,
+        bannedTerms: ["painless", "guaranteed", "cure", "cheapest", "best in London"]
+      },
+      keywordCategories: [
+        { id: "service", label: "Service" }, { id: "staff", label: "People" },
+        { id: "ambience", label: "Place" }, { id: "value", label: "Value" }, { id: "speed", label: "Timing" }
+      ],
+      enabledStyles: ["concise-blurb", "detailed-narrative"],
+      enabledActions: ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"],
+      contextVersion: 7, monthlyBudgetMicros: 40000000, monthToDateCostMicros: 26480000, alertThresholdPct: 90
+    },
+    "speicher-neun": {
+      slug: "speicher-neun", locale: "de-DE", plan: "Standard", status: "active", createdAt: "2026-06-11",
+      business: {
+        name: "Speicher Neun", category: "Restaurant",
+        description: "Hafenküche mit zwei Häusern in Hamburg.",
+        toneGuidelines: "Kurz, gesprochen, ohne Superlative. Nie ein Gericht beschreiben, das nicht bestellt wurde."
+      },
+      entryMode: "open-qr",
+      policy: {
+        requireDisclosure: false, requireVerifiedExperience: false, maxDraftsPerSession: 3,
+        bannedTerms: ["bestes Restaurant der Stadt", "gratis"]
+      },
+      /* A restaurant does not have a dental practice's categories. This is why
+         categories became a tenant-owned table rather than a Postgres enum. */
+      keywordCategories: [
+        { id: "essen", label: "Essen" }, { id: "service", label: "Service" },
+        { id: "atmosphäre", label: "Atmosphäre" }, { id: "preis", label: "Preis" }, { id: "wartezeit", label: "Wartezeit" }
+      ],
+      enabledStyles: ["social-short", "concise-blurb"],
+      enabledActions: ["generate", "paraphrase", "regenerate", "restyle", "condense"],
+      contextVersion: 3, monthlyBudgetMicros: 18000000, monthToDateCostMicros: 9240000, alertThresholdPct: 85
+    }
+  },
+
+  /* ===== SCOPE THREE — LOCATION. One physical venue under a tenant. Values not
+     set here inherit from the tenant; overrides[] records what was changed. ===== */
+  locations: {
+    brightsmile: [
+      { slug: "downtown", tenantSlug: "brightsmile", name: "Downtown Clinic",
+        address: "18 Bayham Street, Camden, London NW1", active: true, entryMode: null,
+        destinations: ["google", "facebook"],
+        platformIds: { googlePlaceId: "ChIJ-fake-bs-downtown", facebookPageId: "brightsmile.camden" },
+        overrides: {},
+        keywordAdditions: [
+          { id: "bs-dt-k1", label: "The clinic is two minutes from the tube", category: "ambience", polarity: "positive", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 1840, opened: 1102, completed: 714 } },
+      { slug: "riverside", tenantSlug: "brightsmile", name: "Riverside Clinic",
+        address: "4 Wharf Road, Islington, London N1", active: true, entryMode: null,
+        destinations: ["google"],
+        platformIds: { googlePlaceId: "ChIJ-fake-bs-riverside" },
+        overrides: { maxDraftsPerSession: 1 },
+        keywordAdditions: [
+          { id: "bs-rv-k1", label: "There is parking on site", category: "ambience", polarity: "positive", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 906, opened: 528, completed: 331 } }
+    ],
+    "speicher-neun": [
+      { slug: "hafencity", tenantSlug: "speicher-neun", name: "Speicher Neun · HafenCity",
+        address: "Am Kaiserkai 9, 20457 Hamburg", active: true, entryMode: null,
+        destinations: ["google", "tripadvisor"],
+        platformIds: { googlePlaceId: "ChIJ-fake-s9-hafencity", tripadvisorId: "d-fake-s9-hafencity" },
+        overrides: {},
+        keywordAdditions: [
+          { id: "s9-hc-k1", label: "Tisch direkt am Wasser", category: "atmosphäre", polarity: "positive", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 4210, opened: 3106, completed: 2188 } },
+      { slug: "sternschanze", tenantSlug: "speicher-neun", name: "Speicher Neun · Sternschanze",
+        address: "Susannenstraße 14, 20357 Hamburg", active: true, entryMode: null,
+        destinations: ["google"],
+        platformIds: { googlePlaceId: "ChIJ-fake-s9-schanze" },
+        overrides: { requireDisclosure: true },
+        keywordAdditions: [
+          { id: "s9-st-k1", label: "Kein Tisch ohne Reservierung", category: "wartezeit", polarity: "negative", isActive: true, sortOrder: 200 }
+        ],
+        counters: { issued: 1980, opened: 1402, completed: 903 } }
+    ]
+  },
+
+  /* Where a finished review can be posted. The id lives on the location, never
+     on the tenant: two venues of one brand are two places on a map. */
+  destinations: {
+    google: { key: "google", label: "Google Maps", idField: "googlePlaceId", idLabel: "Place id" },
+    tripadvisor: { key: "tripadvisor", label: "Tripadvisor", idField: "tripadvisorId", idLabel: "Location id" },
+    facebook: { key: "facebook", label: "Facebook", idField: "facebookPageId", idLabel: "Page id" },
+    yelp: { key: "yelp", label: "Yelp", idField: "yelpBusinessId", idLabel: "Business id" }
+  },
+
+  /* The ?v= token in an invited link. Single use: a token that already produced
+     a review resolves to entry-token-used, not to a second draft. */
+  visitTokens: {
+    "BS-DT-8842": { tenantSlug: "brightsmile", locationSlug: "downtown", visitedOn: "12 August", status: "valid" },
+    "BS-RV-2231": { tenantSlug: "brightsmile", locationSlug: "riverside", visitedOn: "9 August", status: "valid" },
+    "BS-DT-1104": { tenantSlug: "brightsmile", locationSlug: "downtown", visitedOn: "2 August", status: "used" }
+  },
+
+  entryModes: {
+    invite: { key: "invite", label: "Invited link", distribution: "SMS or email after the visit", token: "Embedded, single use" },
+    "open-qr": { key: "open-qr", label: "Open QR", distribution: "QR on the table, the receipt and the counter", token: "None" },
+    both: { key: "both", label: "Both", distribution: "Either route", token: "Required only on the invited path" }
+  },
+
+  keywords: {
+    brightsmile: [
+      { id: "bs-k1", label: "The dentist explained the treatment before starting", category: "service", polarity: "positive", isActive: true, sortOrder: 10 },
+      { id: "bs-k2", label: "The hygienist was gentle", category: "staff", polarity: "positive", isActive: true, sortOrder: 20 },
+      { id: "bs-k3", label: "The front desk booked my follow-up there and then", category: "staff", polarity: "positive", isActive: true, sortOrder: 30 },
+      { id: "bs-k4", label: "I was called through at my appointment time", category: "speed", polarity: "positive", isActive: true, sortOrder: 40 },
+      { id: "bs-k5", label: "The cost was quoted before any work started", category: "value", polarity: "positive", isActive: true, sortOrder: 50 },
+      { id: "bs-k6", label: "The waiting room was quiet and clean", category: "ambience", polarity: "neutral", isActive: true, sortOrder: 60 },
+      { id: "bs-k7", label: "I waited forty minutes past my appointment time", category: "speed", polarity: "negative", isActive: true, sortOrder: 70 },
+      { id: "bs-k8", label: "The filling had to be redone at a second visit", category: "service", polarity: "negative", isActive: true, sortOrder: 80 },
+      { id: "bs-k9", label: "Parking was easier than I expected", category: "ambience", polarity: "positive", isActive: false, sortOrder: 90 }
+    ],
+    /* Different language, different taxonomy, same table. */
+    "speicher-neun": [
+      { id: "s1", label: "Frischer Fisch", category: "essen", polarity: "positive", isActive: true, sortOrder: 10 },
+      { id: "s2", label: "Gut gewürzt", category: "essen", polarity: "positive", isActive: true, sortOrder: 20 },
+      { id: "s3", label: "Essen war kalt", category: "essen", polarity: "negative", isActive: true, sortOrder: 30 },
+      { id: "s4", label: "Aufmerksamer Service", category: "service", polarity: "positive", isActive: true, sortOrder: 40 },
+      { id: "s5", label: "Freundliches Personal", category: "service", polarity: "positive", isActive: true, sortOrder: 50 },
+      { id: "s6", label: "Lange Wartezeit", category: "wartezeit", polarity: "negative", isActive: true, sortOrder: 60 },
+      { id: "s7", label: "Essen kam schnell", category: "wartezeit", polarity: "positive", isActive: true, sortOrder: 70 },
+      { id: "s8", label: "Blick auf den Hafen", category: "atmosphäre", polarity: "positive", isActive: true, sortOrder: 80 },
+      { id: "s9", label: "Zu laut", category: "atmosphäre", polarity: "negative", isActive: true, sortOrder: 90 },
+      { id: "s10", label: "Fairer Preis", category: "preis", polarity: "positive", isActive: true, sortOrder: 100 }
+    ]
+  },
+
+  /* Style manifests are platform scope; tenants enable from this catalogue and
+     cannot author into it. targetPlatform is how "a Google style" and "a
+     Tripadvisor style" exist without imitating either brand: the style declares
+     the shape it was written for, and done routes to a matching destination.
+     locale "any" carries per-locale copy — the one manifest field that had to
+     become a map when the second tenant was not English. */
+  styles: [
+    { key: "concise-blurb", version: "1.4.0", displayName: "Concise blurb", targetPlatform: "google", locale: "any",
+      description: {
+        "en-GB": "Two or three sentences. What happened, in the order it happened.",
+        "de-DE": "Zwei oder drei Sätze. Was passiert ist, in der Reihenfolge, in der es passiert ist."
+      },
+      constraints: { minChars: 180, maxChars: 420, paragraphs: 1, emojiPolicy: "none", secondPerson: false },
+      supportedActions: ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"],
+      sample: {
+        "en-GB": "Called through on time for a check-up and clean. The dentist explained the treatment before starting and the cost was quoted before any work began.",
+        "de-DE": "Frischer Fisch, gut gewürzt, und der Service war aufmerksam. Der Blick auf den Hafen hat den Abend gemacht."
+      } },
+    { key: "detailed-narrative", version: "2.1.0", displayName: "Detailed narrative", targetPlatform: "google", locale: "en-GB",
+      description: { "en-GB": "Three short paragraphs: the visit, the specifics, whether you would go back." },
+      constraints: { minChars: 520, maxChars: 1200, paragraphs: 3, emojiPolicy: "none", secondPerson: false },
+      supportedActions: ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"],
+      sample: { "en-GB": "I went in for a check-up and a clean.\n\nThe dentist explained the treatment before starting, and the hygienist was gentle. The cost was quoted before any work began.\n\nI would go back." } },
+    { key: "social-short", version: "1.0.0", displayName: "Social short", targetPlatform: "tripadvisor", locale: "any",
+      description: {
+        "en-GB": "One line, for listing sites with a hard character limit.",
+        "de-DE": "Eine Zeile, für Portale mit harter Zeichenbegrenzung."
+      },
+      constraints: { minChars: 40, maxChars: 140, paragraphs: 1, emojiPolicy: "allowed", secondPerson: false },
+      supportedActions: ["generate", "paraphrase", "regenerate", "restyle", "condense"],
+      sample: {
+        "en-GB": "Seen on time, treatment explained before it started, cost quoted up front.",
+        "de-DE": "Frischer Fisch, aufmerksamer Service, Blick auf den Hafen."
+      } }
+  ],
+
+  /* Customer-facing copy is locale-bound. Only the strings below exist in de-DE;
+     every other German-tenant string is structural. Recorded in DECISIONS.md. */
+  copy: {
+    "en-GB": {
+      ask: "Write your review of {business}",
+      ratingAsk: "How was it?",
+      ratingWords: ["", "Poor", "Not good", "Mixed", "Good", "Very good"],
+      conjunction: "and",
+      trust: "You supply the facts. Everything on the next screens is a draft you read, change and copy yourself. Nothing is posted anywhere for you.",
+      visitAck: "Thanks for visiting {location} on {date}.",
+      openAck: "You are at {location}.",
+      pathGenerate: { eyebrow: "Path one", title: "Help me write one", body: "Choose the things that actually happened. The draft is built only from those.", cta: "Pick what to mention" },
+      pathParaphrase: { eyebrow: "Path two", title: "I have written one", body: "Paste your own review. Your facts stay exactly as you wrote them; only the wording changes.", cta: "Improve my wording" },
+      needRating: "Choose a rating first. It sets the register of the draft, and it is the one thing the assistant will not decide for you.",
+      keywordsHeading: "What stood out?",
+      keywordsHeadingNegative: "What went wrong?",
+      keywordsLead: "Pick everything that actually happened. The order you pick them is the order they are written in.",
+      keywordsLeadNegative: "Start with the problem. Reporting it plainly is more useful to the next customer than softening it.",
+      minSelection: "Pick at least two things. One fact is not a review, and the assistant will not invent the rest.",
+      styleHeading: "Pick a format",
+      styleLead: "Formats this business has enabled, for what you are doing.",
+      stepGenerate: "What happened", stepParaphrase: "Your own words",
+      styleCta: "Write the draft",
+      strippedEyebrow: "One claim removed",
+      strippedHeading: "Read this before you copy it",
+      strippedNotice: "Removed before you saw it",
+      doneEyebrow: "On your clipboard",
+      doneHeading: "Copied. Now post it yourself.",
+      doneBody: "Your review is on the clipboard, disclosure included where this business requires one. Choose where to paste it and post it in your own name.",
+      tableRef: "Reference {ref}"
+    },
+    "de-DE": {
+      ask: "Bewerten Sie Ihren Besuch bei {business}",
+      ratingAsk: "Wie war es?",
+      ratingWords: ["", "Schlecht", "Nicht gut", "Gemischt", "Gut", "Sehr gut"],
+      conjunction: "und",
+      trust: "Die Fakten kommen von Ihnen. Alles Weitere ist ein Entwurf, den Sie lesen, ändern und selbst kopieren. Nichts wird für Sie veröffentlicht.",
+      visitAck: "Danke für Ihren Besuch am {date}.",
+      openAck: "Sie sind bei {location}.",
+      pathGenerate: { eyebrow: "Weg eins", title: "Hilf mir beim Schreiben", body: "Wählen Sie aus, was tatsächlich passiert ist. Der Entwurf entsteht nur daraus.", cta: "Auswählen, was erwähnt wird" },
+      pathParaphrase: { eyebrow: "Weg zwei", title: "Ich habe schon etwas geschrieben", body: "Fügen Sie Ihren eigenen Text ein. Ihre Fakten bleiben genau so, wie Sie sie geschrieben haben — nur die Formulierung ändert sich.", cta: "Meine Formulierung verbessern" },
+      needRating: "Wählen Sie zuerst eine Bewertung. Sie bestimmt den Ton des Entwurfs, und sie ist das Einzige, was der Assistent nicht für Sie entscheidet.",
+      keywordsHeading: "Was ist Ihnen aufgefallen?",
+      keywordsHeadingNegative: "Was ist schiefgelaufen?",
+      keywordsLead: "Wählen Sie alles, was tatsächlich passiert ist. Die Reihenfolge Ihrer Auswahl ist die Reihenfolge im Text.",
+      keywordsLeadNegative: "Beginnen Sie mit dem Problem. Klar benannt hilft es dem nächsten Gast mehr als beschönigt.",
+      minSelection: "Wählen Sie mindestens zwei Punkte. Eine einzelne Tatsache ist keine Bewertung, und der Assistent erfindet den Rest nicht.",
+      styleHeading: "Format wählen",
+      styleLead: "Formate, die dieses Haus freigegeben hat, für das, was Sie gerade tun.",
+      stepGenerate: "Was passiert ist", stepParaphrase: "Ihre eigenen Worte",
+      styleCta: "Entwurf schreiben",
+      strippedEyebrow: "Eine Aussage entfernt",
+      strippedHeading: "Lesen Sie das, bevor Sie kopieren",
+      strippedNotice: "Entfernt, bevor Sie es gesehen haben",
+      doneEyebrow: "In der Zwischenablage",
+      doneHeading: "Kopiert. Jetzt veröffentlichen Sie sie selbst.",
+      doneBody: "Ihre Bewertung liegt in der Zwischenablage. Wählen Sie, wo Sie sie einfügen, und veröffentlichen Sie sie in Ihrem eigenen Namen.",
+      tableRef: "Tisch {ref}"
+    }
+  },
+
+  promptVersions: [
+    { hash: "p_9f2ad1", key: "review.generate", action: "generate", createdAt: "2026-05-02", status: "in-experiment", evalScore: 0.82, body: "Compose a review using ONLY the asserted keywords and free text supplied. Emit one claim object per fact with its source id. Never introduce a fact not in the input." },
+    { hash: "p_4c81be", key: "review.generate", action: "generate", createdAt: "2026-06-18", status: "candidate", evalScore: 0.86, body: "Open with the strongest asserted keyword rather than the visit frame. Same grounding contract as p_9f2ad1." },
+    { hash: "p_1a77c5", key: "review.generate", action: "generate", createdAt: "2026-01-20", status: "retired", evalScore: 0.61, body: "First-generation generate prompt. Retired for embellishing offers and staff names." },
+    { hash: "p_71d0aa", key: "review.paraphrase", action: "paraphrase", createdAt: "2026-04-11", status: "in-experiment", evalScore: 0.91, body: "Restate the reviewer's own text. Preserve every fact and its span. Do not add, do not remove, do not evaluate." },
+    { hash: "p_2ee934", key: "review.restyle", action: "restyle", createdAt: "2026-05-29", status: "candidate", evalScore: 0.78, body: "Re-render the source draft's claims in the target style. The output claim set must be a subset of the input claim set." },
+    { hash: "p_5d3f90", key: "review.condense", action: "condense", createdAt: "2026-03-14", status: "in-experiment", evalScore: 0.88, body: "Drop whole claims to reach the target length. Never compress two claims into an ambiguous one." },
+    { hash: "p_bb5107", key: "review.expand", action: "expand", createdAt: "2026-06-02", status: "draft", evalScore: null, body: "Elaborate the existing claims with more words. Adding a fact is a hard failure." },
+    { hash: "p_08cd42", key: "review.refine", action: "refine", createdAt: "2026-06-21", status: "candidate", evalScore: 0.74, body: "Treat the instruction as a newly asserted fact by the reviewer, record it as such, and integrate it." }
+  ],
+
+  experiment: {
+    key: "exp_generate_opener", action: "generate", status: "running", startedAt: "2026-07-28",
+    variants: [
+      { key: "A", promptVersionHash: "p_9f2ad1", weight: 50, n: 1840, acceptanceRate: 0.61 },
+      { key: "B", promptVersionHash: "p_4c81be", weight: 50, n: 1794, acceptanceRate: 0.68 }
+    ]
+  },
+
+  generations: {
+    clean: {
+      id: "gen_7f31c2", tenantSlug: "brightsmile", locationSlug: "downtown", action: "generate", createdAt: "2026-08-09T10:12:04Z",
+      draft: "Called through at my appointment time for a check-up and clean. The dentist explained the treatment before starting and the hygienist was gentle. The cost was quoted before any work started.",
+      claims: [
+        { text: "I was called through at my appointment time", sourceKeywordId: "bs-k4", sourceSpan: null },
+        { text: "The dentist explained the treatment before starting", sourceKeywordId: "bs-k1", sourceSpan: null },
+        { text: "The hygienist was gentle", sourceKeywordId: "bs-k2", sourceSpan: null },
+        { text: "The cost was quoted before any work started", sourceKeywordId: "bs-k5", sourceSpan: null }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 2140, inputTokens: 412, outputTokens: 118, costMicros: 2640, fallbackUsed: false,
+      promptVersionHash: "p_9f2ad1", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: ["bs-k4", "bs-k1", "bs-k2", "bs-k5"], freeText: "", sourceText: null,
+      outcome: { status: "accepted", editDistance: 0 }
+    },
+    stripped: {
+      id: "gen_9a04e7", tenantSlug: "brightsmile", locationSlug: "downtown", action: "generate", createdAt: "2026-08-09T11:41:55Z",
+      draft: "Called through at my appointment time for a check-up and clean. The dentist explained the treatment before starting and the cost was quoted before any work started.",
+      claims: [
+        { text: "I was called through at my appointment time", sourceKeywordId: "bs-k4", sourceSpan: null },
+        { text: "The dentist explained the treatment before starting", sourceKeywordId: "bs-k1", sourceSpan: null },
+        { text: "The cost was quoted before any work started", sourceKeywordId: "bs-k5", sourceSpan: null }
+      ],
+      removedClaims: [{ text: "and they knocked 20% off my next hygienist appointment", reason: "No discount, offer or price was entered. The system cannot infer one." }],
+      groundingVerdict: "stripped", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 2610, inputTokens: 402, outputTokens: 131, costMicros: 2810, fallbackUsed: false,
+      promptVersionHash: "p_4c81be", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: ["bs-k4", "bs-k1", "bs-k5"], freeText: "", sourceText: null,
+      outcome: { status: "edited", editDistance: 0.18 }
+    },
+    rejected: {
+      id: "gen_3c77b1", tenantSlug: "brightsmile", locationSlug: "riverside", action: "generate", createdAt: "2026-08-09T12:02:19Z",
+      draft: null, claims: [],
+      removedClaims: [{ text: "the whole draft", reason: "No asserted keyword and no free text. There was nothing to write from." }],
+      groundingVerdict: "rejected", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 980, inputTokens: 188, outputTokens: 0, costMicros: 340, fallbackUsed: false,
+      promptVersionHash: "p_9f2ad1", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: [], freeText: "", sourceText: null,
+      outcome: { status: "discarded", editDistance: null }
+    },
+    paraphrased: {
+      id: "gen_5b12da", tenantSlug: "brightsmile", locationSlug: "downtown", action: "paraphrase", createdAt: "2026-08-09T13:20:41Z",
+      sourceText: "went in for a filling, the dentist told me what she was doing the whole way through which i needed. waited about 10 mins. front desk sorted my next appointment before i left.",
+      draft: "I went in for a filling, and the dentist talked me through what she was doing the whole way through, which I needed. I waited about ten minutes. The front desk sorted my next appointment before I left.",
+      claims: [
+        { text: "Went in for a filling", sourceKeywordId: null, sourceSpan: "chars 0-24" },
+        { text: "The dentist explained the work throughout", sourceKeywordId: null, sourceSpan: "chars 26-104" },
+        { text: "Waited about ten minutes", sourceKeywordId: null, sourceSpan: "chars 106-125" },
+        { text: "The front desk booked the next appointment", sourceKeywordId: null, sourceSpan: "chars 127-186" }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 1870, inputTokens: 268, outputTokens: 96, costMicros: 1920, fallbackUsed: false,
+      promptVersionHash: "p_71d0aa", contextVersion: 7, styleKey: "concise-blurb", styleVersion: "1.4.0",
+      sourceGenerationId: null, assertedKeywordIds: [], freeText: "",
+      outcome: { status: "accepted", editDistance: 0.04 }
+    },
+    restyled: {
+      id: "gen_c40f88", tenantSlug: "brightsmile", locationSlug: "downtown", action: "restyle", createdAt: "2026-08-09T10:19:37Z",
+      draft: "Seen at my appointment time, treatment explained before it started, cost quoted up front.",
+      claims: [
+        { text: "I was called through at my appointment time", sourceKeywordId: "bs-k4", sourceSpan: null },
+        { text: "The dentist explained the treatment before starting", sourceKeywordId: "bs-k1", sourceSpan: null },
+        { text: "The cost was quoted before any work started", sourceKeywordId: "bs-k5", sourceSpan: null }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "openai", model: "gpt-4-1-mini",
+      latencyMs: 1240, inputTokens: 344, outputTokens: 42, costMicros: 810, fallbackUsed: true,
+      promptVersionHash: "p_2ee934", contextVersion: 7, styleKey: "social-short", styleVersion: "1.0.0",
+      sourceGenerationId: "gen_7f31c2", assertedKeywordIds: ["bs-k4", "bs-k1", "bs-k2", "bs-k5"], freeText: "", sourceText: null,
+      outcome: { status: "accepted", editDistance: 0 }
+    },
+    hamburg: {
+      id: "gen_2d90f4", tenantSlug: "speicher-neun", locationSlug: "hafencity", action: "generate", createdAt: "2026-08-10T19:44:12Z",
+      draft: "Frischer Fisch, gut gewürzt, und aufmerksamer Service. Blick auf den Hafen.",
+      claims: [
+        { text: "Frischer Fisch", sourceKeywordId: "s1", sourceSpan: null },
+        { text: "Gut gewürzt", sourceKeywordId: "s2", sourceSpan: null },
+        { text: "Aufmerksamer Service", sourceKeywordId: "s4", sourceSpan: null },
+        { text: "Blick auf den Hafen", sourceKeywordId: "s8", sourceSpan: null }
+      ],
+      removedClaims: [], groundingVerdict: "clean", provider: "anthropic", model: "claude-sonnet-4-5",
+      latencyMs: 1180, inputTokens: 296, outputTokens: 38, costMicros: 1460, fallbackUsed: false,
+      promptVersionHash: "p_4c81be", contextVersion: 3, styleKey: "social-short", styleVersion: "1.0.0",
+      sourceGenerationId: null, assertedKeywordIds: ["s1", "s2", "s4", "s8"], freeText: "", sourceText: null,
+      outcome: { status: "accepted", editDistance: 0 }
+    }
+  },
+
+  /* location × action × style × variant. The two venues of one tenant do not
+     perform alike, which is the whole reason location is in the row key. */
+  analytics: {
+    brightsmile: [
+      { locationSlug: "downtown", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 1180, acceptanceRate: 0.69, avgEditDistance: 0.13, p50Ms: 1980, p95Ms: 4120, totalCostMicros: 3180000, costPerAcceptedMicros: 3906 },
+      { locationSlug: "downtown", styleKey: "concise-blurb", action: "generate", variantKey: "A", n: 1204, acceptanceRate: 0.62, avgEditDistance: 0.18, p50Ms: 2040, p95Ms: 4380, totalCostMicros: 3260000, costPerAcceptedMicros: 4368 },
+      { locationSlug: "downtown", styleKey: "concise-blurb", action: "paraphrase", variantKey: "A", n: 604, acceptanceRate: 0.82, avgEditDistance: 0.06, p50Ms: 1710, p95Ms: 3260, totalCostMicros: 1160000, costPerAcceptedMicros: 2342 },
+      { locationSlug: "downtown", styleKey: "detailed-narrative", action: "generate", variantKey: "A", n: 388, acceptanceRate: 0.55, avgEditDistance: 0.26, p50Ms: 3120, p95Ms: 6740, totalCostMicros: 1970000, costPerAcceptedMicros: 9235 },
+      { locationSlug: "downtown", styleKey: "detailed-narrative", action: "expand", variantKey: "A", n: 121, acceptanceRate: 0.48, avgEditDistance: 0.30, p50Ms: 2870, p95Ms: 5910, totalCostMicros: 605000, costPerAcceptedMicros: 10412 },
+      { locationSlug: "riverside", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 614, acceptanceRate: 0.66, avgEditDistance: 0.15, p50Ms: 2010, p95Ms: 4210, totalCostMicros: 1640000, costPerAcceptedMicros: 4046 },
+      { locationSlug: "riverside", styleKey: "concise-blurb", action: "generate", variantKey: "A", n: 636, acceptanceRate: 0.59, avgEditDistance: 0.21, p50Ms: 2080, p95Ms: 4460, totalCostMicros: 1720000, costPerAcceptedMicros: 4585 },
+      { locationSlug: "riverside", styleKey: "concise-blurb", action: "paraphrase", variantKey: "A", n: 302, acceptanceRate: 0.79, avgEditDistance: 0.07, p50Ms: 1740, p95Ms: 3310, totalCostMicros: 580000, costPerAcceptedMicros: 2432 },
+      { locationSlug: "riverside", styleKey: "detailed-narrative", action: "generate", variantKey: "A", n: 224, acceptanceRate: 0.51, avgEditDistance: 0.29, p50Ms: 3180, p95Ms: 6820, totalCostMicros: 1140000, costPerAcceptedMicros: 9979 }
+    ],
+    "speicher-neun": [
+      { locationSlug: "hafencity", styleKey: "social-short", action: "generate", variantKey: "A", n: 2140, acceptanceRate: 0.74, avgEditDistance: 0.09, p50Ms: 1120, p95Ms: 2290, totalCostMicros: 2280000, costPerAcceptedMicros: 1440 },
+      { locationSlug: "hafencity", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 1310, acceptanceRate: 0.67, avgEditDistance: 0.16, p50Ms: 1890, p95Ms: 3980, totalCostMicros: 3410000, costPerAcceptedMicros: 3885 },
+      { locationSlug: "hafencity", styleKey: "social-short", action: "paraphrase", variantKey: "A", n: 702, acceptanceRate: 0.83, avgEditDistance: 0.05, p50Ms: 1080, p95Ms: 2140, totalCostMicros: 760000, costPerAcceptedMicros: 1305 },
+      { locationSlug: "hafencity", styleKey: "concise-blurb", action: "condense", variantKey: "A", n: 486, acceptanceRate: 0.85, avgEditDistance: 0.04, p50Ms: 940, p95Ms: 1870, totalCostMicros: 340000, costPerAcceptedMicros: 823 },
+      { locationSlug: "sternschanze", styleKey: "social-short", action: "generate", variantKey: "A", n: 806, acceptanceRate: 0.71, avgEditDistance: 0.11, p50Ms: 1150, p95Ms: 2360, totalCostMicros: 880000, costPerAcceptedMicros: 1538 },
+      { locationSlug: "sternschanze", styleKey: "concise-blurb", action: "generate", variantKey: "B", n: 402, acceptanceRate: 0.63, avgEditDistance: 0.19, p50Ms: 1930, p95Ms: 4040, totalCostMicros: 1060000, costPerAcceptedMicros: 4186 },
+      { locationSlug: "sternschanze", styleKey: "social-short", action: "restyle", variantKey: "A", n: 188, acceptanceRate: 0.78, avgEditDistance: 0.06, p50Ms: 1010, p95Ms: 2050, totalCostMicros: 150000, costPerAcceptedMicros: 1023 }
+    ]
+  },
+
+  actionCatalog: [
+    { key: "generate", label: "Generate", intent: "Write it for me from what I pick", input: "Asserted keywords plus optional free text", groundingRule: "Only claims tracing to an asserted keyword or the free text", costWeight: "1.0x", needsDraft: false, needsSourceText: false, verb: "Writing" },
+    { key: "paraphrase", label: "Paraphrase", intent: "I wrote it, make it read better", input: "The reviewer's own written text", groundingRule: "Only claims present in the reviewer's text", costWeight: "0.7x", needsDraft: false, needsSourceText: true, verb: "Paraphrasing" },
+    { key: "regenerate", label: "Regenerate", intent: "Try that again", input: "Identical inputs, new sample", groundingRule: "Same rule as the originating action", costWeight: "1.0x", needsDraft: true, needsSourceText: false, verb: "Rewriting" },
+    { key: "restyle", label: "Restyle", intent: "Same review, different format", input: "An existing draft plus a different style", groundingRule: "No new claims. Claims must be a subset of the source draft", costWeight: "0.8x", needsDraft: true, needsSourceText: false, verb: "Restyling" },
+    { key: "condense", label: "Condense", intent: "Shorter", input: "An existing draft plus a lower target length", groundingRule: "No new claims. Subset only", costWeight: "0.5x", needsDraft: true, needsSourceText: false, verb: "Shortening" },
+    { key: "expand", label: "Expand", intent: "Longer", input: "An existing draft plus a higher target length", groundingRule: "No new claims. Expansion adds words, not facts", costWeight: "1.2x", needsDraft: true, needsSourceText: false, verb: "Expanding" },
+    { key: "refine", label: "Refine", intent: "Also mention the parking", input: "An existing draft plus a free-text instruction", groundingRule: "Only claims tracing to the instruction, which is recorded as a newly asserted fact", costWeight: "1.1x", needsDraft: true, needsSourceText: false, verb: "Refining" }
+  ],
+
+  embellishments: [
+    { text: "and they knocked 20% off my next appointment", reason: "No discount, offer or price was entered. The system cannot infer one." },
+    { text: "and Dr. Halpern checked the work personally afterwards", reason: "No staff member was named in your input. Names cannot be inferred." },
+    { text: "easily the best in the area", reason: "A comparison with other businesses was never asserted and cannot be supported." }
+  ]
+};
+/* ===== END FIXTURES ===== */
+
+/* ===== SHARED STORE — the survey reads the same keys, so every edit here is
+   observable there. Duplicated verbatim from Survey.dc.html by design. ===== */
+const STORE_KEY = "maue.reviewwriter.store.v2";
+const clone = (o) => JSON.parse(JSON.stringify(o));
+/* Bumped whenever the fixture shape changes. A store stamped with anything else is
+   a stale or hand-mutated demo and is discarded rather than silently rendered. */
+const STORE_REV = 2;
+function defaultStore() {
+  return {
+    rev: STORE_REV,
+    tenantSlug: "brightsmile", locationSlug: "downtown", role: FIXTURES.session.role,
+    platform: clone(FIXTURES.platform), tenants: clone(FIXTURES.tenants),
+    locations: clone(FIXTURES.locations), keywords: clone(FIXTURES.keywords),
+    styles: clone(FIXTURES.styles), promptVersions: clone(FIXTURES.promptVersions),
+    experiment: clone(FIXTURES.experiment), generationLog: []
+  };
+}
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (raw) { const s = JSON.parse(raw); if (s && s.rev === STORE_REV && s.tenants && s.keywords && s.styles && s.locations && s.platform) return s; }
+  } catch (e) {}
+  return defaultStore();
+}
+function saveStore(s) { try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) {} }
+
+/* ===== STATE MACHINE ===== */
+const ADMIN_STATES = [
+  "login", "overview",
+  "platform-tenants", "platform-providers", "platform-styles", "platform-settings",
+  "locations", "distribution", "context", "keywords", "styles", "style-detail",
+  "actions", "settings-tenant", "settings-location",
+  "prompts", "experiments", "bench", "analytics", "generation-detail",
+  "cross-tenant-404", "budget-warning", "provider-degraded"
+];
+const PLATFORM_STATES = ["platform-tenants", "platform-providers", "platform-styles", "platform-settings"];
+const ACTION_KEYS = ["generate", "paraphrase", "regenerate", "restyle", "condense", "expand", "refine"];
+const LOCALES = ["en-GB", "de-DE"];
+const ENTRY_MODES = ["invite", "open-qr", "both"];
+const POLARITIES = ["positive", "neutral", "negative"];
+/* A field's scope is its blast radius, so it is rendered, not documented. */
+const SCOPE_BADGE = (scope) => "display:inline-block;padding:3px 8px;border-radius:var(--radius-xl);font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;white-space:nowrap;border:1px solid " +
+  (scope === "platform" ? "var(--ink-900);color:var(--text-heading)" : scope === "location" ? "var(--marigold-soft);color:var(--text-taxonomy)" : "var(--border-rule);color:var(--text-body)");
+const L = (v, loc) => (v && typeof v === "object" && !Array.isArray(v)) ? (v[loc] || v["en-GB"] || v[Object.keys(v)[0]]) : v;
+const RANGES = ["Last 7 days", "Last 30 days", "Last 90 days"];
+const RANGE_FACTOR = { "Last 7 days": 0.23, "Last 30 days": 1, "Last 90 days": 2.8 };
+const cap1 = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
+const low1 = (s) => String(s).charAt(0).toLowerCase() + String(s).slice(1);
+const money = (m) => "$" + (m / 1000000).toFixed(2);
+const pct = (v) => Math.round(v * 100) + "%";
+const EXAMPLE_MANIFEST = '{\n  "key": "warm",\n  "version": "1.0.0",\n  "displayName": "Warm",\n  "description": "Friendlier register, still only your facts.",\n  "constraints": { "minChars": 200, "maxChars": 600, "paragraphs": 2, "emojiPolicy": "none", "secondPerson": false },\n  "supportedActions": ["generate", "paraphrase", "regenerate", "condense"],\n  "sample": "Booked in for a check-up and it ran to time."\n}';
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    const q = new URLSearchParams(location.search);
+    /* ?fresh=1 renders a view without writing the shared store — used by the gallery. */
+    this.ephemeral = q.get("fresh") === "1";
+    const store = this.ephemeral ? defaultStore() : loadStore();
+    const tq = q.get("tenant");
+    if (tq && store.tenants[tq]) store.tenantSlug = tq;
+    const rq = q.get("role");
+    if (rq && FIXTURES.roles[rq]) store.role = rq;
+    const locs = store.locations[store.tenantSlug] || [];
+    const lq = q.get("location");
+    if (lq && locs.some((l) => l.slug === lq)) store.locationSlug = lq;
+    if (!locs.some((l) => l.slug === store.locationSlug)) store.locationSlug = locs.length ? locs[0].slug : null;
+    if (!this.ephemeral) saveStore(store);
+    let requested = q.get("state");
+    /* Role gating is enforced, not implied: a platform screen requested by a role
+       that cannot hold platform scope never renders. */
+    if (requested && PLATFORM_STATES.indexOf(requested) >= 0 && !FIXTURES.roles[store.role].platformScreens) requested = "overview";
+    this.state = {
+      store, view: requested || "login",
+      toolbar: q.get("toolbar") !== "off", toolbarOpen: true,
+      email: "", password: "", toast: "",
+      scope: "tenant",
+      sortKey: "n", sortDir: "desc", range: RANGES[1],
+      styleDetailKey: "concise-blurb", styleValidation: [],
+      manifestText: "", manifestErrors: [],
+      newKeyword: "", newKeywordCategory: "service", newKeywordPolarity: "positive", newKeywordScope: "tenant",
+      newLocation: "", newLocationAddress: "",
+      provName: "", provSlug: "", provLocale: "en-GB",
+      promptFilter: "all", promptPicks: [], promptEditHash: null, promptEditBody: "",
+      newExpAction: "generate", newExpA: "p_9f2ad1", newExpB: "p_4c81be", newExpWeight: 50,
+      bench: {
+        action: "generate", styleKey: "concise-blurb", promptVersionHash: "p_9f2ad1", provider: "fake",
+        fixture: "live", keywordIds: ["bs-k4", "bs-k1", "bs-k5"], freeText: "", sourceText: "",
+        sourceGenerationId: "gen_7f31c2", result: null
+      },
+      generationId: "gen_7f31c2"
+    };
+  }
+  componentDidMount() {
+    this.onStorage = (e) => { if (e.key === STORE_KEY && !this.ephemeral) this.setState({ store: loadStore() }); };
+    window.addEventListener("storage", this.onStorage);
+  }
+  componentWillUnmount() { window.removeEventListener("storage", this.onStorage); }
+
+  tenant() { return this.state.store.tenants[this.state.store.tenantSlug]; }
+  role() { return FIXTURES.roles[this.state.store.role] || FIXTURES.roles.platform_admin; }
+  visibleTenants() {
+    const r = this.role(), all = Object.keys(this.state.store.tenants);
+    if (r.switcher === "all") return all;
+    if (r.switcher === "assigned") return all.filter((k) => FIXTURES.session.assignedTenants.indexOf(k) >= 0);
+    return [this.state.store.tenantSlug];
+  }
+  locations() { return this.state.store.locations[this.state.store.tenantSlug] || []; }
+  location() {
+    const list = this.locations();
+    return list.find((l) => l.slug === this.state.store.locationSlug) || list[0] || null;
+  }
+  /* Location inherits the tenant policy; overrides[] is what was changed here. */
+  effective(field) {
+    const t = this.tenant(), loc = this.location();
+    const inherited = field === "entryMode" ? t.entryMode : t.policy[field];
+    const ov = (loc && loc.overrides) || {};
+    const overridden = field === "entryMode" ? !!(loc && loc.entryMode) : Object.prototype.hasOwnProperty.call(ov, field);
+    const value = overridden ? (field === "entryMode" ? loc.entryMode : ov[field]) : inherited;
+    return { value, inherited, overridden };
+  }
+  tenantKeywords() { return this.state.store.keywords[this.state.store.tenantSlug] || []; }
+  locationKeywords() { const l = this.location(); return (l && l.keywordAdditions) || []; }
+  categories() { return (this.tenant().keywordCategories || []).map((c) => c.id); }
+  surveyUrl(withToken) {
+    const loc = this.location();
+    const base = "https://review.maue.app/s/" + this.state.store.tenantSlug + "/" + (loc ? loc.slug : "—");
+    return withToken ? base + "?v=" + "{token}" : base;
+  }
+  localHref() {
+    const loc = this.location();
+    return "Survey.dc.html?tenant=" + this.state.store.tenantSlug + (loc ? "&location=" + loc.slug : "");
+  }
+  styleByKey(k) { return this.state.store.styles.find((s) => s.key === k); }
+  actionMeta(k) { return FIXTURES.actionCatalog.find((a) => a.key === k); }
+  allGenerations() { return Object.keys(FIXTURES.generations).map((k) => FIXTURES.generations[k]); }
+  generationById(id) { return this.allGenerations().find((g) => g.id === id); }
+
+  go(view) {
+    if (PLATFORM_STATES.indexOf(view) >= 0 && !this.role().platformScreens) {
+      return this.setState({ toast: "Platform scope is not visible to a " + this.role().label.toLowerCase() + ". The screen was not opened." });
+    }
+    const url = new URL(location.href);
+    url.searchParams.set("state", view);
+    url.searchParams.set("tenant", this.state.store.tenantSlug);
+    if (this.state.store.locationSlug) url.searchParams.set("location", this.state.store.locationSlug);
+    history.replaceState({}, "", url);
+    this.setState({ view, toast: "" });
+  }
+  setTenant(slug) {
+    const locs = this.state.store.locations[slug] || [];
+    const store = Object.assign({}, this.state.store, { tenantSlug: slug, locationSlug: locs.length ? locs[0].slug : null });
+    if (!this.ephemeral) saveStore(store);
+    const url = new URL(location.href);
+    url.searchParams.set("tenant", slug);
+    if (store.locationSlug) url.searchParams.set("location", store.locationSlug);
+    history.replaceState({}, "", url);
+    this.setState({ store, toast: "Scope is now " + store.tenants[slug].business.name + ". Every screen below follows it.", bench: Object.assign({}, this.state.bench, { keywordIds: [], result: null }), newKeywordCategory: ((store.tenants[slug].keywordCategories || [])[0] || { id: "service" }).id });
+  }
+  setLocation(slug) {
+    const store = Object.assign({}, this.state.store, { locationSlug: slug });
+    if (!this.ephemeral) saveStore(store);
+    const url = new URL(location.href);
+    url.searchParams.set("location", slug);
+    history.replaceState({}, "", url);
+    this.setState({ store });
+  }
+  setRole(role) {
+    const store = Object.assign({}, this.state.store, { role });
+    const r = FIXTURES.roles[role];
+    if (r.switcher === "none") store.tenantSlug = FIXTURES.session.assignedTenants[0];
+    if (!this.ephemeral) saveStore(store);
+    const view = PLATFORM_STATES.indexOf(this.state.view) >= 0 && !r.platformScreens ? "overview" : this.state.view;
+    const scope = this.state.scope === "platform" && !r.platformScreens ? "tenant" : this.state.scope;
+    this.setState({ store, view, scope, toast: "Now operating as " + r.label + ". " + r.sees + "." });
+  }
+  mutate(fn, toast) {
+    const store = clone(this.state.store);
+    fn(store);
+    if (!this.ephemeral) saveStore(store);
+    this.setState({ store, toast: toast || "" });
+  }
+  /* A keyword row writes to whichever scope owns it. */
+  mutateKeyword(k, fn, toast) {
+    this.mutate((s) => {
+      if (k.scope === "location") {
+        const l = (s.locations[s.tenantSlug] || []).find((x) => x.slug === s.locationSlug);
+        const target = l && (l.keywordAdditions || []).find((x) => x.id === k.id);
+        if (target) fn(target);
+      } else {
+        const target = (s.keywords[s.tenantSlug] || []).find((x) => x.id === k.id);
+        if (target) fn(target);
+      }
+    }, toast);
+  }
+  deleteKeyword(k) {
+    this.mutate((s) => {
+      if (k.scope === "location") {
+        const l = (s.locations[s.tenantSlug] || []).find((x) => x.slug === s.locationSlug);
+        if (l) l.keywordAdditions = (l.keywordAdditions || []).filter((x) => x.id !== k.id);
+      } else {
+        s.keywords[s.tenantSlug] = s.keywords[s.tenantSlug].filter((x) => x.id !== k.id);
+      }
+    }, "Deleted. Drafts already written keep their claim provenance.");
+  }
+
+  /* ===== bench composition — the same pipeline the survey runs ===== */
+  renderStyleText(styleKey, claims) {
+    const en = this.tenant().locale === "en-GB";
+    const and = (FIXTURES.copy[this.tenant().locale] || FIXTURES.copy["en-GB"]).conjunction;
+    const parts = claims.map((c) => en ? low1(c.text) : c.text);
+    if (styleKey === "social-short") return cap1(parts.join(", ")) + ".";
+    if (styleKey === "detailed-narrative") {
+      const loc = this.location();
+      return "I used " + (loc ? loc.name : this.tenant().business.name) + ", and this is how it went.\n\n" +
+        cap1(parts.join(", " + and + " ")) + ".\n\nOn that basis I would go back.";
+    }
+    if (parts.length <= 2) return cap1(parts.join(", " + and + " ")) + ".";
+    return cap1(parts[0]) + ". " + cap1(parts[1]) + ", " + and + " " + parts.slice(2).join(", ") + ".";
+  }
+  benchRun() {
+    const b = this.state.bench;
+    if (b.fixture !== "live") {
+      const rec = FIXTURES.generations[b.fixture];
+      return this.setState({ bench: Object.assign({}, b, { result: Object.assign({}, rec, { benchFixture: b.fixture }) }) });
+    }
+    const meta = this.actionMeta(b.action);
+    let claims = [];
+    let removed = [];
+    let sourceGenerationId = null;
+    if (b.action === "generate") {
+      claims = b.keywordIds.map((id) => {
+        const k = this.tenantKeywords().find((x) => x.id === id);
+        return k ? { text: k.label, sourceKeywordId: k.id, sourceSpan: null } : null;
+      }).filter(Boolean);
+      if (b.freeText.trim()) claims.push({ text: b.freeText.trim(), sourceKeywordId: null, sourceSpan: "free-text chars 0-" + b.freeText.trim().length });
+    } else if (b.action === "paraphrase") {
+      let at = 0;
+      claims = String(b.sourceText).split(/(?<=[.!?])\s+|\n+/).map((s) => s.trim()).filter((s) => s.length > 1).map((sent) => {
+        const start = String(b.sourceText).indexOf(sent, at); at = start + sent.length;
+        return { text: cap1(sent.replace(/[.!?]$/, "")), sourceKeywordId: null, sourceSpan: "chars " + start + "-" + at };
+      });
+    } else {
+      const src = this.generationById(b.sourceGenerationId);
+      if (!src) return this.setState({ toast: "Choose a source generation — this action cannot run without one." });
+      sourceGenerationId = src.id;
+      claims = clone(src.claims);
+      if (b.action === "condense") claims = claims.slice(0, Math.max(1, Math.ceil(claims.length / 2)));
+    }
+    if (!claims.length) {
+      return this.setState({ bench: Object.assign({}, b, { result: { id: "bench_" + Math.random().toString(16).slice(2, 8), action: b.action, draft: null, claims: [], removedClaims: [{ text: "the whole draft", reason: "Nothing was asserted, so there was nothing to write from." }], groundingVerdict: "rejected", provider: b.provider, model: b.provider === "fake" ? "none" : "claude-sonnet-4-5", latencyMs: 0, inputTokens: 0, outputTokens: 0, costMicros: 0, styleKey: b.styleKey, promptVersionHash: b.promptVersionHash, contextVersion: this.tenant().contextVersion, sourceGenerationId: sourceGenerationId, fallbackUsed: false } }) });
+    }
+    const st = this.styleByKey(b.styleKey);
+    let kept = claims.slice();
+    let draft = this.renderStyleText(b.styleKey, kept);
+    while (kept.length > 1 && draft.length > st.constraints.maxChars) { kept = kept.slice(0, kept.length - 1); draft = this.renderStyleText(b.styleKey, kept); }
+    if (b.action === "expand") {
+      removed.push(FIXTURES.embellishments[1]);
+      draft += " Taking the visit as a whole, those are the parts worth putting on record.";
+    }
+    const chars = draft.length;
+    const w = parseFloat(meta.costWeight) || 1;
+    const inputTokens = b.provider === "fake" ? 0 : Math.round(180 + chars * 0.42);
+    const outputTokens = b.provider === "fake" ? 0 : Math.round(chars / 3.6);
+    const result = {
+      id: "bench_" + Math.random().toString(16).slice(2, 8), tenantSlug: this.tenant().slug, action: b.action,
+      draft, claims: kept, removedClaims: removed,
+      groundingVerdict: removed.length ? "stripped" : "clean",
+      provider: b.provider, model: b.provider === "fake" ? "none" : b.provider === "openai" ? "gpt-4-1-mini" : "claude-sonnet-4-5",
+      latencyMs: b.provider === "fake" ? 0 : 1200 + chars,
+      inputTokens, outputTokens, costMicros: Math.round((inputTokens * 3 + outputTokens * 15) * w),
+      fallbackUsed: b.provider === "openai", promptVersionHash: b.promptVersionHash,
+      contextVersion: this.tenant().contextVersion, styleKey: b.styleKey, styleVersion: st.version,
+      sourceGenerationId, createdAt: new Date().toISOString()
+    };
+    this.setState({ bench: Object.assign({}, b, { result }), toast: "" });
+  }
+  setBench(patch) { this.setState({ bench: Object.assign({}, this.state.bench, patch) }); }
+
+  validateManifest(obj) {
+    const errs = [];
+    const isStr = (v) => typeof v === "string" && v.trim().length > 0;
+    if (!isStr(obj.key)) errs.push("key — required, must be a non-empty string");
+    else if (this.state.store.styles.some((s) => s.key === obj.key)) errs.push("key — \"" + obj.key + "\" already exists");
+    if (!isStr(obj.version)) errs.push("version — required, must be a non-empty string");
+    if (!isStr(obj.displayName)) errs.push("displayName — required, must be a non-empty string");
+    if (!obj.constraints || typeof obj.constraints !== "object") errs.push("constraints — required object");
+    else {
+      if (typeof obj.constraints.maxChars !== "number" || obj.constraints.maxChars <= 0) errs.push("constraints.maxChars — required, must be a positive number");
+      if (["none", "allowed"].indexOf(obj.constraints.emojiPolicy) < 0) errs.push("constraints.emojiPolicy — required, must be \"none\" or \"allowed\"");
+    }
+    if (!Array.isArray(obj.supportedActions) || !obj.supportedActions.length) errs.push("supportedActions — required, must be a non-empty array");
+    else {
+      const bad = obj.supportedActions.filter((a) => ACTION_KEYS.indexOf(a) < 0);
+      if (bad.length) errs.push("supportedActions — unknown action " + JSON.stringify(bad[0]));
+    }
+    return errs;
+  }
+  addManifest() {
+    let obj;
+    try { obj = JSON.parse(this.state.manifestText); }
+    catch (e) { return this.setState({ manifestErrors: ["JSON — could not parse: " + e.message] }); }
+    const errs = this.validateManifest(obj);
+    if (errs.length) return this.setState({ manifestErrors: errs });
+    this.mutate((store) => {
+      store.styles.push({
+        key: obj.key, version: obj.version, displayName: obj.displayName,
+        description: obj.description || "", constraints: obj.constraints,
+        supportedActions: obj.supportedActions, sample: obj.sample || ""
+      });
+      store.tenants[store.tenantSlug].enabledStyles.push(obj.key);
+    }, "Added " + obj.displayName + " and enabled it for this tenant. The survey offers it on next load.");
+    this.setState({ manifestErrors: [], manifestText: "" });
+  }
+
+  /* ===== settings, one renderer per scope ===== */
+  tenantSettings() {
+    const t = this.tenant();
+    const row = (o) => Object.assign({ scope: "tenant", badgeStyle: SCOPE_BADGE("tenant"), inheritLabel: "", inheritColor: "var(--text-meta)", overridden: false }, o);
+    const set = (fn, toast) => this.mutate((s) => fn(s.tenants[s.tenantSlug]), toast);
+    return [
+      row({ label: "Business name", note: "Shown on every survey screen, at every venue.", isText: true, value: t.business.name, onText: (e) => set((x) => { x.business.name = e.target.value; }) }),
+      row({ label: "Locale", note: "Binds customer copy, keyword language, and which styles may be enabled at all.", isSelect: true, value: t.locale, options: LOCALES.map((v) => ({ v, label: v })), onSelect: (e) => set((x) => { x.locale = e.target.value; }, "Locale changed. The survey renders in it and locale-bound styles are re-filtered.") }),
+      row({ label: "Entry mode", note: "How customers arrive by default. A location may override it.", isSelect: true, value: t.entryMode, options: ENTRY_MODES.map((v) => ({ v, label: v })), onSelect: (e) => set((x) => { x.entryMode = e.target.value; }, "Saved. Distribution templates follow the mode.") }),
+      row({ label: "Keyword categories", note: "The tenant's own taxonomy, comma separated. This was a database enum until the second tenant was a restaurant.", isText: true, value: (t.keywordCategories || []).map((c) => c.label).join(", "), onText: (e) => set((x) => { x.keywordCategories = e.target.value.split(",").map((v) => v.trim()).filter(Boolean).map((lab) => ({ id: lab.toLowerCase(), label: lab })); }, "Saved. Keywords keep their category id; one that no longer resolves groups under its raw id.") }),
+      row({ label: "Require a disclosure line", note: "Adds a disclosure to every draft and includes it in the copied text.", isToggle: true, on: t.policy.requireDisclosure, stateLabel: t.policy.requireDisclosure ? "On" : "Off", onToggle: (e) => set((x) => { x.policy.requireDisclosure = e.target.checked; }, "Saved. The survey shows the disclosure with every draft on next load.") }),
+      row({ label: "Require a confirmed visit", note: "Only reachable on an invited entry mode — an open-QR venue has no appointment to confirm.", isToggle: true, on: t.policy.requireVerifiedExperience, stateLabel: t.policy.requireVerifiedExperience ? "On" : "Off", onToggle: (e) => set((x) => { x.policy.requireVerifiedExperience = e.target.checked; }, "Saved. The verification fallback " + (e.target.checked ? "now exists" : "has left") + " in the survey flow.") }),
+      row({ label: "Drafts per session", note: "Caps how many formats a customer can request at once.", isNumber: true, value: t.policy.maxDraftsPerSession, onNumber: (e) => set((x) => { x.policy.maxDraftsPerSession = Math.max(1, parseInt(e.target.value, 10) || 1); }, "Saved. The style screen enforces the new cap.") }),
+      row({ label: "Monthly budget (micros)", note: "At 100% the survey falls back to an unaided write-and-copy box.", isNumber: true, value: t.monthlyBudgetMicros, onNumber: (e) => set((x) => { x.monthlyBudgetMicros = Math.max(0, parseInt(e.target.value, 10) || 0); }) }),
+      row({ label: "Alert threshold (%)", note: "Raises the budget banner on this console.", isNumber: true, value: t.alertThresholdPct, onNumber: (e) => set((x) => { x.alertThresholdPct = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 90)); }) })
+    ];
+  }
+  locationSettings() {
+    const loc = this.location();
+    const setLoc = (fn, toast) => this.mutate((s) => {
+      const l = (s.locations[s.tenantSlug] || []).find((x) => x.slug === s.locationSlug);
+      if (l) fn(l);
+    }, toast);
+    const show = (v) => typeof v === "boolean" ? (v ? "on" : "off") : String(v);
+    const inh = (field) => {
+      const e = this.effective(field);
+      return {
+        overridden: e.overridden,
+        inheritLabel: e.overridden ? "overrides tenant · tenant says " + show(e.inherited) : "inherits tenant · " + show(e.inherited),
+        inheritColor: e.overridden ? "var(--text-taxonomy)" : "var(--text-meta)"
+      };
+    };
+    const row = (field, o) => Object.assign({ scope: "location", badgeStyle: SCOPE_BADGE("location") }, inh(field), o, {
+      onReset: () => setLoc((l) => {
+        if (field === "entryMode") l.entryMode = null;
+        else delete l.overrides[field];
+      }, "Override removed. This venue inherits the tenant again.")
+    });
+    const ov = (field, value) => setLoc((l) => {
+      if (field === "entryMode") l.entryMode = value;
+      else l.overrides[field] = value;
+    }, "Saved at " + (loc ? loc.name : "this venue") + " only. The other venue is untouched.");
+    const plain = (o) => Object.assign({ scope: "location", badgeStyle: SCOPE_BADGE("location"), inheritLabel: "", inheritColor: "var(--text-meta)", overridden: false }, o);
+    return [
+      row("entryMode", { label: "Entry mode", note: "How customers reach this venue's survey.", isSelect: true, value: this.effective("entryMode").value, options: ENTRY_MODES.map((v) => ({ v, label: v })), onSelect: (e) => ov("entryMode", e.target.value) }),
+      row("requireDisclosure", { label: "Require a disclosure line", note: "Compliance posture can differ by venue.", isToggle: true, on: this.effective("requireDisclosure").value, stateLabel: this.effective("requireDisclosure").value ? "On" : "Off", onToggle: (e) => ov("requireDisclosure", e.target.checked) }),
+      row("requireVerifiedExperience", { label: "Require a confirmed visit", note: "Ignored where the entry mode is open QR.", isToggle: true, on: this.effective("requireVerifiedExperience").value, stateLabel: this.effective("requireVerifiedExperience").value ? "On" : "Off", onToggle: (e) => ov("requireVerifiedExperience", e.target.checked) }),
+      row("maxDraftsPerSession", { label: "Drafts per session", note: "A quieter venue may allow more.", isNumber: true, value: this.effective("maxDraftsPerSession").value, onNumber: (e) => ov("maxDraftsPerSession", Math.max(1, parseInt(e.target.value, 10) || 1)) }),
+      plain({ label: "Platform destinations", note: "Comma separated. Where a finished review can be posted from this venue.", isText: true, value: ((loc && loc.destinations) || []).join(", "), onText: (e) => setLoc((l) => { l.destinations = e.target.value.split(",").map((v) => v.trim()).filter((v) => FIXTURES.destinations[v]); }, "Saved. The survey's done screen routes to these.") }),
+      plain({ label: "Google place id", note: "Held against the venue, never against the brand.", isText: true, value: (loc && loc.platformIds && loc.platformIds.googlePlaceId) || "", onText: (e) => setLoc((l) => { l.platformIds = l.platformIds || {}; l.platformIds.googlePlaceId = e.target.value; }) }),
+      plain({ label: "Active", note: "An inactive venue stops serving its link.", isToggle: true, on: !!(loc && loc.active), stateLabel: loc && loc.active ? "Active" : "Paused", onToggle: (e) => setLoc((l) => { l.active = e.target.checked; }) })
+    ];
+  }
+  platformSettings() {
+    const p = this.state.store.platform;
+    const row = (o) => Object.assign({ scope: "platform", badgeStyle: SCOPE_BADGE("platform"), inheritLabel: "", inheritColor: "var(--text-meta)", overridden: false }, o);
+    const set = (fn, toast) => this.mutate((s) => fn(s.platform), toast);
+    return [
+      row({ label: "Template · require a disclosure line", note: "Copied into a tenant at provisioning. Changing it does not touch existing tenants.", isToggle: true, on: p.defaultPolicyTemplate.requireDisclosure, stateLabel: p.defaultPolicyTemplate.requireDisclosure ? "On" : "Off", onToggle: (e) => set((x) => { x.defaultPolicyTemplate.requireDisclosure = e.target.checked; }) }),
+      row({ label: "Template · drafts per session", note: "The starting cap for a new tenant.", isNumber: true, value: p.defaultPolicyTemplate.maxDraftsPerSession, onNumber: (e) => set((x) => { x.defaultPolicyTemplate.maxDraftsPerSession = Math.max(1, parseInt(e.target.value, 10) || 1); }) }),
+      row({ label: "Rate limit · drafts per session per hour", note: "Global. A tenant cannot raise it.", isNumber: true, value: p.rateLimits.draftsPerSessionPerHour, onNumber: (e) => set((x) => { x.rateLimits.draftsPerSessionPerHour = Math.max(1, parseInt(e.target.value, 10) || 1); }, "Saved. Exceeding it routes the survey to rate-limited.") }),
+      row({ label: "Rate limit · requests per tenant per minute", note: "Protects the shared provider quota.", isNumber: true, value: p.rateLimits.requestsPerTenantPerMinute, onNumber: (e) => set((x) => { x.rateLimits.requestsPerTenantPerMinute = Math.max(1, parseInt(e.target.value, 10) || 1); }) }),
+      row({ label: "Log retention (days)", note: "Generation records, claims and removals.", isNumber: true, value: p.logRetentionDays, onNumber: (e) => set((x) => { x.logRetentionDays = Math.max(30, parseInt(e.target.value, 10) || 400); }) })
+    ].concat(p.featureFlags.map((f, i) => row({
+      label: "Flag · " + f.key, note: f.note, isToggle: true, on: f.on, stateLabel: f.on ? "On" : "Off",
+      onToggle: (e) => set((x) => { x.featureFlags[i].on = e.target.checked; }, "Flag saved for every tenant.")
+    })));
+  }
+
+  renderVals() {
+    const st = this.state, store = st.store, t = this.tenant(), view = st.view;
+    const valid = ADMIN_STATES.indexOf(view) >= 0;
+    const isConsole = valid && view !== "login";
+    const loc = this.location();
+    const banner = view === "budget-warning" || (t.monthToDateCostMicros / t.monthlyBudgetMicros) >= ((t.alertThresholdPct || 90) / 100);
+    const degraded = view === "provider-degraded";
+    const titles = {
+      overview: ["Today", "Overview"],
+      "platform-tenants": ["Platform", "Tenants"], "platform-providers": ["Platform", "Providers"],
+      "platform-styles": ["Platform", "Style catalogue"], "platform-settings": ["Platform", "Platform settings"],
+      locations: ["Tenant", "Locations"], distribution: ["Location", "Distribution"],
+      context: ["Tenant", "Business context"], keywords: ["Tenant", "Keywords"],
+      styles: ["Tenant", "Style enablement"], "style-detail": ["Tenant", "Style manifest"],
+      actions: ["Tenant", "Actions"], "settings-tenant": ["Tenant", "Tenant settings"],
+      "settings-location": ["Location", "Location settings"],
+      prompts: ["Model", "Prompt versions"], experiments: ["Model", "Experiments"],
+      bench: ["Operate", "Bench"], analytics: ["Operate", "Analytics"],
+      "generation-detail": ["Operate", "Generation detail"],
+      "cross-tenant-404": ["Operate", "Generation detail"], "budget-warning": ["Today", "Overview"],
+      "provider-degraded": ["Today", "Overview"]
+    };
+    const tt = titles[view] || ["", ""];
+    const navItem = (key, label) => ({
+      key, label, onClick: () => this.go(key),
+      style: "display:block;width:100%;text-align:left;padding:7px 10px;margin:0 -10px;border:0;border-radius:var(--radius-xs);background:" + (view === key || (key === "overview" && (view === "budget-warning" || view === "provider-degraded")) || (key === "generation-detail" && view === "cross-tenant-404") || (key === "styles" && view === "style-detail") ? "var(--surface-wash-lilac)" : "transparent") + ";font:var(--type-caption);color:var(--text-body);cursor:pointer"
+    });
+
+    /* Analytics, tiles and breakdowns all read the same scoped row set. */
+    const rolePlatform = this.role().platformScreens;
+    const scope = (st.scope === "platform" && !rolePlatform) ? "tenant" : st.scope;
+    const factor = RANGE_FACTOR[st.range];
+    const rowsFor = (ts) => (FIXTURES.analytics[ts] || []).map((r) => Object.assign({ tenantSlug: ts }, r));
+    const locName = (ts, ls) => {
+      const l = (store.locations[ts] || []).find((x) => x.slug === ls);
+      return l ? l.name : ls;
+    };
+    let base = [];
+    if (scope === "platform") this.visibleTenants().forEach((k) => { base = base.concat(rowsFor(k)); });
+    else if (scope === "tenant") base = rowsFor(store.tenantSlug);
+    else base = rowsFor(store.tenantSlug).filter((r) => r.locationSlug === store.locationSlug);
+    const rows = base.map((r) => Object.assign({}, r, {
+      n: Math.round(r.n * factor), totalCostMicros: Math.round(r.totalCostMicros * factor),
+      where: scope === "platform" ? store.tenants[r.tenantSlug].business.name + " · " + locName(r.tenantSlug, r.locationSlug) : locName(r.tenantSlug, r.locationSlug)
+    }));
+    const sorted = rows.slice().sort((a, b) => {
+      const k = st.sortKey, dir = st.sortDir === "asc" ? 1 : -1;
+      if (typeof a[k] === "string") return String(a[k]).localeCompare(String(b[k])) * dir;
+      return (a[k] - b[k]) * dir;
+    });
+    const agg = (list) => {
+      const n = list.reduce((a, r) => a + r.n, 0);
+      const cost = list.reduce((a, r) => a + r.totalCostMicros, 0);
+      const acc = n ? list.reduce((a, r) => a + r.n * r.acceptanceRate, 0) / n : 0;
+      const accepted = Math.round(n * acc);
+      return { n, cost, acc, perAccepted: accepted ? cost / accepted : 0 };
+    };
+    const total = agg(rows);
+    const groupKey = scope === "platform" ? "tenantSlug" : scope === "tenant" ? "locationSlug" : "styleKey";
+    const groups = [];
+    rows.forEach((r) => {
+      let g = groups.find((x) => x.key === r[groupKey]);
+      if (!g) { g = { key: r[groupKey], list: [] }; groups.push(g); }
+      g.list.push(r);
+    });
+    const scopeMtd = scope === "platform"
+      ? this.visibleTenants().reduce((a, k) => a + store.tenants[k].monthToDateCostMicros, 0)
+      : t.monthToDateCostMicros;
+    const scopeBudget = scope === "platform"
+      ? this.visibleTenants().reduce((a, k) => a + store.tenants[k].monthlyBudgetMicros, 0)
+      : t.monthlyBudgetMicros;
+    const col = (k, label, right) => ({
+      key: k, label: label + (st.sortKey === k ? (st.sortDir === "asc" ? " ↑" : " ↓") : ""),
+      onSort: () => this.setState({ sortKey: k, sortDir: st.sortKey === k && st.sortDir === "desc" ? "asc" : "desc" }),
+      style: "text-align:" + (right ? "right" : "left") + ";padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)"
+    });
+
+    const gen = this.generationById(st.generationId) || FIXTURES.generations.clean;
+    const lineage = [];
+    let walk = gen, guard = 0;
+    while (walk && guard < 6) {
+      lineage.push({
+        line: walk.id + " · " + walk.action + " · " + walk.styleKey + " v" + walk.styleVersion,
+        note: walk.sourceGenerationId ? "derived from " + walk.sourceGenerationId : "original generation — no source draft"
+      });
+      walk = walk.sourceGenerationId ? this.generationById(walk.sourceGenerationId) : null;
+      guard += 1;
+    }
+
+    const b = st.bench;
+    const bmeta = this.actionMeta(b.action);
+    const needsSource = b.action === "paraphrase";
+    const needsDraft = bmeta.needsDraft;
+    const res = b.result;
+    const promptsForAction = store.promptVersions.filter((p) => p.action === b.action);
+
+    const filtered = st.promptFilter === "all" ? store.promptVersions : store.promptVersions.filter((p) => p.action === st.promptFilter);
+
+    return {
+      /* chrome + scope bar */
+      tenantSlug: store.tenantSlug, tenantName: t.business.name,
+      locationSlug: store.locationSlug, locationName: loc ? loc.name : "—",
+      isLogin: view === "login", isConsole, isUnknown: !valid,
+      unknownState: view,
+      viewEyebrow: tt[0], viewTitle: tt[1],
+      viewMeta: t.slug + " · " + t.locale + " · context v" + t.contextVersion,
+      toast: st.toast,
+      badgePlatform: SCOPE_BADGE("platform"), badgeTenant: SCOPE_BADGE("tenant"), badgeLocation: SCOPE_BADGE("location"),
+      canPlatform: rolePlatform, noPlatform: !rolePlatform,
+      canSwitchTenant: this.role().switcher !== "none", fixedTenant: this.role().switcher === "none",
+      onPlatformScope: () => this.go("platform-tenants"),
+      tenantScopeNote: t.locale + " · " + this.locations().length + " locations",
+      locationScopeNote: this.effective("entryMode").value + (this.effective("entryMode").overridden ? " · override" : ""),
+      locationOptions: this.locations().map((l) => ({ k: l.slug, name: l.name })),
+      onLocation: (e) => this.setLocation(e.target.value),
+      operatorLabel: FIXTURES.session.operatorName + " · " + this.role().label,
+      roleLabel: this.role().label,
+      navGroups: [
+        rolePlatform ? { label: "Platform", items: [navItem("platform-tenants", "Tenants"), navItem("platform-providers", "Providers"), navItem("platform-styles", "Style catalogue"), navItem("platform-settings", "Platform settings")] } : null,
+        { label: "Operate", items: [navItem("overview", "Overview"), navItem("bench", "Bench"), navItem("analytics", "Analytics"), navItem("generation-detail", "Generation detail")] },
+        { label: "Tenant", items: [navItem("context", "Business context"), navItem("keywords", "Keywords"), navItem("styles", "Style enablement"), navItem("actions", "Actions"), navItem("settings-tenant", "Tenant settings")] },
+        { label: "Location", items: [navItem("locations", "Locations"), navItem("distribution", "Distribution"), navItem("settings-location", "Location settings")] },
+        { label: "Model", items: [navItem("prompts", "Prompts"), navItem("experiments", "Experiments")] }
+      ].filter(Boolean),
+      showBudgetBanner: banner,
+      budgetBannerText: "Month-to-date spend is " + money(t.monthToDateCostMicros) + " of " + money(t.monthlyBudgetMicros) + " (" + pct(t.monthToDateCostMicros / t.monthlyBudgetMicros) + "). At 100% the survey stops offering assistance and falls back to an unaided write-and-copy box.",
+      showProviderBanner: degraded,
+      providerBannerText: "Primary provider latency is elevated (p95 11.4s). Requests are falling back to the secondary provider; drafts are slower and marked fallbackUsed.",
+
+      /* login */
+      email: st.email, password: st.password,
+      onEmail: (e) => this.setState({ email: e.target.value }),
+      onPassword: (e) => this.setState({ password: e.target.value }),
+      onLogin: () => this.go("overview"),
+
+      /* overview — scoped */
+      scope, scopeOptions: [{ v: "location", label: "This location" }, { v: "tenant", label: "This tenant" }].concat(rolePlatform ? [{ v: "platform", label: "Platform · all tenants" }] : []),
+      onScope: (e) => this.setState({ scope: e.target.value }),
+      scopeNote: scope === "platform" ? "Every tenant you can see, summed." : scope === "tenant" ? "Both venues of " + t.business.name + "." : (loc ? loc.name + " only." : ""),
+      breakdownTitle: scope === "platform" ? "By tenant" : scope === "tenant" ? "By location" : "By format",
+      breakdownKeyLabel: scope === "platform" ? "Tenant" : scope === "tenant" ? "Location" : "Style",
+      breakdownRows: groups.map((g) => {
+        const a = agg(g.list);
+        return {
+          label: scope === "platform" ? store.tenants[g.key].business.name : scope === "tenant" ? locName(store.tenantSlug, g.key) : g.key,
+          n: a.n, acceptance: pct(a.acc), cost: money(a.cost),
+          perAccepted: a.perAccepted ? (a.perAccepted / 1000).toFixed(2) + "m¢" : "—"
+        };
+      }),
+      tiles: [
+        { label: "Generations · " + st.range.toLowerCase(), value: String(total.n), note: scope === "platform" ? this.visibleTenants().length + " tenants" : scope === "tenant" ? this.locations().length + " locations" : (loc ? loc.name : "") },
+        { label: "Acceptance rate", value: pct(total.acc), note: "Weighted by run count across this scope" },
+        { label: "Month-to-date cost", value: money(scopeMtd), note: pct(scopeMtd / scopeBudget) + " of " + money(scopeBudget) + " budget" }
+      ],
+      actionBreakdown: ACTION_KEYS.map((k) => {
+        const rs = rows.filter((r) => r.action === k);
+        const a = agg(rs);
+        return { key: k, label: this.actionMeta(k).label, n: a.n || "—", cost: a.n ? money(a.cost) : "—", perAccepted: a.perAccepted ? (a.perAccepted / 1000).toFixed(2) + "m¢" : "—" };
+      }),
+      experimentSummary: store.experiment.key + " · " + store.experiment.action + " · " + store.experiment.status,
+      experimentVariants: store.experiment.variants.map((v) => ({ line: v.key + " " + v.promptVersionHash + " · " + v.weight + "% · n=" + v.n + " · " + pct(v.acceptanceRate) })),
+      providerStatus: [
+        { line: " anthropic · claude-sonnet-4-5 · " + (degraded ? "degraded, p95 11.4s" : "healthy, p95 4.1s"), dot: "display:inline-block;width:6px;height:6px;border-radius:9999px;margin-right:8px;background:" + (degraded ? "var(--marigold)" : "var(--ink-900)") },
+        { line: " openai · gpt-4-1-mini · fallback, healthy", dot: "display:inline-block;width:6px;height:6px;border-radius:9999px;margin-right:8px;background:var(--ink-900)" }
+      ],
+
+      /* context */
+      contextFields: [
+        { id: "cx-name", label: "Business name", rows: 1, value: t.business.name, help: "Shown on every survey screen.", onChange: (e) => this.mutate((s) => { s.tenants[s.tenantSlug].business.name = e.target.value; }) },
+        { id: "cx-cat", label: "Category", rows: 1, value: t.business.category, help: "", onChange: (e) => this.mutate((s) => { s.tenants[s.tenantSlug].business.category = e.target.value; }) },
+        { id: "cx-loc", label: "Venue in scope", rows: 1, value: loc ? loc.name : "—", help: "Location scope. Edited on the Locations screen, shown here so the context you are publishing has an address.", onChange: (e) => this.mutate((s) => { const l = (s.locations[s.tenantSlug] || []).find((x) => x.slug === s.locationSlug); if (l) l.name = e.target.value; }) },
+        { id: "cx-desc", label: "Description", rows: 2, value: t.business.description, help: "", onChange: (e) => this.mutate((s) => { s.tenants[s.tenantSlug].business.description = e.target.value; }) },
+        { id: "cx-tone", label: "Tone guidelines", rows: 3, value: t.business.toneGuidelines, help: "Sent with every prompt. Never shown to the customer.", onChange: (e) => this.mutate((s) => { s.tenants[s.tenantSlug].business.toneGuidelines = e.target.value; }) },
+        { id: "cx-banned", label: "Banned terms", rows: 2, value: (t.policy.bannedTerms || []).join(", "), help: "Comma separated. A draft containing one has it removed, and the removal is shown to the customer.", onChange: (e) => this.mutate((s) => { s.tenants[s.tenantSlug].policy.bannedTerms = e.target.value.split(",").map((x) => x.trim()).filter(Boolean); }) }
+      ],
+      contextVersionLabel: "Current context version: v" + t.contextVersion,
+      onSaveContext: () => this.mutate((s) => { s.tenants[s.tenantSlug].contextVersion += 1; }, "Published context v" + (t.contextVersion + 1) + ". Drafts already written keep the version they were written against."),
+
+      /* keywords — tenant set plus this location's additions, one table */
+      categoryOptions: this.categories(), polarityOptions: POLARITIES,
+      keywordScopeOptions: [{ v: "tenant", label: "Tenant-wide" }, { v: "location", label: "This location only" }],
+      newKeywordScope: st.newKeywordScope,
+      onNewKeywordScope: (e) => this.setState({ newKeywordScope: e.target.value }),
+      keywordRows: this.tenantKeywords().map((k) => Object.assign({ scope: "tenant" }, k))
+        .concat(this.locationKeywords().map((k) => Object.assign({ scope: "location" }, k)))
+        .sort((a, b2) => a.sortOrder - b2.sortOrder)
+        .map((k, i, arr) => ({
+          id: k.id, label: k.label, category: k.category, polarity: k.polarity, isActive: k.isActive, sortOrder: k.sortOrder,
+          scope: k.scope, badgeStyle: SCOPE_BADGE(k.scope),
+          onLabel: (e) => this.mutateKeyword(k, (x) => { x.label = e.target.value; }),
+          onCategory: (e) => this.mutateKeyword(k, (x) => { x.category = e.target.value; }),
+          onPolarity: (e) => this.mutateKeyword(k, (x) => { x.polarity = e.target.value; }),
+          onActive: (e) => this.mutateKeyword(k, (x) => { x.isActive = e.target.checked; }, e.target.checked ? "" : "Deactivated. The survey stops offering it on next load."),
+          onUp: () => { const prev = arr[i - 1]; if (prev) { const o = k.sortOrder; this.mutateKeyword(k, (x) => { x.sortOrder = prev.sortOrder; }); this.mutateKeyword(prev, (x) => { x.sortOrder = o; }); } },
+          onDown: () => { const nx = arr[i + 1]; if (nx) { const o = k.sortOrder; this.mutateKeyword(k, (x) => { x.sortOrder = nx.sortOrder; }); this.mutateKeyword(nx, (x) => { x.sortOrder = o; }); } },
+          onDelete: () => this.deleteKeyword(k)
+        })),
+      newKeyword: st.newKeyword, newKeywordCategory: st.newKeywordCategory, newKeywordPolarity: st.newKeywordPolarity,
+      onNewKeyword: (e) => this.setState({ newKeyword: e.target.value }),
+      onNewKeywordCategory: (e) => this.setState({ newKeywordCategory: e.target.value }),
+      onNewKeywordPolarity: (e) => this.setState({ newKeywordPolarity: e.target.value }),
+      addKeywordDisabled: st.newKeyword.trim().length < 4,
+      onAddKeyword: () => {
+        const label = st.newKeyword.trim();
+        if (label.length < 4) return;
+        const toLocation = st.newKeywordScope === "location";
+        this.mutate((s) => {
+          const l = (s.locations[s.tenantSlug] || []).find((x) => x.slug === s.locationSlug);
+          const list = toLocation ? (l.keywordAdditions = l.keywordAdditions || []) : s.keywords[s.tenantSlug];
+          const max = list.reduce((a, x) => Math.max(a, x.sortOrder), toLocation ? 200 : 0);
+          list.push({ id: (toLocation ? s.locationSlug.slice(0, 2) : s.tenantSlug.slice(0, 2)) + "-k" + (Date.now() % 100000), label, category: st.newKeywordCategory, polarity: st.newKeywordPolarity, isActive: true, sortOrder: max + 10 });
+        }, toLocation ? "Added at " + (loc ? loc.name : "this venue") + " only. The other venue does not offer it." : "Added for every venue of this tenant.");
+        this.setState({ newKeyword: "" });
+      },
+
+      /* styles — tenant enablement only; authoring lives at platform scope */
+      styleRows: store.styles.map((sy, i) => ({
+        key: sy.key, displayName: sy.displayName, description: L(sy.description, t.locale),
+        enabled: t.enabledStyles.indexOf(sy.key) >= 0,
+        blocked: sy.locale !== "any" && sy.locale !== t.locale,
+        localeNote: sy.locale === "any" ? "locale any" : sy.locale === t.locale ? "locale " + sy.locale : "locale " + sy.locale + " ≠ " + t.locale + " · cannot be enabled",
+        localeColor: (sy.locale !== "any" && sy.locale !== t.locale) ? "var(--text-taxonomy)" : "var(--text-meta)",
+        meta: "v" + sy.version + " · " + sy.targetPlatform + " · " + sy.constraints.minChars + "–" + sy.constraints.maxChars + " chars · emoji " + sy.constraints.emojiPolicy,
+        onEnable: (e) => this.mutate((s) => {
+          const list = s.tenants[s.tenantSlug].enabledStyles;
+          const at = list.indexOf(sy.key);
+          if (e.target.checked && at < 0) list.push(sy.key);
+          if (!e.target.checked && at >= 0) list.splice(at, 1);
+        }, "Style enablement saved. The survey reflects it on next load."),
+        onUp: () => this.mutate((s) => { if (i > 0) { const m = s.styles.splice(i, 1)[0]; s.styles.splice(i - 1, 0, m); } }),
+        onDown: () => this.mutate((s) => { if (i < s.styles.length - 1) { const m = s.styles.splice(i, 1)[0]; s.styles.splice(i + 1, 0, m); } }),
+        onDetail: () => { this.setState({ styleDetailKey: sy.key, styleValidation: [] }); this.go("style-detail"); },
+        actionToggles: ACTION_KEYS.map((a) => ({
+          key: a, label: this.actionMeta(a).label, on: sy.supportedActions.indexOf(a) >= 0,
+          style: "display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid " + (sy.supportedActions.indexOf(a) >= 0 ? "var(--ink-900)" : "var(--border-card)") + ";border-radius:var(--radius-xl);font:var(--type-micro);color:var(--text-body);cursor:pointer",
+          onToggle: (e) => this.mutate((s) => {
+            const target = s.styles.find((x) => x.key === sy.key);
+            const at = target.supportedActions.indexOf(a);
+            if (e.target.checked && at < 0) target.supportedActions.push(a);
+            if (!e.target.checked && at >= 0) target.supportedActions.splice(at, 1);
+          }, "Saved. " + sy.displayName + " drafts " + (e.target.checked ? "now offer" : "no longer offer") + " " + a + " in the survey.")
+        }))
+      })),
+      manifestText: st.manifestText, manifestErrors: st.manifestErrors,
+      onManifestText: (e) => this.setState({ manifestText: e.target.value }),
+      onFillManifest: () => this.setState({ manifestText: EXAMPLE_MANIFEST, manifestErrors: [] }),
+      onAddManifest: () => this.addManifest(),
+
+      /* style-detail */
+      styleKeyOptions: store.styles.map((s) => s.key),
+      styleDetailKey: st.styleDetailKey,
+      onStyleDetailPick: (e) => this.setState({ styleDetailKey: e.target.value, styleValidation: [] }),
+      styleManifestJson: JSON.stringify(this.styleByKey(st.styleDetailKey) || {}, null, 2),
+      styleValidation: st.styleValidation,
+      onValidateStyle: () => {
+        const sy = this.styleByKey(st.styleDetailKey) || {};
+        const checks = [
+          ["key is a non-empty string", typeof sy.key === "string" && !!sy.key],
+          ["version is a non-empty string", typeof sy.version === "string" && !!sy.version],
+          ["displayName is a non-empty string", typeof sy.displayName === "string" && !!sy.displayName],
+          ["constraints.maxChars is a positive number", !!sy.constraints && sy.constraints.maxChars > 0],
+          ["constraints.minChars < maxChars", !!sy.constraints && sy.constraints.minChars < sy.constraints.maxChars],
+          ["constraints.emojiPolicy is none or allowed", !!sy.constraints && ["none", "allowed"].indexOf(sy.constraints.emojiPolicy) >= 0],
+          ["supportedActions is a non-empty subset of the seven", Array.isArray(sy.supportedActions) && sy.supportedActions.length > 0 && sy.supportedActions.every((a) => ACTION_KEYS.indexOf(a) >= 0)],
+          ["sample fits maxChars", !!sy.sample && !!sy.constraints && sy.sample.length <= sy.constraints.maxChars]
+        ];
+        this.setState({ styleValidation: checks.map((c) => ({ line: (c[1] ? "pass · " : "FAIL · ") + c[0], color: c[1] ? "var(--text-muted)" : "var(--text-error)" })) });
+      },
+
+      /* actions */
+      actionRows: FIXTURES.actionCatalog.map((a) => ({
+        key: a.key, label: a.label, groundingRule: a.groundingRule, input: a.input, costWeight: a.costWeight,
+        on: t.enabledActions.indexOf(a.key) >= 0,
+        onToggle: (e) => this.mutate((s) => {
+          const list = s.tenants[s.tenantSlug].enabledActions;
+          const at = list.indexOf(a.key);
+          if (e.target.checked && at < 0) list.push(a.key);
+          if (!e.target.checked && at >= 0) list.splice(at, 1);
+        }, e.target.checked ? a.label + " enabled for " + t.business.name + "." : a.label + " disabled. It is gone from the survey's entry paths and action bars on next load.")
+      })),
+
+      /* prompts */
+      promptFilter: st.promptFilter,
+      promptFilterOptions: ["all"].concat(ACTION_KEYS),
+      onPromptFilter: (e) => this.setState({ promptFilter: e.target.value, promptPicks: [] }),
+      promptRows: filtered.map((p) => ({
+        hash: p.hash, action: p.action, createdAt: p.createdAt, status: p.status,
+        evalScore: p.evalScore == null ? "—" : p.evalScore.toFixed(2),
+        picked: st.promptPicks.indexOf(p.hash) >= 0,
+        statusStyle: "display:inline-block;padding:3px 9px;border-radius:var(--radius-xl);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;border:1px solid " + (p.status === "in-experiment" ? "var(--ink-900)" : "var(--border-rule)") + ";color:" + (p.status === "retired" ? "var(--text-meta)" : "var(--text-body)"),
+        onPick: () => {
+          const has = st.promptPicks.indexOf(p.hash) >= 0;
+          const next = has ? st.promptPicks.filter((h) => h !== p.hash) : st.promptPicks.concat([p.hash]).slice(-2);
+          this.setState({ promptPicks: next });
+        },
+        onEdit: () => this.setState({ promptEditHash: p.hash, promptEditBody: p.body })
+      })),
+      promptEditing: !!st.promptEditHash, promptEditHash: st.promptEditHash, promptEditBody: st.promptEditBody,
+      onPromptBody: (e) => this.setState({ promptEditBody: e.target.value }),
+      onCancelPrompt: () => this.setState({ promptEditHash: null, promptEditBody: "" }),
+      onSavePrompt: () => {
+        const src = store.promptVersions.find((p) => p.hash === st.promptEditHash);
+        const hash = "p_" + Math.random().toString(16).slice(2, 8);
+        this.mutate((s) => {
+          s.promptVersions.push({ hash, key: src.key, action: src.action, createdAt: new Date().toISOString().slice(0, 10), status: "draft", evalScore: null, body: st.promptEditBody });
+        }, "Created " + hash + " as a draft. " + src.hash + " is unchanged — versions are immutable.");
+        this.setState({ promptEditHash: null, promptEditBody: "" });
+      },
+      promptComparing: st.promptPicks.length === 2,
+      promptCompare: st.promptPicks.map((h) => {
+        const p = store.promptVersions.find((x) => x.hash === h) || {};
+        return { hash: p.hash, status: p.status, evalScore: p.evalScore == null ? "—" : p.evalScore.toFixed(2), body: p.body };
+      }),
+
+      /* experiments */
+      expKey: store.experiment.key,
+      expSummary: "Action under test: " + store.experiment.action + " · started " + store.experiment.startedAt + " · " + store.experiment.status,
+      expRows: store.experiment.variants.map((v) => ({ key: v.key, promptVersionHash: v.promptVersionHash, weight: v.weight, n: v.n, acceptance: pct(v.acceptanceRate) })),
+      expToggleLabel: store.experiment.status === "running" ? "Stop" : "Start",
+      expLockNote: store.experiment.status === "running" ? "A running experiment cannot be edited. Stop it first, then create a new one." : "Stopped. Traffic is served by the in-experiment prompt version.",
+      onToggleExperiment: () => this.mutate((s) => { s.experiment.status = s.experiment.status === "running" ? "stopped" : "running"; }, "Experiment " + (store.experiment.status === "running" ? "stopped" : "started") + "."),
+      actionKeyOptions: ACTION_KEYS,
+      newExpAction: st.newExpAction, newExpA: st.newExpA, newExpB: st.newExpB, newExpWeight: st.newExpWeight,
+      newExpWeightLabel: st.newExpWeight + " / " + (100 - st.newExpWeight),
+      newExpPromptOptions: store.promptVersions.filter((p) => p.action === st.newExpAction).map((p) => p.hash),
+      onNewExpAction: (e) => {
+        const a = e.target.value;
+        const pool = store.promptVersions.filter((p) => p.action === a).map((p) => p.hash);
+        this.setState({ newExpAction: a, newExpA: pool[0] || "", newExpB: pool[1] || pool[0] || "" });
+      },
+      onNewExpA: (e) => this.setState({ newExpA: e.target.value }),
+      onNewExpB: (e) => this.setState({ newExpB: e.target.value }),
+      onNewExpWeight: (e) => this.setState({ newExpWeight: parseInt(e.target.value, 10) }),
+      createExpDisabled: store.experiment.status === "running" || !st.newExpA || !st.newExpB || st.newExpA === st.newExpB,
+      createExpNote: store.experiment.status === "running" ? "Stop the running experiment before creating another." : st.newExpA === st.newExpB ? "Pick two different prompt versions." : "Weights total " + st.newExpWeight + " + " + (100 - st.newExpWeight) + " = 100.",
+      onCreateExperiment: () => this.mutate((s) => {
+        s.experiment = {
+          key: "exp_" + st.newExpAction + "_" + Math.random().toString(16).slice(2, 6), action: st.newExpAction,
+          status: "running", startedAt: new Date().toISOString().slice(0, 10),
+          variants: [
+            { key: "A", promptVersionHash: st.newExpA, weight: st.newExpWeight, n: 0, acceptanceRate: 0 },
+            { key: "B", promptVersionHash: st.newExpB, weight: 100 - st.newExpWeight, n: 0, acceptanceRate: 0 }
+          ]
+        };
+      }, "Experiment created and running. It cannot be edited while it runs."),
+
+      /* bench */
+      benchSelects: [
+        { id: "b-action", label: "Action", value: b.action, note: bmeta.groundingRule, options: ACTION_KEYS.map((k) => ({ v: k, label: this.actionMeta(k).label })), onChange: (e) => this.setBench({ action: e.target.value, promptVersionHash: (store.promptVersions.filter((p) => p.action === e.target.value)[0] || { hash: "p_9f2ad1" }).hash, result: null }) },
+        { id: "b-style", label: "Style", value: b.styleKey, note: "", options: store.styles.map((s) => ({ v: s.key, label: s.displayName + " v" + s.version })), onChange: (e) => this.setBench({ styleKey: e.target.value, result: null }) },
+        { id: "b-prompt", label: "Prompt version", value: b.promptVersionHash, note: promptsForAction.length ? "" : "No prompt version for this action yet", options: (promptsForAction.length ? promptsForAction : store.promptVersions).map((p) => ({ v: p.hash, label: p.hash + " · " + p.status })), onChange: (e) => this.setBench({ promptVersionHash: e.target.value, result: null }) },
+        { id: "b-provider", label: "Provider", value: b.provider, note: b.provider === "fake" ? "Returns instantly at zero cost" : "", options: [{ v: "fake", label: "Fake — no cost" }, { v: "anthropic", label: "anthropic · claude-sonnet-4-5" }, { v: "openai", label: "openai · gpt-4-1-mini" }], onChange: (e) => this.setBench({ provider: e.target.value, result: null }) },
+        { id: "b-fixture", label: "Sample", value: b.fixture, note: b.fixture === "live" ? "Composed from the inputs below" : "Replays a stored generation record", options: [{ v: "live", label: "Compose live" }].concat(Object.keys(FIXTURES.generations).map((k) => ({ v: k, label: "fixture · " + k }))), onChange: (e) => this.setBench({ fixture: e.target.value, result: null }) },
+        { id: "b-source", label: "Source generation", value: b.sourceGenerationId, note: needsDraft ? "Required for " + b.action : "Not used by this action", disabled: !needsDraft, options: this.allGenerations().map((g) => ({ v: g.id, label: g.id + " · " + g.action })), onChange: (e) => this.setBench({ sourceGenerationId: e.target.value, result: null }) }
+      ],
+      benchKeywords: this.tenantKeywords().map((k) => ({
+        id: k.id, label: k.label, on: b.keywordIds.indexOf(k.id) >= 0,
+        style: "display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid " + (b.keywordIds.indexOf(k.id) >= 0 ? "var(--ink-900)" : "var(--border-card)") + ";border-radius:var(--radius-xl);font:var(--type-micro);cursor:pointer",
+        onToggle: (e) => this.setBench({ keywordIds: e.target.checked ? b.keywordIds.concat([k.id]) : b.keywordIds.filter((x) => x !== k.id), result: null })
+      })),
+      benchFreeText: b.freeText, onBenchFreeText: (e) => this.setBench({ freeText: e.target.value }),
+      benchSourceText: b.sourceText, onBenchSourceText: (e) => this.setBench({ sourceText: e.target.value }),
+      benchSourceDisabled: !needsSource,
+      benchSourceNote: needsSource ? "— required for paraphrase" : "— only used by paraphrase",
+      benchRunDisabled: needsSource && b.sourceText.trim().length < 20,
+      benchRunNote: "Bench runs are excluded from analytics, experiments and billing." + (b.provider === "fake" ? " Fake provider: 0 tokens, $0.00." : ""),
+      onRunBench: () => this.benchRun(),
+      benchHasResult: !!res,
+      benchDraft: res ? (res.draft || "(no draft — the run was rejected)") : "",
+      benchClaimsJson: res ? JSON.stringify(res.claims, null, 2) : "",
+      benchHasRemoved: !!(res && res.removedClaims && res.removedClaims.length),
+      benchRemovedJson: res && res.removedClaims ? JSON.stringify(res.removedClaims, null, 2) : "",
+      benchFacts: res ? [
+        { k: "id", v: res.id }, { k: "action", v: res.action },
+        { k: "groundingVerdict", v: res.groundingVerdict },
+        { k: "provider / model", v: res.provider + " / " + res.model },
+        { k: "latencyMs", v: String(res.latencyMs) },
+        { k: "inputTokens", v: String(res.inputTokens) },
+        { k: "outputTokens", v: String(res.outputTokens) },
+        { k: "costMicros", v: res.costMicros + " (" + money(res.costMicros) + ")" },
+        { k: "promptVersionHash", v: res.promptVersionHash },
+        { k: "contextVersion", v: "v" + res.contextVersion },
+        { k: "styleKey", v: res.styleKey + " v" + (res.styleVersion || "") },
+        { k: "sourceGenerationId", v: res.sourceGenerationId || "null" },
+        { k: "fallbackUsed", v: String(res.fallbackUsed) },
+        { k: "counted in analytics", v: "no — bench run" }
+      ] : [],
+
+      /* analytics */
+      range: st.range, rangeOptions: RANGES,
+      onRange: (e) => this.setState({ range: e.target.value }),
+      analyticsColumns: [col("where", "Location"), col("action", "Action"), col("styleKey", "Style"), col("variantKey", "Variant"), col("n", "n", true), col("acceptanceRate", "Acceptance", true), col("avgEditDistance", "Avg edit", true), col("p50Ms", "p50", true), col("p95Ms", "p95", true), col("totalCostMicros", "Total cost", true), col("costPerAcceptedMicros", "Per accepted", true)],
+      analyticsRows: sorted.map((r) => ({
+        where: r.where, action: r.action, styleKey: r.styleKey, variantKey: r.variantKey, n: r.n,
+        acceptanceRate: pct(r.acceptanceRate), avgEditDistance: r.avgEditDistance.toFixed(2),
+        p50Ms: r.p50Ms + "ms", p95Ms: r.p95Ms + "ms", totalCost: money(r.totalCostMicros),
+        costPerAccepted: (r.costPerAcceptedMicros / 1000).toFixed(2) + "m¢"
+      })),
+
+      /* generation-detail */
+      generationId: st.generationId,
+      generationOptions: this.allGenerations().map((g) => ({ v: g.id, label: g.id + " · " + g.action + " · " + g.groundingVerdict })),
+      onGenerationPick: (e) => this.setState({ generationId: e.target.value }),
+      onReplayOnBench: () => { this.setBench({ action: gen.action, styleKey: gen.styleKey, promptVersionHash: gen.promptVersionHash, keywordIds: gen.assertedKeywordIds || [], sourceText: gen.sourceText || "", sourceGenerationId: gen.sourceGenerationId || gen.id, fixture: "live", result: null }); this.go("bench"); },
+      generationFacts: [
+        { k: "id", v: gen.id }, { k: "tenant", v: gen.tenantSlug }, { k: "action", v: gen.action },
+        { k: "createdAt", v: gen.createdAt },
+        { k: "sourceGenerationId", v: gen.sourceGenerationId || "null" },
+        { k: "contextVersion", v: "v" + gen.contextVersion },
+        { k: "promptVersionHash", v: gen.promptVersionHash },
+        { k: "styleKey / version", v: gen.styleKey + " / " + gen.styleVersion },
+        { k: "provider / model", v: gen.provider + " / " + gen.model },
+        { k: "fallbackUsed", v: String(gen.fallbackUsed) },
+        { k: "input keywords", v: (gen.assertedKeywordIds || []).join(", ") || "none" },
+        { k: "free text", v: gen.freeText || "none" },
+        { k: "source text", v: gen.sourceText ? gen.sourceText.slice(0, 60) + "…" : "none" },
+        { k: "groundingVerdict", v: gen.groundingVerdict },
+        { k: "tokens in / out", v: gen.inputTokens + " / " + gen.outputTokens },
+        { k: "costMicros", v: gen.costMicros + " (" + money(gen.costMicros) + ")" },
+        { k: "latencyMs", v: String(gen.latencyMs) },
+        { k: "outcome", v: gen.outcome.status + (gen.outcome.editDistance == null ? "" : " · edit distance " + gen.outcome.editDistance) }
+      ],
+      generationDraft: gen.draft || "(null — nothing could be grounded, so nothing was written)",
+      generationClaimsJson: JSON.stringify(gen.claims, null, 2),
+      generationHasRemoved: !!(gen.removedClaims && gen.removedClaims.length),
+      generationRemovedJson: JSON.stringify(gen.removedClaims || [], null, 2),
+      lineage,
+      crossTenantId: "gen_e11b70 · requested by " + t.business.name,
+
+      /* settings · three scopes, one renderer */
+      settingRows: view === "settings-tenant" ? this.tenantSettings() : view === "settings-location" ? this.locationSettings() : this.platformSettings(),
+      settingsLead: view === "settings-tenant"
+        ? "Everything here belongs to " + t.business.name + " and applies at every one of its venues."
+        : view === "settings-location"
+          ? "Everything here belongs to " + (loc ? loc.name : "this venue") + ". A field not set here inherits the tenant, and an override says so."
+          : "Vendor scope. No tenant operator can reach this screen, and no tenant-scope screen renders these fields.",
+      settingsFootnote: view === "settings-location"
+        ? "Reset removes the override and returns the field to the tenant value — it does not copy the tenant value down."
+        : view === "platform-settings"
+          ? "The policy template is copied at provisioning. Editing it never rewrites a tenant that already exists."
+          : "Every switch here changes what the survey does on its next load.",
+
+      /* platform · tenants */
+      tenantColumns: ["Business", "Slug", "Locale", "Category", "Locations", "Plan", "Month to date", "Status"].map((lab, i) => ({
+        label: lab, style: "text-align:" + (i === 6 ? "right" : "left") + ";padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)"
+      })),
+      tenantRows: Object.keys(store.tenants).map((k) => {
+        const x = store.tenants[k];
+        const ratio = x.monthToDateCostMicros / x.monthlyBudgetMicros;
+        return {
+          slug: k, name: x.business.name, locale: x.locale, category: x.business.category,
+          locations: (store.locations[k] || []).map((l) => l.name.split(" · ").pop()).join(", "),
+          plan: x.plan, status: x.status,
+          spend: money(x.monthToDateCostMicros) + " · " + pct(ratio) + " of " + money(x.monthlyBudgetMicros),
+          statusStyle: "display:inline-block;padding:3px 9px;border-radius:var(--radius-xl);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;border:1px solid " + (ratio >= 0.9 ? "var(--marigold-soft);color:var(--text-taxonomy)" : "var(--border-rule);color:var(--text-body)"),
+          onSelect: () => this.setTenant(k)
+        };
+      }),
+      localeOptions: LOCALES,
+      provName: st.provName, provSlug: st.provSlug, provLocale: st.provLocale,
+      onProvName: (e) => this.setState({ provName: e.target.value, provSlug: st.provSlug || e.target.value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") }),
+      onProvSlug: (e) => this.setState({ provSlug: e.target.value }),
+      onProvLocale: (e) => this.setState({ provLocale: e.target.value }),
+      provisionDisabled: st.provName.trim().length < 3 || !st.provSlug.trim() || !!store.tenants[st.provSlug.trim()],
+      provisionNote: store.tenants[st.provSlug.trim()] ? "That slug is taken." : "The new tenant starts from the platform policy template and one location. Nothing is enabled that the template does not enable.",
+      onProvision: () => {
+        const slug = st.provSlug.trim(), name = st.provName.trim();
+        this.mutate((s) => {
+          const tpl = clone(s.platform.defaultPolicyTemplate);
+          s.tenants[slug] = {
+            slug, locale: st.provLocale, plan: "Standard", status: "active", createdAt: new Date().toISOString().slice(0, 10),
+            business: { name, category: "—", description: "", toneGuidelines: "" },
+            entryMode: "open-qr",
+            policy: { requireDisclosure: tpl.requireDisclosure, requireVerifiedExperience: tpl.requireVerifiedExperience, maxDraftsPerSession: tpl.maxDraftsPerSession, bannedTerms: clone(tpl.bannedTerms) },
+            keywordCategories: [{ id: "service", label: "Service" }],
+            enabledStyles: ["concise-blurb"],
+            enabledActions: ["generate", "paraphrase", "regenerate"],
+            contextVersion: 1, monthlyBudgetMicros: 10000000, monthToDateCostMicros: 0, alertThresholdPct: 90
+          };
+          s.keywords[slug] = [];
+          s.locations[slug] = [{ slug: "main", tenantSlug: slug, name: name, address: "", active: true, entryMode: null, destinations: ["google"], platformIds: { googlePlaceId: "" }, overrides: {}, keywordAdditions: [], counters: { issued: 0, opened: 0, completed: 0 } }];
+        }, "Provisioned " + name + " from the policy template. It has no keywords yet, so its survey renders not-configured.");
+        this.setState({ provName: "", provSlug: "" });
+      },
+
+      /* platform · providers */
+      providerRows: store.platform.providers.map((p) => ({
+        id: p.id, role: p.role, credential: p.credential,
+        health: p.p95Ms ? p.health + " · p95 " + (p.p95Ms / 1000).toFixed(1) + "s" : p.health,
+        dot: "display:inline-block;width:6px;height:6px;border-radius:9999px;margin-right:8px;background:" + (degraded && p.id === "anthropic" ? "var(--marigold)" : "var(--ink-900)"),
+        models: p.models.map((m) => ({ id: m.id, streaming: m.streaming ? "yes" : "no", structured: m.structuredOutput ? "yes" : "no", maxTokens: m.maxTokens ? m.maxTokens.toLocaleString() : "—" }))
+      })),
+      providerKeys: store.platform.providers.map((p) => p.id),
+      routeDefault: store.platform.routing.defaultProvider,
+      routeFallback: store.platform.routing.fallbackProvider,
+      onRouteDefault: (e) => this.mutate((s) => { s.platform.routing.defaultProvider = e.target.value; }, "Default route saved for every tenant."),
+      onRouteFallback: (e) => this.mutate((s) => { s.platform.routing.fallbackProvider = e.target.value; }, "Fallback route saved."),
+      priceRows: store.platform.priceTable.map((r) => {
+        const newer = store.platform.priceTable.some((o) => o.provider === r.provider && o.model === r.model && o.effectiveFrom > r.effectiveFrom);
+        return {
+          provider: r.provider, model: r.model,
+          input: money(r.inputPerMTokMicros), output: money(r.outputPerMTokMicros),
+          effectiveFrom: r.effectiveFrom, state: newer ? "superseded" : "current",
+          stateColor: newer ? "var(--text-meta)" : "var(--text-body)"
+        };
+      }),
+
+      /* platform · style catalogue */
+      catalogueColumns: ["Key", "Name", "Version", "Target platform", "Locale", "Supported actions", "Enabled by"].map((lab) => ({
+        label: lab, style: "text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-rule);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;color:var(--text-tertiary)"
+      })),
+      catalogueRows: store.styles.map((sy) => ({
+        key: sy.key, displayName: sy.displayName, version: sy.version, locale: sy.locale,
+        targetPlatform: sy.targetPlatform,
+        targetStyle: "display:inline-block;padding:3px 9px;border-radius:var(--radius-xl);font:var(--type-micro);font-family:var(--font-mono);text-transform:uppercase;border:1px solid var(--border-rule);color:var(--text-body)",
+        actions: sy.supportedActions.length + " of 7",
+        enabledBy: Object.keys(store.tenants).filter((k) => store.tenants[k].enabledStyles.indexOf(sy.key) >= 0).map((k) => store.tenants[k].business.name).join(", ") || "no tenant"
+      })),
+
+      /* locations */
+      locationRows: this.locations().map((l) => {
+        const write = (fn, toast) => this.mutate((s) => {
+          const target = (s.locations[s.tenantSlug] || []).find((x) => x.slug === l.slug);
+          if (target) fn(target);
+        }, toast);
+        return {
+          slug: l.slug, name: l.name, address: l.address, active: l.active,
+          entryMode: (l.entryMode || t.entryMode) + (l.entryMode ? " · override" : " · inherited"),
+          modeStyle: SCOPE_BADGE(l.entryMode ? "location" : "tenant"),
+          destinations: (l.destinations || []).map((k) => ({
+            label: (FIXTURES.destinations[k] || { label: k }).label,
+            id: (l.platformIds || {})[(FIXTURES.destinations[k] || {}).idField] || "no id",
+            style: "display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--border-card);border-radius:var(--radius-xl);font:var(--type-micro);font-family:var(--font-mono);color:var(--text-body)"
+          })),
+          note: (l.keywordAdditions || []).length + " location keyword" + ((l.keywordAdditions || []).length === 1 ? "" : "s") + " · " + Object.keys(l.overrides || {}).length + " policy override" + (Object.keys(l.overrides || {}).length === 1 ? "" : "s") + " · " + l.counters.completed + " reviews completed",
+          onName: (e) => write((x) => { x.name = e.target.value; }),
+          onAddress: (e) => write((x) => { x.address = e.target.value; }),
+          onActive: (e) => write((x) => { x.active = e.target.checked; }, e.target.checked ? "" : "Paused. This venue's link stops serving on next load."),
+          onOpen: () => { this.setLocation(l.slug); this.go("distribution"); }
+        };
+      }),
+      newLocation: st.newLocation, newLocationAddress: st.newLocationAddress,
+      onNewLocation: (e) => this.setState({ newLocation: e.target.value }),
+      onNewLocationAddress: (e) => this.setState({ newLocationAddress: e.target.value }),
+      addLocationDisabled: st.newLocation.trim().length < 3,
+      onAddLocation: () => {
+        const name = st.newLocation.trim();
+        const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24);
+        this.mutate((s) => {
+          (s.locations[s.tenantSlug] = s.locations[s.tenantSlug] || []).push({
+            slug, tenantSlug: s.tenantSlug, name, address: st.newLocationAddress.trim(), active: true,
+            entryMode: null, destinations: ["google"], platformIds: { googlePlaceId: "" },
+            overrides: {}, keywordAdditions: [], counters: { issued: 0, opened: 0, completed: 0 }
+          });
+        }, "Added " + name + ". Its link is live at /s/" + store.tenantSlug + "/" + slug + " and it inherits every tenant policy.");
+        this.setState({ newLocation: "", newLocationAddress: "" });
+      },
+
+      /* distribution */
+      distUrl: this.surveyUrl(this.effective("entryMode").value !== "open-qr"),
+      distOpenHref: this.localHref(),
+      distUrlNote: this.effective("entryMode").value === "open-qr"
+        ? "No token: the same link serves every guest at this venue."
+        : "{token} is minted per visit, is single use, and expires after 30 days.",
+      distTemplatesTitle: this.effective("entryMode").value === "open-qr" ? "Printed placements" : "Invitation templates",
+      distTemplates: this.effective("entryMode").value === "open-qr"
+        ? (t.locale === "de-DE" ? [
+          { label: "Tischkarte", body: "Hat es geschmeckt?\nScannen und Bewertung schreiben.", note: "A6, one per table. No token, no personal data." },
+          { label: "Kassenbon · Fußzeile", body: "Bewertung schreiben: " + this.surveyUrl(false), note: "Printed under the total. The URL carries the venue." }
+        ] : [
+          { label: "Table card", body: "Enjoyed it?\nScan to write your review.", note: "A6, one per table. No token, no personal data." },
+          { label: "Receipt footer", body: "Write your review: " + this.surveyUrl(false), note: "Printed under the total. The URL carries the venue." }
+        ])
+        : [
+          { label: "SMS · sent 2h after the appointment", body: "Thanks for visiting " + (loc ? loc.name : "") + " today. If you have two minutes, we can help you write your review: " + this.surveyUrl(true), note: "160 characters including the link. One send per visit." },
+          { label: "Email · same trigger, fallback channel", body: "Subject: Your visit to " + (loc ? loc.name : "") + "\n\nThanks for coming in. If you would like to leave a review, this link opens a short form that helps you write it in your own words: " + this.surveyUrl(true), note: "Sent only where no mobile number is held." }
+        ],
+      distCounters: (function (c) {
+        return [
+          { label: "Links issued", value: c.issued.toLocaleString() },
+          { label: "Opened", value: c.opened.toLocaleString() },
+          { label: "Completed", value: c.completed.toLocaleString() },
+          { label: "Completion rate", value: c.opened ? Math.round((c.completed / c.opened) * 100) + "%" : "—" }
+        ];
+      })((loc && loc.counters) || { issued: 0, opened: 0, completed: 0 }),
+      qrNote: store.platform.featureFlags.find((f) => f.key === "distribution.qrDownload").on
+        ? "Renders a print pack for this venue."
+        : "Inert in the prototype: distribution.qrDownload is off at platform scope.",
+      onQrDownload: () => this.setState({ toast: "Print pack rendering is behind the platform flag distribution.qrDownload, which is off." }),
+
+      /* views */
+      isOverview: view === "overview" || view === "budget-warning" || view === "provider-degraded",
+      isContext: view === "context", isKeywords: view === "keywords", isStyles: view === "styles",
+      isStyleDetail: view === "style-detail", isActions: view === "actions",
+      isPrompts: view === "prompts", isExperiments: view === "experiments",
+      isBench: view === "bench", isAnalytics: view === "analytics",
+      isGenerationDetail: view === "generation-detail",
+      isSettings: view === "settings-tenant" || view === "settings-location" || view === "platform-settings",
+      isPlatformTenants: view === "platform-tenants", isPlatformProviders: view === "platform-providers",
+      isPlatformStyles: view === "platform-styles",
+      isLocations: view === "locations", isDistribution: view === "distribution",
+      isCrossTenant: view === "cross-tenant-404",
+
+      /* toolbar */
+      view,
+      role: store.role,
+      roleOptions: Object.keys(FIXTURES.roles).map((k) => ({ v: k, label: FIXTURES.roles[k].label })),
+      onRole: (e) => this.setRole(e.target.value),
+      validStates: ADMIN_STATES.map((v) => ({ v, onClick: () => this.go(v) })),
+      tenantOptions: this.visibleTenants().map((k) => ({ k, name: store.tenants[k].business.name })),
+      onTenant: (e) => this.setTenant(e.target.value),
+      onJump: (e) => this.go(e.target.value),
+      toolbarVisible: st.toolbar && st.toolbarOpen,
+      toolbarHidden: st.toolbar && !st.toolbarOpen,
+      onDismissToolbar: () => this.setState({ toolbarOpen: false }),
+      onShowToolbar: () => this.setState({ toolbarOpen: true }),
+      onResetStore: () => { const s = defaultStore(); saveStore(s); this.setState({ store: s, toast: "Store reset to fixtures." }); }
+    };
+  }
+}
+
+</script>
+</body>
+</html>

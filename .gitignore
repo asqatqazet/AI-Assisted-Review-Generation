@@ -1,0 +1,14 @@
+node_modules/
+.nx/
+dist/
+coverage/
+.env
+.DS_Store
+*.tsbuildinfo
+test-results/
+playwright-report/
+terraform.tfstate
+terraform.tfstate.*
+.terraform/
+*.tfplan
+

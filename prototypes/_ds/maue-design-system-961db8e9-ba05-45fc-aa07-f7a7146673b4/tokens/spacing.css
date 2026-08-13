@@ -1,0 +1,30 @@
+/* Maue spacing — 8px base with documented one-off alignment values kept as real tokens
+   (the source system uses 6, 10, 20, 22, 28, 36, 56, 60 as-is; do not snap them). */
+:root{
+  --space-xxs:2px;
+  --space-xs:6px;
+  --space-sm:8px;
+  --space-10:10px;
+  --space-md:12px;
+  --space-lg:16px;
+  --space-20:20px;
+  --space-22:22px;
+  --space-xl:24px;
+  --space-28:28px;
+  --space-xxl:32px;
+  --space-36:36px;
+  --space-40:40px;
+  --space-56:56px;
+  --space-60:60px;
+  --space-64:64px;
+  --space-section:80px;
+
+  /* Layout */
+  --container-max:1280px;
+  --container-narrow:800px;
+  --gutter:24px;
+  --section-y:80px;      /* standard vertical section rhythm */
+  --section-y-airy:160px; /* the deliberate empty intervals between brand claim / proof / CTA */
+  --nav-height:72px;
+  --announcement-height:36px;
+}

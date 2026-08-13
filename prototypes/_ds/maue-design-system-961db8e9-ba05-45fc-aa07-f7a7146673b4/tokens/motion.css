@@ -1,0 +1,10 @@
+/* Motion is UNDOCUMENTED in the Maue brand source (see readme.md → Known Gaps).
+   These are conservative defaults added so components behave consistently; they are an
+   intentional addition, not a documented brand value. Replace once motion specs exist. */
+:root{
+  --duration-fast:120ms; /* @kind other */
+  --duration-base:180ms; /* @kind other */
+  --duration-slow:320ms; /* @kind other */
+  --ease-standard:cubic-bezier(.2,0,.2,1); /* @kind other */
+  --transition-color:color var(--duration-base) var(--ease-standard),background-color var(--duration-base) var(--ease-standard),border-color var(--duration-base) var(--ease-standard),opacity var(--duration-base) var(--ease-standard);
+}

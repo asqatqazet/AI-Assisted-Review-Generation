@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./ds-base.js"></script>
+<style>
+body{margin:0;background:#ffffff;color:var(--text-body,#1f2023);font:400 16px/1.5 "Inter","Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:var(--text-body,#1f2023)}
+a:hover{opacity:.7}
+</style>
+</helmet>
+<div style="max-width:1280px;margin:0 auto;padding:56px 24px 96px">
+
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Interaction source of truth</p>
+<h1 style="margin:16px 0 0;font:400 60px/1 var(--font-display);letter-spacing:-1.2px;color:var(--text-heading);max-width:18ch;text-wrap:balance">Every state of both surfaces</h1>
+<p style="margin:20px 0 0;font:var(--type-body-lg);color:var(--text-muted);max-width:62ch;text-wrap:pretty">Each frame below is the live prototype at that state, loaded from its own deep link. Previews run detached, so nothing you do in one changes another. Follow a deep link to use the state for real.</p>
+<p style="margin:16px 0 0;font:var(--type-body);color:var(--text-muted);max-width:62ch;text-wrap:pretty">Configuration belongs to one of three scopes — platform, tenant, location. The survey resolves all three from the link it was opened with; the console shows which one owns every field it renders.</p>
+
+<nav aria-label="Contents" style="margin-top:40px;padding-top:24px;border-top:1px solid var(--border-rule)">
+<h2 style="margin:0 0 16px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">Contents</h2>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:32px">
+<div>
+<p style="margin:0 0 8px;font:var(--type-caption);color:var(--text-heading)">Survey · {{ surveyCount }}</p>
+<ul style="margin:0;padding:0;list-style:none;display:grid;gap:4px">
+<sc-for list="{{ surveyStates }}" as="s" hint-placeholder-count="20">
+<li><a href="{{ s.anchor }}" style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-link);text-decoration:none">{{ s.name }}</a></li>
+</sc-for>
+</ul>
+</div>
+<div>
+<p style="margin:0 0 8px;font:var(--type-caption);color:var(--text-heading)">Admin · {{ adminCount }}</p>
+<ul style="margin:0;padding:0;list-style:none;display:grid;gap:4px">
+<sc-for list="{{ adminStates }}" as="s" hint-placeholder-count="23">
+<li><a href="{{ s.anchor }}" style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-link);text-decoration:none">{{ s.name }}</a></li>
+</sc-for>
+</ul>
+</div>
+<div>
+<p style="margin:0 0 8px;font:var(--type-caption);color:var(--text-heading)">Tenancy proof</p>
+<ul style="margin:0;padding:0;list-style:none;display:grid;gap:4px">
+<sc-for list="{{ tenancyLinks }}" as="p" hint-placeholder-count="7">
+<li><a href="{{ p.anchor }}" style="font:var(--type-caption);font-family:var(--font-mono);color:var(--text-link);text-decoration:none">{{ p.name }}</a></li>
+</sc-for>
+</ul>
+<p style="margin:16px 0 0;font:var(--type-micro);color:var(--text-meta);text-wrap:pretty">The same state rendered for two tenants that differ structurally — locale, taxonomy, entry mode, verification, destinations, action set. No markup differs.</p>
+</div>
+</div>
+</nav>
+
+<section style="margin-top:80px">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Survey surface</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:62ch">Mobile-first, usable at 375px. Initial state <code style="font-family:var(--font-mono)">entry</code>.</p>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(252px,max-content));gap:40px;margin-top:32px;justify-content:start">
+<sc-for list="{{ surveyStates }}" as="s" hint-placeholder-count="20">
+<article id="{{ s.id }}" style="scroll-margin-top:24px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-heading)">{{ s.name }}</p>
+<p style="margin:8px 0 0;font:var(--type-caption);color:var(--text-muted);min-height:44px;text-wrap:pretty">{{ s.note }}</p>
+<p style="margin:8px 0 12px"><a href="{{ s.link }}" target="_blank" rel="noopener" style="font:var(--type-caption);color:var(--text-link)">Open this state →</a></p>
+<div style="width:252px;height:656px;overflow:hidden;border:1px solid var(--border-rule);border-radius:var(--radius-sm);background:var(--surface-card)">
+<iframe src="{{ s.src }}" title="{{ s.name }}" style="width:400px;height:1040px;border:0;transform:scale(.63);transform-origin:top left"></iframe>
+</div>
+</article>
+</sc-for>
+</div>
+</section>
+
+<section style="margin-top:96px">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Admin surface</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:62ch">Desktop, dense, tabular. Initial state <code style="font-family:var(--font-mono)">login</code>.</p>
+<div style="display:grid;gap:48px;margin-top:32px">
+<sc-for list="{{ adminStates }}" as="s" hint-placeholder-count="23">
+<article id="{{ s.id }}" style="scroll-margin-top:24px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-heading)">{{ s.name }}</p>
+<p style="margin:8px 0 0;font:var(--type-caption);color:var(--text-muted);max-width:70ch;text-wrap:pretty">{{ s.note }}</p>
+<p style="margin:8px 0 12px"><a href="{{ s.link }}" target="_blank" rel="noopener" style="font:var(--type-caption);color:var(--text-link)">Open this state →</a></p>
+<div style="width:876px;max-width:100%;height:520px;overflow:hidden;border:1px solid var(--border-rule);border-radius:var(--radius-sm);background:var(--surface-card)">
+<iframe src="{{ s.src }}" title="{{ s.name }}" style="width:1400px;height:830px;border:0;transform:scale(.626);transform-origin:top left"></iframe>
+</div>
+</article>
+</sc-for>
+</div>
+</section>
+
+<section style="margin-top:96px">
+<h2 style="margin:0;font:400 32px/1.1 var(--font-display);letter-spacing:-0.96px;color:var(--text-heading)">Tenancy proof</h2>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:62ch">Two tenants, one build. A dental practice in London reached by invitation, and a Hamburg restaurant reached by a QR code on the table. Everything that differs below is data.</p>
+<div style="display:grid;gap:48px;margin-top:32px">
+<sc-for list="{{ tenancyPairs }}" as="p" hint-placeholder-count="5">
+<article id="{{ p.id }}" style="scroll-margin-top:24px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-heading)">{{ p.name }}</p>
+<p style="margin:8px 0 16px;font:var(--type-caption);color:var(--text-muted);max-width:70ch;text-wrap:pretty">{{ p.note }}</p>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px">
+<sc-for list="{{ p.frames }}" as="f" hint-placeholder-count="2">
+<div>
+<p style="margin:0 0 8px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ f.label }}</p>
+<div style="width:252px;height:618px;overflow:hidden;border:1px solid var(--border-rule);border-radius:var(--radius-sm);background:var(--surface-card)">
+<iframe src="{{ f.src }}" title="{{ f.label }}" style="width:400px;height:980px;border:0;transform:scale(.63);transform-origin:top left"></iframe>
+</div>
+</div>
+</sc-for>
+</div>
+</article>
+</sc-for>
+</div>
+
+<h3 style="margin:64px 0 0;font:400 24px/1.2 var(--font-display);letter-spacing:-0.5px;color:var(--text-heading)">The same, in the console</h3>
+<p style="margin:12px 0 0;font:var(--type-body);color:var(--text-muted);max-width:62ch">The scope bar changes and the data follows it. Nothing on these screens is conditional on which tenant it is.</p>
+<div style="display:grid;gap:48px;margin-top:32px">
+<sc-for list="{{ adminPairs }}" as="p" hint-placeholder-count="2">
+<article id="{{ p.id }}" style="scroll-margin-top:24px">
+<p style="margin:0;font:var(--type-mono-label);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-heading)">{{ p.name }}</p>
+<p style="margin:8px 0 16px;font:var(--type-caption);color:var(--text-muted);max-width:70ch;text-wrap:pretty">{{ p.note }}</p>
+<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px">
+<sc-for list="{{ p.frames }}" as="f" hint-placeholder-count="2">
+<div>
+<p style="margin:0 0 8px;font:var(--type-micro);font-family:var(--font-mono);letter-spacing:var(--track-mono-label);text-transform:uppercase;color:var(--text-tertiary)">{{ f.label }}</p>
+<div style="width:602px;max-width:100%;height:357px;overflow:hidden;border:1px solid var(--border-rule);border-radius:var(--radius-sm);background:var(--surface-card)">
+<iframe src="{{ f.src }}" title="{{ f.label }}" style="width:1400px;height:830px;border:0;transform:scale(.43);transform-origin:top left"></iframe>
+</div>
+</div>
+</sc-for>
+</div>
+</article>
+</sc-for>
+</div>
+</section>
+
+<footer style="margin-top:96px;padding-top:24px;border-top:1px solid var(--border-rule);display:flex;flex-wrap:wrap;gap:24px">
+<a href="Index.dc.html" style="font:var(--type-body);color:var(--text-link)">Catalog</a>
+<a href="Survey.dc.html" style="font:var(--type-body);color:var(--text-link)">Survey</a>
+<a href="Admin.dc.html" style="font:var(--type-body);color:var(--text-link)">Admin</a>
+</footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const SURVEY_CATALOG = [
+  ["entry", "Everything on this screen came from the link: the tenant, the venue by name, and — on an invited link — an already-validated visit token, so the visit is acknowledged rather than asked about."],
+  ["entry-token-used", "The invitation already produced a review. Stated plainly, with the unaided route offered in the same breath. One visit, one assisted draft."],
+  ["verification", "A fallback, not a step. Only reachable on an invited entry mode when the token is missing or unreadable — and never at an open-QR venue."],
+  ["verification-unavailable", "The no-code path ends in a product rule stated plainly, not an error: help is limited to confirmed visits."],
+  ["keywords", "Groups, order and labels come from the tenant's own category table. Selection order is preserved, and the two-selection minimum is stated as text rather than implied."],
+  ["paraphrase-input", "The most grounded path in the product: the customer's own text becomes the sole source for every action downstream."],
+  ["style", "Formats filtered three ways — to the tenant's enabled set, to the tenant's locale, and to those supporting the active action. Multi-select capped by the effective policy."],
+  ["generating", "One pending region per draft, labelled with the format and the action being performed, with elapsed time and an abort. Text streams word by word in the live flow."],
+  ["results", "The draft in an editable region, live character count against the format's maxChars, and an action bar rendered only where style and tenant both permit each action."],
+  ["results-grounding-stripped", "The central interaction: the removed claim is quoted with its reason, and the restore affordance opens an empty field — it never reinserts the text."],
+  ["refine", "A free-text instruction over the current draft, stated to be a new fact the customer is asserting. It is recorded as claim sourceSpan \"instruction\"."],
+  ["editing", "The draft after a customer edit: dirty indicator plus the share of wording changed, which maps to generation_outcomes.edit_distance."],
+  ["done", "Destinations built from this venue's own platform ids — the style declares what it was shaped for, the location declares where it can be posted. Nothing anywhere submits."],
+  ["rate-limited", "Plain language, a countdown and a return path. No status codes, no infrastructure vocabulary."],
+  ["budget-exceeded", "Assisted drafting is paused with no billing or quota language. The unaided write-and-copy box works: graceful degradation, not a dead end."],
+  ["provider-error", "Neutral failure and a retry. The first retry fails, the second succeeds through a fallback provider."],
+  ["grounding-rejected", "Framed as an invitation rather than a failure: nothing could be supported, so nothing was written. Prior input is retained."],
+  ["invalid-link", "Three causes, one screen: unknown business, unknown venue, unreadable code. Each says what to do and none discloses which tenants or venues exist."],
+  ["expired", "Terse and correct, with the unaided route still offered."],
+  ["not-configured", "The operator published no active keywords. The customer sees a graceful message that discloses nothing about the tenant's internal state."]
+];
+const ADMIN_CATALOG = [
+  ["login", "Email and password only. Tenant binding happens server-side at authentication and is never accepted from client input."],
+  ["overview", "Scoped to the scope bar: this venue, this tenant broken down by venue, or every tenant. Cost by action, the running experiment and provider health follow the same selection."],
+  ["platform-tenants", "Tenants are rows, not deployments: locale, category, venues, plan, month-to-date spend against budget. Provisioning copies the platform policy template into a new record."],
+  ["platform-providers", "The multi-provider abstraction, operable: capability matrix per model, credential state, health, routing, and a versioned price table that keeps superseded rows so an old generation can be re-costed exactly."],
+  ["platform-styles", "The built-in catalogue with targetPlatform and locale, plus the add-from-manifest field. Authoring is platform scope; tenants only enable."],
+  ["platform-settings", "Vendor scope: the default policy template, global rate limits, log retention and feature flags. A tenant operator cannot reach this screen at all."],
+  ["locations", "Two venues per tenant, each with its own address, entry mode, destinations and platform ids. Inherited values are marked as inherited."],
+  ["distribution", "The customer-acquisition surface: the live link with tenant and venue in the path, an honestly-labelled QR placeholder, mode-appropriate templates, and this venue's issued / opened / completed counters."],
+  ["context", "Editable business context and banned terms, with a version indicator that increments on save. Saving publishes a new immutable snapshot; the survey reads the new values."],
+  ["keywords", "Tenant keywords and this venue's additions in one table, each badged with the scope that owns it. Adding one asks which scope it belongs to."],
+  ["styles", "Per-tenant enablement and per-style action gating. A style written for another locale cannot be enabled here, and says so."],
+  ["style-detail", "Read-only manifest view with a validate action reporting pass or fail per rule."],
+  ["actions", "The tenant-level gate over the seven actions, each with its grounding rule and relative cost. Disabling one removes it from the survey's entry paths and action bars."],
+  ["settings-tenant", "Everything owned by the business account, every field badged TENANT — including the keyword taxonomy, which is data here and was an enum before the second tenant existed."],
+  ["settings-location", "Every field badged LOCATION, showing the inherited tenant value where not overridden, and a reset that removes the override rather than copying the value down."],
+  ["prompts", "Versions are per action. Editing creates a new hash at status draft rather than mutating — immutability is observable. Select two rows to compare."],
+  ["experiments", "The action under test, variants, weights totalling 100, running counts and acceptance per variant. A running experiment can only be stopped, not edited."],
+  ["bench", "Action, style, prompt version and provider — including a fake provider at zero cost — plus keywords, free text and a source-text field enabled only when the action needs one. Results show the raw claims array."],
+  ["analytics", "One sortable table, rows of location × action × style × variant, with a scope selector. Two venues of one tenant do not perform alike, which is the reason location is in the row key."],
+  ["generation-detail", "The complete reconstruction of one generation, including the lineage chain back to the original for derived drafts, and a replay-on-bench action."],
+  ["cross-tenant-404", "Another tenant's resource returns not-found, never forbidden, so the existence of the resource is not disclosed."],
+  ["budget-warning", "A banner condition over the overview at the tenant's own alert threshold."],
+  ["provider-degraded", "A banner condition over the overview when the primary provider's latency is elevated."]
+];
+
+const BS = "brightsmile · en-GB · invited link · verified visit · 7 actions · disclosure on";
+const S9 = "speicher-neun · de-DE · open QR · no verification · 5 actions · no disclosure";
+
+class Component extends DCLogic {
+  renderVals() {
+    const survey = SURVEY_CATALOG.map(([name, note]) => ({
+      name, note, id: "s-" + name, anchor: "#s-" + name,
+      src: "Survey.dc.html?state=" + name + "&tenant=brightsmile&toolbar=off&fresh=1&latency=instant",
+      link: "Survey.dc.html?state=" + name
+    }));
+    const admin = ADMIN_CATALOG.map(([name, note]) => ({
+      name, note, id: "a-" + name, anchor: "#a-" + name,
+      src: "Admin.dc.html?state=" + name + "&tenant=brightsmile&role=platform_admin&toolbar=off&fresh=1",
+      link: "Admin.dc.html?state=" + name
+    }));
+    const surveyFrame = (state, tenant) => "Survey.dc.html?state=" + state + "&tenant=" + tenant + "&toolbar=off&fresh=1&latency=instant";
+    const pair = (state, name, note) => ({
+      id: "t-" + state, anchor: "#t-" + state, name, note,
+      frames: [
+        { label: BS, src: surveyFrame(state, "brightsmile") },
+        { label: S9, src: surveyFrame(state, "speicher-neun") }
+      ]
+    });
+    const adminFrame = (state, tenant) => "Admin.dc.html?state=" + state + "&tenant=" + tenant + "&role=platform_admin&toolbar=off&fresh=1";
+    const adminPair = (state, name, note) => ({
+      id: "t-admin-" + state, anchor: "#t-admin-" + state, name, note,
+      frames: [
+        { label: "brightsmile · downtown", src: adminFrame(state, "brightsmile") },
+        { label: "speicher-neun · hafencity", src: adminFrame(state, "speicher-neun") }
+      ]
+    });
+    const tenancyPairs = [
+      pair("entry", "entry × two tenants", "Different locale, different venue naming, and a different way of arriving: an invitation that already knows which visit this was, against a QR code on a table that knows nothing but the venue."),
+      pair("keywords", "keywords × two tenants", "Different category taxonomies — five English categories for a dental practice, five German ones for a restaurant. Categories are tenant data, not a code enum, and this pair is why."),
+      pair("style", "style × two tenants", "Different enabled formats, filtered by locale and by which actions each format supports. A format written for en-GB is not offered to the German tenant at all."),
+      pair("results-grounding-stripped", "results × two tenants", "Disclosure line present against absent, and a seven-action bar against five. Both are tenant configuration, and neither is a code path."),
+      pair("done", "done × two tenants", "Google and Facebook against Google and Tripadvisor — each built from the place id held against that venue, not against the brand. Nothing auto-posts on either side.")
+    ];
+    const adminPairs = [
+      adminPair("settings-tenant", "settings-tenant × two tenants", "The scope bar names the tenant, and every field below is badged with the scope that owns it. Locale, entry mode and the keyword taxonomy are all tenant rows."),
+      adminPair("analytics", "analytics × two tenants", "Same table, same columns, different venues in the row key. The scope selector moves between one venue, both venues and every tenant.")
+    ];
+    return {
+      surveyStates: survey, adminStates: admin,
+      surveyCount: survey.length + " states", adminCount: admin.length + " views",
+      tenancyPairs, adminPairs,
+      tenancyLinks: tenancyPairs.concat(adminPairs).map((p) => ({ name: p.name, anchor: p.anchor }))
+    };
+  }
+}
+
+</script>
+</body>
+</html>

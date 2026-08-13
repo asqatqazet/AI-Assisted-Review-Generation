@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<!-- @template name="Maue marketing page" description="Full marketing page: hero declaration, media composition, trust strip, capability row, dark product band, product cards and dark footer." -->
+<helmet>
+<script src="./ds-base.js"></script>
+<script src="https://unpkg.com/lucide@0.454.0/dist/umd/lucide.min.js"></script>
+<style>body{margin:0;background:#ffffff;color:#1f2023;font:400 16px/1.5 "Inter","Helvetica Neue",Arial,system-ui,sans-serif;-webkit-font-smoothing:antialiased}*{box-sizing:border-box}a{color:#1f2023}a:hover{opacity:.85}</style>
+</helmet>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.AnnouncementBar" link-label="Learn more" hint-size="100%,36px">Maue 3 is now available for enterprise workspaces.</x-import>
+<header style="position:sticky;top:0;z-index:20;display:grid;grid-template-columns:minmax(180px,auto) 1fr minmax(180px,auto);align-items:center;height:72px;padding:0 24px;background:#ffffff;border-bottom:1px solid #f2f2f2">
+<a href="#" style="font-family:'Space Grotesk','Inter',system-ui,sans-serif;font-size:22px;letter-spacing:-0.5px;color:#000000;text-decoration:none">Maue</a>
+<nav style="display:flex;justify-content:center;gap:32px">
+<a href="#" style="font-size:16px;color:#1f2023;text-decoration:none">Platform</a>
+<a href="#" style="font-size:16px;color:#1f2023;text-decoration:none">Research</a>
+<a href="#" style="font-size:16px;color:#1f2023;text-decoration:none">Blog</a>
+<a href="#" style="font-size:16px;color:#1f2023;text-decoration:none">Contact</a>
+</nav>
+<div style="display:flex;align-items:center;justify-content:flex-end;gap:16px">
+<a href="#" style="font-size:16px;color:#1f2023;text-decoration:none;white-space:nowrap">Sign in</a>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" size="sm" hint-size="130px,38px">Book a demo</x-import>
+</div>
+</header>
+<section style="padding:120px 24px">
+<div style="max-width:1280px;margin:0 auto">
+<div style="display:flex;flex-direction:column;align-items:center;gap:24px;text-align:center">
+<h1 style="margin:0;font:400 96px/1 'Space Grotesk','Inter',system-ui,sans-serif;letter-spacing:-1.92px;color:#16181d;max-width:16ch;text-wrap:balance">Agent infrastructure for regulated work</h1>
+<p style="margin:0;font-size:18px;line-height:1.4;color:#616161;max-width:58ch;text-wrap:pretty">Maue runs agents inside your systems of record, where every action is attributable, reversible and logged.</p>
+<div style="display:flex;align-items:center;gap:24px;margin-top:8px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonPrimary" hint-size="150px,44px">Book a demo</x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ButtonSecondary" with-arrow="{{ true }}" hint-size="190px,36px">Explore the platform</x-import>
+</div>
+</div>
+<div style="display:grid;grid-template-columns:1.62fr 1fr;gap:24px;margin-top:64px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.HeroPhotoCard" ratio="16 / 10" tone="chalk" label="Product environment" hint-size="100%,420px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.HeroPhotoCard" ratio="4 / 5" tone="sand" label="Enterprise photography" hint-size="100%,420px"></x-import>
+</div>
+</div>
+</section>
+<section style="padding:160px 24px">
+<div style="max-width:1280px;margin:0 auto">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.TrustLogoStrip" caption="Deployed inside regulated enterprises." dc-props="{{ trustLogos }}" hint-size="100%,120px"></x-import>
+</div>
+</section>
+<section style="padding:80px 24px">
+<div style="max-width:1280px;margin:0 auto">
+<span style="font:400 14px/1.4 'Space Mono',ui-monospace,monospace;letter-spacing:0.28px;text-transform:uppercase;color:#75758a">Platform</span>
+<h2 style="margin:16px 0 0;font:400 48px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-0.48px;color:#16181d;max-width:20ch;text-wrap:balance">Work that can be checked, line by line</h2>
+<p style="margin:16px 0 0;font-size:18px;line-height:1.4;color:#616161;max-width:60ch;text-wrap:pretty">Agents call your systems directly, and every step they take stays inspectable after the fact.</p>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:40px;margin-top:56px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.CapabilityCard" title="Orchestration" body="Route work across ERP, warehouse and messaging without glue code." link-label="Read the docs" hint-size="100%,180px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.CapabilityCard" title="Grounding" body="Answers cite the record they came from, not a summary of it." link-label="How grounding works" hint-size="100%,180px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.CapabilityCard" title="Controls" body="Scoped permissions, reversible actions, exportable audit trail." link-label="Security overview" hint-size="100%,180px"></x-import>
+</div>
+</div>
+</section>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.DarkFeatureBand" tone="indigo" eyebrow="Workspace" title="One place to review what agents did" body="Every run arrives as a reviewable draft: the prompt, the systems it touched, the records it changed, and the exceptions it could not resolve." hint-size="100%,420px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.CapabilityCard" on-surface="dark" title="Review queues" body="Nothing lands in production without an approver." hint-size="100%,160px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.CapabilityCard" on-surface="dark" title="Attribution" body="Per-action lineage from prompt to record change." hint-size="100%,160px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.CapabilityCard" on-surface="dark" title="Reversibility" body="Every write has a documented undo path." hint-size="100%,160px"></x-import>
+</x-import>
+<section style="padding:80px 24px">
+<div style="max-width:1280px;margin:0 auto">
+<h2 style="margin:0 auto;font:400 48px/1.2 'Inter',system-ui,sans-serif;letter-spacing:-0.48px;color:#16181d;text-align:center">Three ways to deploy</h2>
+<div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin-top:56px">
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ProductCard" eyebrow="Sandbox" title="Evaluate" description="A scoped environment with synthetic records and no production access." action-label="Open the sandbox" dc-props="{{ sandboxFeatures }}" hint-size="100%,320px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ProductCard" eyebrow="Workspace" title="Deploy" description="Agents in your tenancy, with review queues for every action." action-label="Book a demo" featured="{{ true }}" dc-props="{{ workspaceFeatures }}" hint-size="100%,320px"></x-import>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.ProductCard" eyebrow="Platform" title="Embed" description="The same runtime behind your own product surfaces." action-label="Read the docs" dc-props="{{ platformFeatures }}" hint-size="100%,320px"></x-import>
+</div>
+</div>
+</section>
+<x-import component-from-global-scope="MaueDesignSystem_961db8.FooterNewsletter" eyebrow="Dispatch" headline="Research and product notes, monthly." microcopy="No product marketing. Unsubscribe in one click." legal="© 2026 Maue. All rights reserved." dc-props="{{ footerColumns }}" hint-size="100%,340px"></x-import>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      trustLogos: { logos: ["Northwind", "Aster Bank", "Verdant", "Lumen Health", "Calder Group"] },
+      sandboxFeatures: { features: ["Synthetic data set", "Shared evaluation harness", "No integration work"] },
+      workspaceFeatures: { features: ["SOC 2 Type II", "SSO and SCIM", "Reviewer approvals", "Audit trail export"] },
+      platformFeatures: { features: ["Private VPC deploy", "Model routing controls", "Usage attribution"] },
+      footerColumns: {
+        columns: [
+          { label: "Platform", links: [{ label: "Runtime" }, { label: "Connectors" }, { label: "Security" }, { label: "Docs" }] },
+          { label: "Company", links: [{ label: "Research" }, { label: "Blog" }, { label: "Careers" }, { label: "Contact" }] },
+          { label: "Legal", links: [{ label: "Privacy" }, { label: "Terms" }, { label: "Subprocessors" }] },
+        ],
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

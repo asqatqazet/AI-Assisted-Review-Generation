@@ -1,0 +1,5 @@
+/* Maue webfonts — Space Grotesk (display), Inter (body/UI), Space Mono (technical labels).
+   All three are SIL OFL. No binaries were supplied with the brand source, so they are
+   loaded from the Google Fonts CDN. To self-host, drop woff2 files into assets/fonts/
+   and replace this @import with @font-face rules pointing at them. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@300;400;500&family=Space+Mono:wght@400;700&display=swap");
