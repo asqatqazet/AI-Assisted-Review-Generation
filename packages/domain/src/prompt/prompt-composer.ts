@@ -27,12 +27,12 @@ export interface ComposePromptInput {
   readonly style: ReviewFormatManifest;
   readonly promptVersion: PromptVersion;
   readonly action: CommandKind;
-  readonly assertions?: readonly PromptComposerAssertion[];
-  readonly freeText?: string;
-  readonly sourceText?: string;
-  readonly sourceGeneration?: PromptComposerSourceGeneration;
-  readonly instruction?: string;
-  readonly targetLength?: number;
+  readonly assertions?: readonly PromptComposerAssertion[] | undefined;
+  readonly freeText?: string | undefined;
+  readonly sourceText?: string | undefined;
+  readonly sourceGeneration?: PromptComposerSourceGeneration | undefined;
+  readonly instruction?: string | undefined;
+  readonly targetLength?: number | undefined;
 }
 
 export interface PromptMessage {

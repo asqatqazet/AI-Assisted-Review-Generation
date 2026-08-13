@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { createGenerationApp } from "./transport/http/routes.js";
 
-export const app = new Hono();
-app.get("/health", (context) => context.json({ status: "ok", service: "generation-service" }));
+export const app = createGenerationApp();
+export { createGenerationApp };

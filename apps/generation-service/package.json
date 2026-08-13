@@ -5,6 +5,11 @@
   "type": "module",
   "dependencies": {
     "@hono/node-server": "^2.1.0",
-    "hono": "^4.13.1"
+    "hono": "^4.13.1",
+    "@review/contracts": "workspace:*",
+    "@review/domain": "workspace:*",
+    "@review/llm": "workspace:*",
+    "@review/db": "workspace:*",
+    "@review/observability": "workspace:*"
   }
 }
