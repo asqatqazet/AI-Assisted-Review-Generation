@@ -37,7 +37,10 @@ export class FakeModelGateway implements ModelGateway {
     this.#nextStep += 1;
 
     if (step === undefined) {
-      throw new Error("No scripted model run remains.");
+      throw new ModelGatewayError(
+        "unavailable",
+        "No scripted model run remains.",
+      );
     }
 
     if (step.outcome === "failure") {
