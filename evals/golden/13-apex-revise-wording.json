@@ -1,0 +1,30 @@
+{
+  "id": "13-apex-revise-wording",
+  "description": "Apex Dental revising wording without fact change",
+  "tenantId": "tenant-apex",
+  "action": "revise-wording",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.revise-wording",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "quick-booking",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Seamless appointment booking."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Seamless appointment booking.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Seamless appointment booking.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

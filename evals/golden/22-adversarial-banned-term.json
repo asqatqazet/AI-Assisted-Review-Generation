@@ -1,0 +1,33 @@
+{
+  "id": "22-adversarial-banned-term",
+  "description": "Adversarial: Output includes platform-banned term",
+  "tenantId": "tenant-apex",
+  "action": "generate",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "hygiene-clean",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Clean teeth."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Clean teeth.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Clean teeth.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "disallowedTerms": [
+    "guaranteed best dentist"
+  ]
+}

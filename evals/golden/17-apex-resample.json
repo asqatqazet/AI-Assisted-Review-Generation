@@ -1,0 +1,30 @@
+{
+  "id": "17-apex-resample",
+  "description": "Apex Dental resampling alternate phrasing",
+  "tenantId": "tenant-apex",
+  "action": "resample",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.resample",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "doctor-clarity",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Clear diagnosis and advice."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Clear diagnosis and advice.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Clear diagnosis and advice.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

@@ -1,0 +1,31 @@
+{
+  "id": "07-apex-reformat-social",
+  "description": "Apex Dental reformatting to social short",
+  "tenantId": "tenant-apex",
+  "action": "reformat",
+  "reviewFormatKey": "social-short",
+  "promptVersionKey": "review.reformat",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "doctor-gentle",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Dentist was remarkably gentle."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Dentist was remarkably gentle!",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Dentist was remarkably gentle!",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 160
+}

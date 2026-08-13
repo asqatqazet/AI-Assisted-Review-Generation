@@ -1,0 +1,30 @@
+{
+  "id": "10-lumina-condense",
+  "description": "Lumina Optics condensing feedback",
+  "tenantId": "tenant-lumina",
+  "action": "condense",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.condense",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "staff-care",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Attentive optometrist."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Attentive optometrist.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Attentive optometrist.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

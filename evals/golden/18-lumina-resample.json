@@ -1,0 +1,30 @@
+{
+  "id": "18-lumina-resample",
+  "description": "Lumina Optics resampling review variation",
+  "tenantId": "tenant-lumina",
+  "action": "resample",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.resample",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "blue-light-filter",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Great blue light filtering lenses."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Great blue light filtering lenses.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Great blue light filtering lenses.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

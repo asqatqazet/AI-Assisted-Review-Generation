@@ -1,0 +1,30 @@
+{
+  "id": "11-apex-expand",
+  "description": "Apex Dental expanding review within asserted facts",
+  "tenantId": "tenant-apex",
+  "action": "expand",
+  "reviewFormatKey": "detailed-narrative",
+  "promptVersionKey": "review.expand",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "painless-crown",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Crown fitted with total comfort."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Crown fitted with total comfort and utmost professionalism.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Crown fitted with total comfort and utmost professionalism.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

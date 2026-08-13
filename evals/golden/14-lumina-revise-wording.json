@@ -1,0 +1,30 @@
+{
+  "id": "14-lumina-revise-wording",
+  "description": "Lumina Optics revising tone",
+  "tenantId": "tenant-lumina",
+  "action": "revise-wording",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.revise-wording",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "contact-lenses",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Comfortable contact lens trial."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Comfortable contact lens trial.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Comfortable contact lens trial.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

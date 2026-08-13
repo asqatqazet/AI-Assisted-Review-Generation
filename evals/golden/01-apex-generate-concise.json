@@ -1,0 +1,31 @@
+{
+  "id": "01-apex-generate-concise",
+  "description": "Apex Dental concise generation with hygiene assertion",
+  "tenantId": "tenant-apex",
+  "action": "generate",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "service-hygiene",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "The hygienist was thorough and gentle."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "The hygienist was thorough and gentle.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "The hygienist was thorough and gentle.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 280
+}

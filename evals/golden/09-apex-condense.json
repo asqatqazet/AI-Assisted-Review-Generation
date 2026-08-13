@@ -1,0 +1,30 @@
+{
+  "id": "09-apex-condense",
+  "description": "Apex Dental condensing long review",
+  "tenantId": "tenant-apex",
+  "action": "condense",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.condense",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "teeth-cleaning",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Fast and painless cleaning."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Fast and painless cleaning.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Fast and painless cleaning.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

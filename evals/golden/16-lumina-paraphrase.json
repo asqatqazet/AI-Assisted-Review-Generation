@@ -1,0 +1,30 @@
+{
+  "id": "16-lumina-paraphrase",
+  "description": "Lumina Optics paraphrasing review",
+  "tenantId": "tenant-lumina",
+  "action": "paraphrase",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.paraphrase",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "parking-easy",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Convenient parking outside store."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Convenient parking outside store.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Convenient parking outside store.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

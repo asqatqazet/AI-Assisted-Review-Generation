@@ -1,0 +1,31 @@
+{
+  "id": "05-lumina-generate-detailed",
+  "description": "Lumina Optics detailed narrative generation",
+  "tenantId": "tenant-lumina",
+  "action": "generate",
+  "reviewFormatKey": "detailed-narrative",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "frame-selection",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Wide selection of designer frames and helpful styling advice."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Wide selection of designer frames and helpful styling advice.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Wide selection of designer frames and helpful styling advice.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 1200
+}

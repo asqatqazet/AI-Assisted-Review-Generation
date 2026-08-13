@@ -1,0 +1,31 @@
+{
+  "id": "04-lumina-generate-concise",
+  "description": "Lumina Optics concise blurb generation",
+  "tenantId": "tenant-lumina",
+  "action": "generate",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "optometry-exam",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Precise eye examination with modern equipment."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Precise eye examination with modern equipment.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Precise eye examination with modern equipment.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 280
+}

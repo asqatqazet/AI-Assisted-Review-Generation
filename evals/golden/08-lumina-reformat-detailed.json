@@ -1,0 +1,31 @@
+{
+  "id": "08-lumina-reformat-detailed",
+  "description": "Lumina Optics reformatting to detailed narrative",
+  "tenantId": "tenant-lumina",
+  "action": "reformat",
+  "reviewFormatKey": "detailed-narrative",
+  "promptVersionKey": "review.reformat",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "lenses-varifocal",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Custom varifocal lenses fitted perfectly."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Custom varifocal lenses fitted perfectly with crisp vision.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Custom varifocal lenses fitted perfectly with crisp vision.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 1200
+}

@@ -70,6 +70,12 @@
         "command": "nx run-many -t build --all --exclude=workspace"
       }
     },
+    "eval:golden": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "tsx evals/runner.ts"
+      }
+    },
     "verify": {
       "executor": "nx:noop",
       "dependsOn": ["build"]

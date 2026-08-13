@@ -11,7 +11,8 @@
     "dev": "nx run workspace:dev",
     "verify": "nx run workspace:verify",
     "db:reset": "nx run db:reset",
-    "test": "nx run workspace:unit"
+    "test": "nx run workspace:unit",
+    "eval:golden": "tsx evals/runner.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

@@ -1,0 +1,97 @@
+{
+  "totalScenarios": 22,
+  "passedScenarios": 22,
+  "failedScenarios": 0,
+  "passRate": 1,
+  "results": [
+    {
+      "id": "01-apex-generate-concise",
+      "passed": true
+    },
+    {
+      "id": "02-apex-generate-detailed",
+      "passed": true
+    },
+    {
+      "id": "03-apex-generate-social",
+      "passed": true
+    },
+    {
+      "id": "04-lumina-generate-concise",
+      "passed": true
+    },
+    {
+      "id": "05-lumina-generate-detailed",
+      "passed": true
+    },
+    {
+      "id": "06-lumina-generate-social",
+      "passed": true
+    },
+    {
+      "id": "07-apex-reformat-social",
+      "passed": true
+    },
+    {
+      "id": "08-lumina-reformat-detailed",
+      "passed": true
+    },
+    {
+      "id": "09-apex-condense",
+      "passed": true
+    },
+    {
+      "id": "10-lumina-condense",
+      "passed": true
+    },
+    {
+      "id": "11-apex-expand",
+      "passed": true
+    },
+    {
+      "id": "12-lumina-expand",
+      "passed": true
+    },
+    {
+      "id": "13-apex-revise-wording",
+      "passed": true
+    },
+    {
+      "id": "14-lumina-revise-wording",
+      "passed": true
+    },
+    {
+      "id": "15-apex-paraphrase",
+      "passed": true
+    },
+    {
+      "id": "16-lumina-paraphrase",
+      "passed": true
+    },
+    {
+      "id": "17-apex-resample",
+      "passed": true
+    },
+    {
+      "id": "18-lumina-resample",
+      "passed": true
+    },
+    {
+      "id": "19-adversarial-invented-discount",
+      "passed": true
+    },
+    {
+      "id": "20-adversarial-unnamed-staff",
+      "passed": true
+    },
+    {
+      "id": "21-adversarial-expand-added-claim",
+      "passed": true
+    },
+    {
+      "id": "22-adversarial-banned-term",
+      "passed": true
+    }
+  ],
+  "timestamp": "2026-08-13T20:33:49.956Z"
+}

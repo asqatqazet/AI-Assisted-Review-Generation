@@ -1,0 +1,31 @@
+{
+  "id": "03-apex-generate-social",
+  "description": "Apex Dental social short generation",
+  "tenantId": "tenant-apex",
+  "action": "generate",
+  "reviewFormatKey": "social-short",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "facility-clean",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Spotless clinic with welcoming staff."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Spotless clinic with welcoming staff!",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Spotless clinic with welcoming staff!",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 160
+}

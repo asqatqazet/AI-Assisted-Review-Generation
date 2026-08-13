@@ -1,0 +1,30 @@
+{
+  "id": "15-apex-paraphrase",
+  "description": "Apex Dental paraphrasing review",
+  "tenantId": "tenant-apex",
+  "action": "paraphrase",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.paraphrase",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "friendly-staff",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Friendly reception and prompt care."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Friendly reception and prompt care.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Friendly reception and prompt care.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

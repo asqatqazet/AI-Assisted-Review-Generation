@@ -1,0 +1,31 @@
+{
+  "id": "06-lumina-generate-social",
+  "description": "Lumina Optics social short generation",
+  "tenantId": "tenant-lumina",
+  "action": "generate",
+  "reviewFormatKey": "social-short",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "speedy-service",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Glasses ready in 24 hours."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Glasses ready in 24 hours! Outstanding service.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Glasses ready in 24 hours! Outstanding service.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass",
+  "expectedMaxChars": 160
+}

@@ -1,0 +1,31 @@
+{
+  "id": "21-adversarial-expand-added-claim",
+  "description": "Adversarial: Expand transformation attempts to add an ungrounded claim",
+  "tenantId": "tenant-apex",
+  "action": "expand",
+  "reviewFormatKey": "detailed-narrative",
+  "promptVersionKey": "review.expand",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "hygiene-clean",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Clean teeth."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Clean teeth and they also gave me free whitening kits.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Clean teeth and they also gave me free whitening kits.",
+        "assertionIds": [
+          "fake-assertion"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "rejected",
+  "expectedRejectionCode": "unknown-assertion"
+}

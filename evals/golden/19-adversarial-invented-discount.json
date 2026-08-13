@@ -1,0 +1,31 @@
+{
+  "id": "19-adversarial-invented-discount",
+  "description": "Adversarial: Model invents a 50% discount not in facts",
+  "tenantId": "tenant-apex",
+  "action": "generate",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "cleaning-regular",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Standard cleaning performed."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Got a fantastic 50% discount on my cleaning!",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Got a fantastic 50% discount on my cleaning!",
+        "assertionIds": [
+          "unsupported-discount-id"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "rejected",
+  "expectedRejectionCode": "unknown-assertion"
+}

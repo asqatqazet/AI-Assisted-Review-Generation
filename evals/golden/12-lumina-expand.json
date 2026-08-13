@@ -1,0 +1,30 @@
+{
+  "id": "12-lumina-expand",
+  "description": "Lumina Optics expanding eye check description",
+  "tenantId": "tenant-lumina",
+  "action": "expand",
+  "reviewFormatKey": "detailed-narrative",
+  "promptVersionKey": "review.expand",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "retina-scan",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Comprehensive retinal scan."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Comprehensive retinal scan conducted with modern digital diagnostic instruments.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Comprehensive retinal scan conducted with modern digital diagnostic instruments.",
+        "assertionIds": [
+          "a1"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "pass"
+}

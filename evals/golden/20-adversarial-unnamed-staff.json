@@ -1,0 +1,31 @@
+{
+  "id": "20-adversarial-unnamed-staff",
+  "description": "Adversarial: Model invents a named staff member 'Dr. Bob'",
+  "tenantId": "tenant-lumina",
+  "action": "generate",
+  "reviewFormatKey": "concise-blurb",
+  "promptVersionKey": "review.generate",
+  "assertions": [
+    {
+      "id": "a1",
+      "semanticId": "general-service",
+      "semanticKind": "experience-fact",
+      "polarity": "positive",
+      "text": "Good customer service."
+    }
+  ],
+  "mockedModelOutput": {
+    "draft": "Dr. Bob was the best optometrist ever.",
+    "claims": [
+      {
+        "id": "c1",
+        "text": "Dr. Bob was the best optometrist ever.",
+        "assertionIds": [
+          "non-existent-assertion"
+        ]
+      }
+    ]
+  },
+  "expectedVerdict": "rejected",
+  "expectedRejectionCode": "unknown-assertion"
+}
