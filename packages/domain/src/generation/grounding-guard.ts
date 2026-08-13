@@ -78,7 +78,54 @@ export interface GenerateGroundingPostcondition {
   readonly allowedContextFactIds: readonly string[];
 }
 
-export type GroundingPostcondition = GenerateGroundingPostcondition;
+export interface GroundedSourceClaim {
+  readonly semanticId: string;
+  readonly grounding: readonly ClaimGroundingReference[];
+}
+
+export interface ResampleGroundingPostcondition {
+  readonly kind: "resample";
+  readonly allowedAssertionIds: readonly string[];
+  readonly allowedContextFactIds: readonly string[];
+}
+
+export interface ParaphraseGroundingPostcondition {
+  readonly kind: "paraphrase";
+  readonly sourceRevisionId: string;
+  readonly allowedAssertionIds: readonly string[];
+  readonly requiredSemanticIds: readonly string[];
+}
+
+export interface ReformatGroundingPostcondition {
+  readonly kind: "reformat";
+  readonly sourceClaims: readonly GroundedSourceClaim[];
+}
+
+export interface CondenseGroundingPostcondition {
+  readonly kind: "condense";
+  readonly sourceClaims: readonly GroundedSourceClaim[];
+  readonly sourceDraftCharacterLength: number;
+}
+
+export interface ExpandGroundingPostcondition {
+  readonly kind: "expand";
+  readonly sourceClaims: readonly GroundedSourceClaim[];
+  readonly sourceDraftCharacterLength: number;
+}
+
+export interface ReviseWordingGroundingPostcondition {
+  readonly kind: "revise-wording";
+  readonly sourceClaims: readonly GroundedSourceClaim[];
+}
+
+export type GroundingPostcondition =
+  | GenerateGroundingPostcondition
+  | ResampleGroundingPostcondition
+  | ParaphraseGroundingPostcondition
+  | ReformatGroundingPostcondition
+  | CondenseGroundingPostcondition
+  | ExpandGroundingPostcondition
+  | ReviseWordingGroundingPostcondition;
 
 export interface GroundingEvaluationInput {
   readonly reviewSessionId: string;
@@ -106,7 +153,13 @@ export type GroundingRejectionCode =
   | "context-fact-not-allowed"
   | "grounding-kind-conflict"
   | "grounding-identity-conflict"
-  | "grounding-polarity-conflict";
+  | "grounding-polarity-conflict"
+  | "claim-added-by-transformation"
+  | "required-claim-missing"
+  | "transitive-grounding-mismatch"
+  | "source-revision-mismatch"
+  | "condense-not-shorter"
+  | "expand-not-longer";
 
 export interface GroundingRejectionReason {
   readonly code: GroundingRejectionCode;
@@ -225,10 +278,9 @@ function validateEvidence(
   const contextById = new Map(
     input.permittedContextFacts.map((item) => [item.id, item]),
   );
-  const allowedAssertions = new Set(input.postcondition.allowedAssertionIds);
-  const allowedContextFacts = new Set(
-    input.postcondition.allowedContextFactIds,
-  );
+  const allowedEvidence = allowedEvidenceFor(input.postcondition);
+  const allowedAssertions = allowedEvidence.assertionIds;
+  const allowedContextFacts = allowedEvidence.contextFactIds;
 
   for (const claim of input.candidate.claims) {
     if (claim.grounding.length === 0) {
@@ -314,6 +366,20 @@ function validateEvidence(
             ),
           );
         }
+        if (
+          input.postcondition.kind === "paraphrase" &&
+          (evidence.source.kind !== "reviewer-text" ||
+            evidence.source.sourceRevisionId !==
+              input.postcondition.sourceRevisionId)
+        ) {
+          reasons.push(
+            reason(
+              "source-revision-mismatch",
+              "This wording referred to a different version of the text you supplied.",
+              claim.id,
+            ),
+          );
+        }
         continue;
       }
 
@@ -393,6 +459,186 @@ function validateEvidence(
   return reasons;
 }
 
+interface AllowedEvidence {
+  readonly assertionIds: ReadonlySet<string>;
+  readonly contextFactIds: ReadonlySet<string>;
+}
+
+function groundingReferenceKey(reference: ClaimGroundingReference): string {
+  return reference.kind === "assertion"
+    ? `assertion:${reference.assertionId}:${reference.assertionVersion}`
+    : `context:${reference.contextFactId}:${reference.version}`;
+}
+
+function allowedEvidenceFor(
+  postcondition: GroundingPostcondition,
+): AllowedEvidence {
+  if (
+    postcondition.kind === "generate" ||
+    postcondition.kind === "resample"
+  ) {
+    return {
+      assertionIds: new Set(postcondition.allowedAssertionIds),
+      contextFactIds: new Set(postcondition.allowedContextFactIds),
+    };
+  }
+  if (postcondition.kind === "paraphrase") {
+    return {
+      assertionIds: new Set(postcondition.allowedAssertionIds),
+      contextFactIds: new Set(),
+    };
+  }
+
+  const assertionIds = new Set<string>();
+  const contextFactIds = new Set<string>();
+  for (const sourceClaim of postcondition.sourceClaims) {
+    for (const reference of sourceClaim.grounding) {
+      if (reference.kind === "assertion") {
+        assertionIds.add(reference.assertionId);
+      } else {
+        contextFactIds.add(reference.contextFactId);
+      }
+    }
+  }
+  return { assertionIds, contextFactIds };
+}
+
+function validateRequiredSemanticSet(
+  candidateSemanticIds: ReadonlySet<string>,
+  requiredSemanticIds: ReadonlySet<string>,
+  reasons: GroundingRejectionReason[],
+): void {
+  for (const semanticId of candidateSemanticIds) {
+    if (!requiredSemanticIds.has(semanticId)) {
+      reasons.push(
+        reason(
+          "claim-added-by-transformation",
+          "This version introduced a fact that was not present in the source review.",
+        ),
+      );
+    }
+  }
+  for (const semanticId of requiredSemanticIds) {
+    if (!candidateSemanticIds.has(semanticId)) {
+      reasons.push(
+        reason(
+          "required-claim-missing",
+          "This version left out a fact that the command must preserve.",
+        ),
+      );
+    }
+  }
+}
+
+function validatePostcondition(
+  input: GroundingEvaluationInput,
+): readonly GroundingRejectionReason[] {
+  const postcondition = input.postcondition;
+  if (postcondition.kind === "generate" || postcondition.kind === "resample") {
+    return [];
+  }
+
+  const reasons: GroundingRejectionReason[] = [];
+  const candidateSemanticIds = new Set(
+    input.candidate.claims.map((claim) => claim.semanticId),
+  );
+
+  if (postcondition.kind === "paraphrase") {
+    validateRequiredSemanticSet(
+      candidateSemanticIds,
+      new Set(postcondition.requiredSemanticIds),
+      reasons,
+    );
+    return reasons;
+  }
+
+  const sourceSemanticIds = new Set(
+    postcondition.sourceClaims.map((claim) => claim.semanticId),
+  );
+  for (const semanticId of candidateSemanticIds) {
+    if (!sourceSemanticIds.has(semanticId)) {
+      reasons.push(
+        reason(
+          "claim-added-by-transformation",
+          "This version introduced a fact that was not present in the source review.",
+        ),
+      );
+    }
+  }
+
+  const sourceGroundingBySemanticId = new Map<string, Set<string>>();
+  for (const sourceClaim of postcondition.sourceClaims) {
+    const references = sourceGroundingBySemanticId.get(sourceClaim.semanticId) ??
+      new Set<string>();
+    for (const reference of sourceClaim.grounding) {
+      references.add(groundingReferenceKey(reference));
+    }
+    sourceGroundingBySemanticId.set(sourceClaim.semanticId, references);
+  }
+
+  for (const claim of input.candidate.claims) {
+    const sourceReferences = sourceGroundingBySemanticId.get(claim.semanticId);
+    if (sourceReferences === undefined) {
+      continue;
+    }
+    if (
+      claim.grounding.some(
+        (reference) => !sourceReferences.has(groundingReferenceKey(reference)),
+      )
+    ) {
+      reasons.push(
+        reason(
+          "transitive-grounding-mismatch",
+          "This version lost the original source of one of its facts.",
+          claim.id,
+        ),
+      );
+    }
+  }
+
+  if (
+    postcondition.kind === "expand" ||
+    postcondition.kind === "revise-wording"
+  ) {
+    for (const semanticId of sourceSemanticIds) {
+      if (!candidateSemanticIds.has(semanticId)) {
+        reasons.push(
+          reason(
+            "required-claim-missing",
+            "This version left out a fact that the command must preserve.",
+          ),
+        );
+      }
+    }
+  }
+
+  const candidateCharacterLength = Array.from(renderCandidate(input.candidate)).length;
+  if (
+    postcondition.kind === "condense" &&
+    candidateCharacterLength >= postcondition.sourceDraftCharacterLength
+  ) {
+    reasons.push(
+      reason(
+        "condense-not-shorter",
+        "The condensed version was not shorter than the source review.",
+      ),
+    );
+  }
+  if (
+    postcondition.kind === "expand" &&
+    candidateCharacterLength <= postcondition.sourceDraftCharacterLength
+  ) {
+    reasons.push(
+      reason(
+        "expand-not-longer",
+        "The expanded version was not longer than the source review.",
+      ),
+    );
+  }
+
+  return reasons;
+}
+
 function renderCandidate(candidate: Candidate): string {
   const claims = new Map(candidate.claims.map((claim) => [claim.id, claim]));
   return candidate.segments
@@ -410,6 +656,7 @@ export function evaluateGrounding(
   const reasons = [
     ...validateCoverage(input.candidate),
     ...validateEvidence(input),
+    ...validatePostcondition(input),
   ];
 
   if (reasons.length > 0) {
