@@ -108,7 +108,9 @@ describe("evaluateGrounding complete coverage", () => {
 
     expect(result).toMatchObject({
       verdict: "rejected",
-      reasons: expect.arrayContaining([{ code: "unrendered-claim" }]),
+      reasons: expect.arrayContaining([
+        expect.objectContaining({ code: "unrendered-claim" }),
+      ]),
     });
   });
 
