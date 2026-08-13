@@ -87,6 +87,8 @@ export const LOCATION_OVERRIDE_FIELDS = [
   "bannedTerms",
 ] as const satisfies readonly ConfigurationField[];
 
+export type LocationOverrideField = (typeof LOCATION_OVERRIDE_FIELDS)[number];
+
 const locationOverrideFields = new Set<string>(LOCATION_OVERRIDE_FIELDS);
 
 export class ConfigurationResolutionError extends Error {
@@ -103,6 +105,22 @@ export class ConfigurationResolutionError extends Error {
 
 const hasOwn = (value: object, key: PropertyKey): boolean =>
   Object.prototype.hasOwnProperty.call(value, key);
+
+export function resetLocationOverride(
+  location: LocationConfiguration,
+  field: LocationOverrideField,
+): LocationConfiguration {
+  if (!hasOwn(location.overrides, field)) {
+    return location;
+  }
+
+  return {
+    ...location,
+    overrides: Object.fromEntries(
+      Object.entries(location.overrides).filter(([key]) => key !== field),
+    ),
+  };
+}
 
 export function resolveEffectiveConfig(input: {
   readonly platform: PlatformConfiguration;
