@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ConfigurationResolutionError,
   resetLocationOverride,
   resolveEffectiveConfig,
+  type ConfigurationResolutionError,
   type FactOption,
   type LocationConfiguration,
   type PlatformConfiguration,

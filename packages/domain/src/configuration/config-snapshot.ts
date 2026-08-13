@@ -55,6 +55,7 @@ export interface PriceRate {
 }
 
 export interface ProviderRouting {
+  readonly version?: string;
   readonly primaryProvider: string;
   readonly primaryModel: string;
 }
@@ -71,6 +72,12 @@ export interface BuildConfigSnapshotInput {
   providerRouting: ProviderRouting;
 }
 
+export type ConfigSnapshotProvenanceKey =
+  | keyof EffectiveSettings
+  | "tenantName"
+  | "locationName"
+  | "providerRouting";
+
 export interface ConfigSnapshotPayload {
   readonly schemaVersion: typeof CONFIG_SNAPSHOT_SCHEMA_VERSION;
   readonly tenantId: string;
@@ -78,7 +85,7 @@ export interface ConfigSnapshotPayload {
   readonly tenantName: string;
   readonly locationName: string;
   readonly settings: EffectiveSettings;
-  readonly provenance: Readonly<Record<keyof EffectiveSettings, SourceProvenance>>;
+  readonly provenance: Readonly<Record<ConfigSnapshotProvenanceKey, SourceProvenance>>;
   readonly factOptions: readonly FactOption[];
   readonly reviewFormats: readonly ReviewFormatVersion[];
   readonly promptVersions: readonly PromptVersion[];
@@ -88,6 +95,26 @@ export interface ConfigSnapshotPayload {
 
 export interface ResolvedConfigSnapshot extends ConfigSnapshotPayload {
   readonly snapshotId: `sha256:${string}`;
+}
+
+export type ConfigSnapshotErrorCode =
+  | "duplicate-review-format-id"
+  | "duplicate-review-format-version"
+  | "duplicate-prompt-hash"
+  | "duplicate-price-rate-id"
+  | "invalid-price-rate-interval"
+  | "overlapping-price-rate-interval"
+  | "missing-enabled-review-format"
+  | "unpriced-provider-route";
+
+export class ConfigSnapshotError extends Error {
+  readonly code: ConfigSnapshotErrorCode;
+
+  constructor(code: ConfigSnapshotErrorCode, message: string) {
+    super(message);
+    this.name = "ConfigSnapshotError";
+    this.code = code;
+  }
 }
 
 const lexical = (left: string, right: string): number =>
@@ -102,6 +129,32 @@ const byHash = <Value extends { readonly hash: string }>(left: Value, right: Val
 const sortedStrings = (values: readonly string[]): readonly string[] =>
   [...values].sort(lexical);
 
+const copyReviewFormatConstraints = (
+  constraints: ReviewFormatConstraints,
+): ReviewFormatConstraints => ({
+  minChars: constraints.minChars,
+  maxChars: constraints.maxChars,
+  paragraphs: constraints.paragraphs,
+  emojiPolicy: constraints.emojiPolicy,
+  secondPerson: constraints.secondPerson,
+});
+
+const copyLocalizedMap = (
+  map: Readonly<Partial<Record<EffectiveSettings["locale"], string>>>,
+): Readonly<Partial<Record<EffectiveSettings["locale"], string>>> => {
+  const allowedLocales: readonly EffectiveSettings["locale"][] = [
+    "en-GB",
+    "de-DE",
+  ];
+  const result: Partial<Record<EffectiveSettings["locale"], string>> = {};
+  for (const loc of allowedLocales) {
+    if (typeof map[loc] === "string") {
+      result[loc] = map[loc];
+    }
+  }
+  return result;
+};
+
 const copyReviewFormat = (format: ReviewFormatVersion): ReviewFormatVersion => ({
   id: format.id,
   key: format.key,
@@ -109,9 +162,9 @@ const copyReviewFormat = (format: ReviewFormatVersion): ReviewFormatVersion => (
   displayName: format.displayName,
   targetPlatform: format.targetPlatform,
   locale: format.locale,
-  description: { ...format.description },
-  sample: { ...format.sample },
-  constraints: { ...format.constraints },
+  description: copyLocalizedMap(format.description),
+  sample: copyLocalizedMap(format.sample),
+  constraints: copyReviewFormatConstraints(format.constraints),
   supportedCommands: sortedStrings(format.supportedCommands) as readonly CommandKind[],
 });
 
@@ -135,10 +188,15 @@ const copyPriceRate = (rate: PriceRate): PriceRate => ({
   effectiveTo: rate.effectiveTo,
 });
 
+const copyFactOwner = (owner: FactOption["owner"]): FactOption["owner"] =>
+  owner.scope === "tenant"
+    ? { scope: "tenant", tenantId: owner.tenantId }
+    : { scope: "location", tenantId: owner.tenantId, locationId: owner.locationId };
+
 const copyFactOption = (option: FactOption): FactOption => ({
   id: option.id,
   version: option.version,
-  owner: { ...option.owner },
+  owner: copyFactOwner(option.owner),
   categoryId: option.categoryId,
   proposition: option.proposition,
   polarity: option.polarity,
@@ -146,6 +204,114 @@ const copyFactOption = (option: FactOption): FactOption => ({
   active: option.active,
   sortOrder: option.sortOrder,
 });
+
+function validateInputs(
+  input: BuildConfigSnapshotInput,
+  resolvedSettings: EffectiveSettings,
+): void {
+  const seenFormatIds = new Set<string>();
+  const seenFormatKeyVersions = new Set<string>();
+  for (const format of input.reviewFormats) {
+    if (seenFormatIds.has(format.id)) {
+      throw new ConfigSnapshotError(
+        "duplicate-review-format-id",
+        `Duplicate review format id: ${format.id}`,
+      );
+    }
+    seenFormatIds.add(format.id);
+    const keyVersion = `${format.key}@${format.version}`;
+    if (seenFormatKeyVersions.has(keyVersion)) {
+      throw new ConfigSnapshotError(
+        "duplicate-review-format-version",
+        `Duplicate review format key/version: ${keyVersion}`,
+      );
+    }
+    seenFormatKeyVersions.add(keyVersion);
+  }
+
+  const seenPromptHashes = new Set<string>();
+  for (const prompt of input.promptVersions) {
+    if (seenPromptHashes.has(prompt.hash)) {
+      throw new ConfigSnapshotError(
+        "duplicate-prompt-hash",
+        `Duplicate prompt hash: ${prompt.hash}`,
+      );
+    }
+    seenPromptHashes.add(prompt.hash);
+  }
+
+  const seenRateIds = new Set<string>();
+  const ratesByModel = new Map<string, PriceRate[]>();
+  for (const rate of input.priceRates) {
+    if (seenRateIds.has(rate.id)) {
+      throw new ConfigSnapshotError(
+        "duplicate-price-rate-id",
+        `Duplicate price rate id: ${rate.id}`,
+      );
+    }
+    seenRateIds.add(rate.id);
+
+    const fromMs = Date.parse(rate.effectiveFrom);
+    if (Number.isNaN(fromMs)) {
+      throw new ConfigSnapshotError(
+        "invalid-price-rate-interval",
+        `Invalid effectiveFrom timestamp: ${rate.effectiveFrom}`,
+      );
+    }
+    if (rate.effectiveTo !== null) {
+      const toMs = Date.parse(rate.effectiveTo);
+      if (Number.isNaN(toMs) || toMs <= fromMs) {
+        throw new ConfigSnapshotError(
+          "invalid-price-rate-interval",
+          `Invalid effectiveTo timestamp or interval: ${rate.effectiveTo} (from: ${rate.effectiveFrom})`,
+        );
+      }
+    }
+
+    const modelKey = `${rate.provider}:${rate.model}`;
+    const list = ratesByModel.get(modelKey) ?? [];
+    list.push(rate);
+    ratesByModel.set(modelKey, list);
+  }
+
+  for (const rates of ratesByModel.values()) {
+    for (let i = 0; i < rates.length; i++) {
+      const r1 = rates[i]!;
+      const start1 = Date.parse(r1.effectiveFrom);
+      const end1 = r1.effectiveTo ? Date.parse(r1.effectiveTo) : Infinity;
+
+      for (let j = i + 1; j < rates.length; j++) {
+        const r2 = rates[j]!;
+        const start2 = Date.parse(r2.effectiveFrom);
+        const end2 = r2.effectiveTo ? Date.parse(r2.effectiveTo) : Infinity;
+
+        if (Math.max(start1, start2) < Math.min(end1, end2)) {
+          throw new ConfigSnapshotError(
+            "overlapping-price-rate-interval",
+            `Overlapping price rate intervals for ${r1.provider}:${r1.model}`,
+          );
+        }
+      }
+    }
+  }
+
+  for (const enabledId of resolvedSettings.enabledReviewFormatVersionIds) {
+    if (!seenFormatIds.has(enabledId)) {
+      throw new ConfigSnapshotError(
+        "missing-enabled-review-format",
+        `Enabled review format id not found in catalogue: ${enabledId}`,
+      );
+    }
+  }
+
+  const primaryModelKey = `${input.providerRouting.primaryProvider}:${input.providerRouting.primaryModel}`;
+  if (!ratesByModel.has(primaryModelKey) || (ratesByModel.get(primaryModelKey)?.length ?? 0) === 0) {
+    throw new ConfigSnapshotError(
+      "unpriced-provider-route",
+      `No price rate for provider routing: ${primaryModelKey}`,
+    );
+  }
+}
 
 function buildPayload(input: BuildConfigSnapshotInput): ConfigSnapshotPayload {
   const resolved = resolveEffectiveConfig({
@@ -170,7 +336,28 @@ function buildPayload(input: BuildConfigSnapshotInput): ConfigSnapshotPayload {
     monthlyBudgetMicros: resolved.value.monthlyBudgetMicros,
     alertThresholdPct: resolved.value.alertThresholdPct,
   };
+
+  validateInputs(input, settings);
+
   const enabledFormatIds = new Set(settings.enabledReviewFormatVersionIds);
+  const provenance: Record<ConfigSnapshotProvenanceKey, SourceProvenance> = {
+    ...resolved.provenance,
+    tenantName: {
+      scope: "tenant",
+      sourceId: input.tenant.id,
+      revision: input.tenant.revision,
+    },
+    locationName: {
+      scope: "location",
+      sourceId: input.location.id,
+      revision: input.location.revision,
+    },
+    providerRouting: {
+      scope: "platform",
+      sourceId: input.platform.id,
+      revision: input.platform.revision,
+    },
+  };
 
   return {
     schemaVersion: CONFIG_SNAPSHOT_SCHEMA_VERSION,
@@ -179,7 +366,7 @@ function buildPayload(input: BuildConfigSnapshotInput): ConfigSnapshotPayload {
     tenantName: input.tenantName,
     locationName: input.locationName,
     settings,
-    provenance: { ...resolved.provenance },
+    provenance,
     factOptions: resolved.value.factOptions.map(copyFactOption),
     reviewFormats: input.reviewFormats
       .filter(
@@ -192,6 +379,9 @@ function buildPayload(input: BuildConfigSnapshotInput): ConfigSnapshotPayload {
     promptVersions: input.promptVersions.map(copyPromptVersion).sort(byHash),
     priceRates: input.priceRates.map(copyPriceRate).sort(byId),
     providerRouting: {
+      ...(input.providerRouting.version !== undefined
+        ? { version: input.providerRouting.version }
+        : {}),
       primaryProvider: input.providerRouting.primaryProvider,
       primaryModel: input.providerRouting.primaryModel,
     },
@@ -334,12 +524,27 @@ function deepFreeze<Value>(value: Value): Value {
   return value;
 }
 
+export function deriveConfigSnapshotId(
+  snapshot: ConfigSnapshotPayload | ResolvedConfigSnapshot,
+): `sha256:${string}` {
+  return `sha256:${sha256(canonicalizeConfigSnapshotPayload(snapshot))}`;
+}
+
+export function verifyConfigSnapshot(
+  snapshot: ResolvedConfigSnapshot,
+): boolean {
+  if (!snapshot || typeof snapshot.snapshotId !== "string") {
+    return false;
+  }
+  return snapshot.snapshotId === deriveConfigSnapshotId(snapshot);
+}
+
 export function buildConfigSnapshot(
   input: BuildConfigSnapshotInput,
 ): ResolvedConfigSnapshot {
   const payload = buildPayload(input);
   const snapshot: ResolvedConfigSnapshot = {
-    snapshotId: `sha256:${sha256(canonicalizeConfigSnapshotPayload(payload))}`,
+    snapshotId: deriveConfigSnapshotId(payload),
     ...payload,
   };
   return deepFreeze(snapshot);

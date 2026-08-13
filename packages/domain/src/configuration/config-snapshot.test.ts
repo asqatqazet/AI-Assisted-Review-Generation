@@ -4,7 +4,10 @@ import {
   CONFIG_SNAPSHOT_SCHEMA_VERSION,
   buildConfigSnapshot,
   canonicalizeConfigSnapshotPayload,
+  deriveConfigSnapshotId,
+  verifyConfigSnapshot,
   type BuildConfigSnapshotInput,
+  type ConfigSnapshotError,
   type FactOption,
   type PriceRate,
   type ReviewFormatVersion,
@@ -155,6 +158,7 @@ const makeInput = (): BuildConfigSnapshotInput => ({
   ],
   priceRates: [openAiRate, anthropicRate],
   providerRouting: {
+    version: "routing-v3",
     primaryProvider: "anthropic",
     primaryModel: "claude-sonnet",
   },
@@ -194,16 +198,32 @@ describe("buildConfigSnapshot", () => {
         { id: "rate-openai-mini-2026-08" },
       ],
       providerRouting: {
+        version: "routing-v3",
         primaryProvider: "anthropic",
         primaryModel: "claude-sonnet",
       },
     });
     expect(snapshot.snapshotId).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(Object.keys(snapshot.provenance)).toHaveLength(11);
+    expect(Object.keys(snapshot.provenance)).toHaveLength(14);
     expect(snapshot.provenance.requireVerifiedExperience).toEqual({
       scope: "location",
       sourceId: "location-a",
       revision: "location-r3",
+    });
+    expect(snapshot.provenance.tenantName).toEqual({
+      scope: "tenant",
+      sourceId: "tenant-a",
+      revision: "tenant-r7",
+    });
+    expect(snapshot.provenance.locationName).toEqual({
+      scope: "location",
+      sourceId: "location-a",
+      revision: "location-r3",
+    });
+    expect(snapshot.provenance.providerRouting).toEqual({
+      scope: "platform",
+      sourceId: "platform",
+      revision: "platform-r1",
     });
   });
 
@@ -334,6 +354,11 @@ describe("buildConfigSnapshot", () => {
   it("includes only enabled Review Format Versions compatible with the effective locale", () => {
     const snapshot = buildConfigSnapshot(makeInput());
 
+    expect(snapshot.settings.enabledReviewFormatVersionIds).toEqual([
+      "format-concise-v1",
+      "format-german-v1",
+      "format-social-v1",
+    ]);
     expect(snapshot.reviewFormats.map(({ id }) => id)).toEqual([
       "format-concise-v1",
       "format-social-v1",
@@ -357,10 +382,11 @@ describe("buildConfigSnapshot", () => {
 
   it("excludes provider credentials even when a structurally compatible caller carries them", () => {
     const input = makeInput();
-    input.providerRouting = {
+    const routingWithCredential = {
       ...input.providerRouting,
       apiKey: "must-not-enter-snapshot",
     };
+    input.providerRouting = routingWithCredential;
 
     const canonical = canonicalizeConfigSnapshotPayload(buildConfigSnapshot(input));
 
@@ -395,6 +421,251 @@ describe("buildConfigSnapshot", () => {
 
     expect(buildConfigSnapshot(changed).snapshotId).not.toBe(
       buildConfigSnapshot(makeInput()).snapshotId,
+    );
+  });
+
+  it("rejects duplicate Review Format ids", () => {
+    const input = makeInput();
+    input.reviewFormats = [
+      ...input.reviewFormats,
+      { ...socialFormat, key: "another-key" },
+    ];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "duplicate-review-format-id",
+      }),
+    );
+  });
+
+  it("rejects duplicate Review Format key and version identities", () => {
+    const input = makeInput();
+    input.reviewFormats = [
+      ...input.reviewFormats,
+      { ...socialFormat, id: "format-social-copy-v1" },
+    ];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "duplicate-review-format-version",
+      }),
+    );
+  });
+
+  it("rejects duplicate Prompt Version hashes", () => {
+    const input = makeInput();
+    input.promptVersions = [
+      ...input.promptVersions,
+      {
+        ...input.promptVersions[0]!,
+        key: "review.generate.copy",
+      },
+    ];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "duplicate-prompt-hash",
+      }),
+    );
+  });
+
+  it("rejects duplicate Price Rate ids", () => {
+    const input = makeInput();
+    input.priceRates = [
+      ...input.priceRates,
+      { ...anthropicRate, provider: "another-provider" },
+    ];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "duplicate-price-rate-id",
+      }),
+    );
+  });
+
+  it.each([
+    {
+      name: "an invalid effective timestamp",
+      rate: { ...anthropicRate, effectiveFrom: "not-a-timestamp" },
+    },
+    {
+      name: "an end before its start",
+      rate: {
+        ...anthropicRate,
+        effectiveFrom: "2026-09-01T00:00:00.000Z",
+        effectiveTo: "2026-08-01T00:00:00.000Z",
+      },
+    },
+    {
+      name: "an empty effective interval",
+      rate: {
+        ...anthropicRate,
+        effectiveTo: anthropicRate.effectiveFrom,
+      },
+    },
+  ])("rejects $name", ({ rate }) => {
+    const input = makeInput();
+    input.priceRates = [rate, openAiRate];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "invalid-price-rate-interval",
+      }),
+    );
+  });
+
+  it("rejects overlapping Price Rate intervals for the same Provider Model", () => {
+    const input = makeInput();
+    input.priceRates = [
+      {
+        ...anthropicRate,
+        id: "rate-anthropic-sonnet-2026-07",
+        effectiveFrom: "2026-07-01T00:00:00.000Z",
+        effectiveTo: "2026-09-01T00:00:00.000Z",
+      },
+      anthropicRate,
+      openAiRate,
+    ];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "overlapping-price-rate-interval",
+      }),
+    );
+  });
+
+  it("allows adjacent Price Rate intervals for the same Provider Model", () => {
+    const input = makeInput();
+    input.priceRates = [
+      {
+        ...anthropicRate,
+        id: "rate-anthropic-sonnet-2026-07",
+        effectiveFrom: "2026-07-01T00:00:00.000Z",
+        effectiveTo: anthropicRate.effectiveFrom,
+      },
+      anthropicRate,
+      openAiRate,
+    ];
+
+    expect(buildConfigSnapshot(input).priceRates).toHaveLength(3);
+  });
+
+  it("rejects an enabled Review Format id absent from the Platform catalogue", () => {
+    const input = makeInput();
+    input.tenant = {
+      ...input.tenant,
+      settings: {
+        ...input.tenant.settings,
+        enabledReviewFormatVersionIds: [
+          ...(input.tenant.settings.enabledReviewFormatVersionIds ?? []),
+          "format-missing-v1",
+        ],
+      },
+    };
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "missing-enabled-review-format",
+      }),
+    );
+  });
+
+  it("rejects Provider Routing without a Price Rate for its primary Provider Model", () => {
+    const input = makeInput();
+    input.priceRates = [openAiRate];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "unpriced-provider-route",
+      }),
+    );
+  });
+
+  it("embeds immutable catalogue identities as their self-provenance", () => {
+    const snapshot = buildConfigSnapshot(makeInput());
+
+    expect(snapshot.factOptions.map(({ id, version }) => ({ id, version }))).toEqual([
+      { id: "fact-service", version: "fact-service-v1" },
+      { id: "fact-parking", version: "fact-parking-v2" },
+    ]);
+    expect(snapshot.reviewFormats.map(({ id, version }) => ({ id, version }))).toEqual([
+      { id: "format-concise-v1", version: "1.0.0" },
+      { id: "format-social-v1", version: "1.0.0" },
+    ]);
+    expect(snapshot.promptVersions.map(({ hash }) => hash)).toEqual([
+      "prompt-generate-v1",
+      "prompt-reformat-v1",
+    ]);
+    expect(snapshot.priceRates.map(({ id }) => id)).toEqual([
+      "rate-anthropic-sonnet-2026-08",
+      "rate-openai-mini-2026-08",
+    ]);
+    expect(snapshot.providerRouting.version).toBe("routing-v3");
+  });
+
+  it("copies only allowed nested fields into the snapshot", () => {
+    const input = makeInput();
+    const formatWithExtras = {
+      ...input.reviewFormats[0]!,
+      apiKey: "format-secret",
+      description: {
+        ...input.reviewFormats[0]!.description,
+        apiKey: "localized-secret",
+      },
+    };
+    const factWithExtras = {
+      ...input.tenant.factOptions[0]!,
+      apiKey: "fact-secret",
+      owner: {
+        ...input.tenant.factOptions[0]!.owner,
+        apiKey: "owner-secret",
+      },
+    };
+    const promptWithExtras = {
+      ...input.promptVersions[0]!,
+      apiKey: "prompt-secret",
+    };
+    const rateWithExtras = {
+      ...input.priceRates[0]!,
+      apiKey: "rate-secret",
+    };
+    input.reviewFormats = [formatWithExtras, ...input.reviewFormats.slice(1)];
+    input.tenant = { ...input.tenant, factOptions: [factWithExtras] };
+    input.promptVersions = [promptWithExtras, ...input.promptVersions.slice(1)];
+    input.priceRates = [rateWithExtras, ...input.priceRates.slice(1)];
+
+    const canonical = canonicalizeConfigSnapshotPayload(buildConfigSnapshot(input));
+
+    expect(canonical).not.toContain("apiKey");
+    expect(canonical).not.toContain("secret");
+  });
+
+  it("derives and verifies identity entirely from the embedded payload", () => {
+    const snapshot = buildConfigSnapshot(makeInput());
+
+    expect(deriveConfigSnapshotId(snapshot)).toBe(snapshot.snapshotId);
+    expect(verifyConfigSnapshot(snapshot)).toBe(true);
+    expect(
+      verifyConfigSnapshot({
+        ...snapshot,
+        tenantName: "Tampered Tenant",
+      }),
+    ).toBe(false);
+    expect(
+      verifyConfigSnapshot({
+        ...snapshot,
+        snapshotId: `sha256:${"0".repeat(64)}`,
+      }),
+    ).toBe(false);
+  });
+
+  it("matches an independently generated SHA-256 identity for Unicode payload bytes", () => {
+    const input = makeInput();
+    input.tenantName = "Zahnärzte 😀";
+    input.locationName = "Hafenstraße";
+
+    expect(buildConfigSnapshot(input).snapshotId).toBe(
+      "sha256:cb15430253c08d7c0d6115a8520082034c9a0d955c94b8bc6f921f821b38767e",
     );
   });
 });
