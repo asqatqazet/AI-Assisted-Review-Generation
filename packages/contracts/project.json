@@ -8,7 +8,7 @@
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{workspaceRoot}/dist/packages/contracts"],
-      "options": { "command": "tsup packages/contracts/src/index.ts --format esm --out-dir dist/packages/contracts --clean" }
+      "options": { "command": "tsup packages/contracts/src/shared/index.ts packages/contracts/src/context/index.ts packages/contracts/src/generation/index.ts --format esm --out-dir dist/packages/contracts --clean" }
     }
   },
   "tags": ["type:contracts"]

@@ -8,7 +8,7 @@
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{workspaceRoot}/dist/packages/domain"],
-      "options": { "command": "tsup packages/domain/src/index.ts --format esm --out-dir dist/packages/domain --clean" }
+      "options": { "command": "tsup packages/domain/src/configuration/index.ts packages/domain/src/review-session/index.ts packages/domain/src/generation/index.ts --format esm --out-dir dist/packages/domain --clean" }
     },
     "test": {
       "executor": "nx:run-commands",

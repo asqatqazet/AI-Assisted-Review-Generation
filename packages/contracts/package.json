@@ -6,5 +6,9 @@
   "dependencies": {
     "zod": "^4.4.3"
   },
-  "exports": { ".": "./src/index.ts", "./*": "./src/*" }
+  "exports": {
+    "./shared": "./src/shared/index.ts",
+    "./context": "./src/context/index.ts",
+    "./generation": "./src/generation/index.ts"
+  }
 }

@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./*": "./src/*" }
+  "exports": {
+    "./configuration": "./src/configuration/index.ts",
+    "./review-session": "./src/review-session/index.ts",
+    "./generation": "./src/generation/index.ts"
+  }
 }
-

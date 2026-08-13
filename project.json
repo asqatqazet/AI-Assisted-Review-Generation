@@ -30,9 +30,16 @@
     },
     "typecheck": {
       "executor": "nx:run-commands",
-      "dependsOn": ["lint"],
+      "dependsOn": ["lint", "typecheck-domain-purity"],
       "options": {
         "command": "tsc -p tsconfig.json --noEmit"
+      }
+    },
+    "typecheck-domain-purity": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["lint"],
+      "options": {
+        "command": "tsc -p packages/domain/tsconfig.json"
       }
     },
     "dependency-cruiser": {

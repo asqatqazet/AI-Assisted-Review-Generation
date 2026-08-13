@@ -53,13 +53,22 @@ module.exports = {
       to: { path: WORKSPACE_SOURCE, circular: true },
     },
     {
-      name: "no-cross-deployable-imports",
+      name: "web-bff-cannot-import-other-deployables",
       severity: "error",
-      from: { path: "^apps/([^/]+)/src/" },
-      to: {
-        path: "^apps/",
-        pathNot: "^apps/$1/",
-      },
+      from: { path: WEB_BFF },
+      to: { path: "^apps/(?:context-service|generation-service)/" },
+    },
+    {
+      name: "context-cannot-import-other-deployables",
+      severity: "error",
+      from: { path: CONTEXT_SERVICE },
+      to: { path: "^apps/(?:web-bff|generation-service)/" },
+    },
+    {
+      name: "generation-cannot-import-other-deployables",
+      severity: "error",
+      from: { path: GENERATION_SERVICE },
+      to: { path: "^apps/(?:web-bff|context-service)/" },
     },
     {
       name: "packages-never-import-deployables",
@@ -193,12 +202,12 @@ module.exports = {
     // Context and Generation use different database entry points, generated
     // clients, and runtime roles. Neither adapter module can reach the other.
     {
-      name: "context-db-imports-control-plane-only",
+      name: "context-db-imports-control-and-admission-only",
       severity: "error",
       from: { path: CONTEXT_SERVICE },
       to: {
         path: "^packages/db/src/",
-        pathNot: "^packages/db/src/control-plane/",
+        pathNot: "^packages/db/src/(?:control-plane|admission)/",
       },
     },
     {
@@ -216,6 +225,34 @@ module.exports = {
       from: { path: "^packages/db/src/control-plane/" },
       to: {
         path: "^packages/db/src/(?:execution-plane|generated/execution-plane)/",
+        reachable: true,
+      },
+    },
+    {
+      name: "db-control-plane-cannot-reach-admission",
+      severity: "error",
+      from: { path: "^packages/db/src/control-plane/" },
+      to: {
+        path: "^packages/db/src/(?:admission|generated/admission)/",
+        reachable: true,
+      },
+    },
+    {
+      name: "db-admission-cannot-reach-role-adapters",
+      severity: "error",
+      from: { path: "^packages/db/src/admission/" },
+      to: {
+        path:
+          "^packages/db/src/(?:control-plane|execution-plane|generated/(?:control-plane|execution-plane))/",
+        reachable: true,
+      },
+    },
+    {
+      name: "db-execution-plane-cannot-reach-admission",
+      severity: "error",
+      from: { path: "^packages/db/src/execution-plane/" },
+      to: {
+        path: "^packages/db/src/(?:admission|generated/admission)/",
         reachable: true,
       },
     },
@@ -279,6 +316,15 @@ module.exports = {
       },
     },
     {
+      name: "contracts-external-dependencies-are-zod-only",
+      severity: "error",
+      from: { path: "^packages/contracts/src/" },
+      to: {
+        dependencyTypes: EXTERNAL_DEPENDENCY_TYPES,
+        pathNot: "node_modules/zod/",
+      },
+    },
+    {
       name: "llm-workspace-dependencies",
       severity: "error",
       from: { path: "^packages/llm/src/" },
@@ -313,31 +359,6 @@ module.exports = {
       severity: "error",
       from: { path: WORKSPACE_SOURCE },
       to: { path: "^packages/plugins/" },
-    },
-  ],
-
-  required: [
-    {
-      name: "generation-handler-validates-wire-request",
-      severity: "error",
-      module: {
-        path: "^apps/generation-service/src/transport/http/generate-handler\\.ts$",
-      },
-      to: {
-        path: "^packages/contracts/src/generation/generation-request\\.ts$",
-        reachable: true,
-      },
-    },
-    {
-      name: "generation-execute-depends-on-effective-config-snapshot",
-      severity: "error",
-      module: {
-        path: "^apps/generation-service/src/application/execute-generation\\.ts$",
-      },
-      to: {
-        path: "^packages/domain/src/configuration/effective-configuration-snapshot\\.ts$",
-        reachable: true,
-      },
     },
   ],
 

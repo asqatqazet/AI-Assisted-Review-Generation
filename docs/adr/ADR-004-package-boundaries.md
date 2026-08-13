@@ -180,14 +180,16 @@ Diagnostics are injected into the gateway; `llm` does not import `observability`
 
 ### `packages/db`
 
-`db` is a distribution package containing two adapter modules, not one generic database interface:
+`db` is a distribution package containing three sealed adapter modules, not one generic database interface:
 
 - `@review/db/control-plane`: configuration repositories and snapshot persistence for Context.
+- `@review/db/admission`: atomic Invitation Token consumption, Review Session creation, and
+  Generation Permit redemption for Context.
 - `@review/db/execution-plane`: Generation journal, Draft/Disposition persistence, and immutable billing records for Generation.
 
-There is no `@review/db` root export, raw Prisma export, arbitrary query interface, or shared generated client. Each subpath uses its own generated client and runtime database role. Common internals may establish transactions and tenant context but cannot import either role-specific adapter.
+There is no `@review/db` root export, raw Prisma export, arbitrary query interface, or shared generated client. Each subpath uses its own generated client and runtime database role. Common internals may establish transactions and tenant context but cannot import any role-specific adapter. The three adapters cannot reach one another, and Generation cannot reach Admission. Admission is a sealed Context-owned seam rather than a fourth deployable, so the BFF remains database-free.
 
-If `db` becomes an omnibus Prisma barrel, it fails this ADR and should split into two packages. It earns its current distribution package by hiding migrations, tenant-context transactions, RLS-safe access, atomic append semantics, and two credentialed clients.
+If `db` becomes an omnibus Prisma barrel, it fails this ADR and should split into separate packages. It earns its current distribution package by hiding migrations, tenant-context transactions, RLS-safe access, atomic admission/append semantics, and credentialed clients.
 
 ### `packages/observability`
 
