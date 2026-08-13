@@ -1,0 +1,20 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "web-bff",
+  "root": "apps/web-bff",
+  "sourceRoot": "apps/web-bff/src",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": { "command": "tsx watch apps/web-bff/src/main.ts" }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/apps/web-bff"],
+      "options": { "command": "tsup apps/web-bff/src/main.ts --format esm --out-dir dist/apps/web-bff --clean" }
+    }
+  },
+  "tags": ["type:deployable", "plane:edge"]
+}
+

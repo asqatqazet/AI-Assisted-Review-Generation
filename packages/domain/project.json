@@ -1,0 +1,19 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "domain",
+  "root": "packages/domain",
+  "sourceRoot": "packages/domain/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/packages/domain"],
+      "options": { "command": "tsup packages/domain/src/index.ts --format esm --out-dir dist/packages/domain --clean" }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": { "command": "vitest run --config packages/domain/vitest.config.ts" }
+    }
+  },
+  "tags": ["type:domain", "io:none"]
+}

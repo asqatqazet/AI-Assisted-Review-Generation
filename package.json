@@ -1,0 +1,28 @@
+{
+  "name": "assisted-review-generation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "nx run workspace:dev",
+    "verify": "nx run workspace:verify",
+    "db:reset": "nx run db:reset",
+    "test": "nx run workspace:unit"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.13.3",
+    "dependency-cruiser": "^18.2.0",
+    "eslint": "^10.8.1",
+    "nx": "^23.1.1",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.12",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  }
+}

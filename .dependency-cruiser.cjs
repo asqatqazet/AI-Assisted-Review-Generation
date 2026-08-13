@@ -351,7 +351,7 @@ module.exports = {
       dependencyTypes: EXTERNAL_DEPENDENCY_TYPES,
     },
     exclude: {
-      path: "^(?:dist|coverage|\\.nx)/|/(?:dist|coverage)/",
+      path: "(?:^|/)(?:node_modules|dist|coverage|\\.nx)/",
     },
     skipAnalysisNotInRules: true,
   },

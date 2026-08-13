@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@review/domain": ["./packages/domain/src/index.ts"],
+      "@review/domain/*": ["./packages/domain/src/*"],
+      "@review/contracts": ["./packages/contracts/src/index.ts"],
+      "@review/contracts/*": ["./packages/contracts/src/*"],
+      "@review/llm": ["./packages/llm/src/index.ts"],
+      "@review/llm/*": ["./packages/llm/src/*"],
+      "@review/db/control-plane": ["./packages/db/src/control-plane/index.ts"],
+      "@review/db/admission": ["./packages/db/src/admission/index.ts"],
+      "@review/db/execution-plane": ["./packages/db/src/execution-plane/index.ts"],
+      "@review/observability": ["./packages/observability/src/index.ts"]
+    }
+  }
+}

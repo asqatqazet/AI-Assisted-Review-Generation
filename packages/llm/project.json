@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "llm",
+  "root": "packages/llm",
+  "sourceRoot": "packages/llm/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/packages/llm"],
+      "options": { "command": "tsup packages/llm/src/index.ts --format esm --out-dir dist/packages/llm --clean" }
+    }
+  },
+  "tags": ["type:adapter"]
+}

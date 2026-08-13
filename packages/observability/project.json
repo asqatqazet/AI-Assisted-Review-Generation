@@ -1,0 +1,15 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "observability",
+  "root": "packages/observability",
+  "sourceRoot": "packages/observability/src",
+  "projectType": "library",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/packages/observability"],
+      "options": { "command": "tsup packages/observability/src/index.ts --format esm --out-dir dist/packages/observability --clean" }
+    }
+  },
+  "tags": ["type:adapter", "io:diagnostics"]
+}

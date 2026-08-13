@@ -1,0 +1,20 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "generation-service",
+  "root": "apps/generation-service",
+  "sourceRoot": "apps/generation-service/src",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": { "command": "PORT=3002 tsx watch apps/generation-service/src/main.ts" }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/apps/generation-service"],
+      "options": { "command": "tsup apps/generation-service/src/main.ts --format esm --out-dir dist/apps/generation-service --clean" }
+    }
+  },
+  "tags": ["type:deployable", "plane:execution"]
+}
+

@@ -1,0 +1,72 @@
+{
+  "$schema": "./node_modules/nx/schemas/project-schema.json",
+  "name": "workspace",
+  "root": ".",
+  "projectType": "application",
+  "targets": {
+    "db-up": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "docker compose up -d postgres"
+      }
+    },
+    "serve-apps": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["db-up"],
+      "options": {
+        "command": "nx run-many -t serve --projects=web-bff,context-service,generation-service --parallel=3",
+        "parallel": false
+      }
+    },
+    "dev": {
+      "executor": "nx:noop",
+      "dependsOn": ["serve-apps"]
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "eslint apps packages --max-warnings=0"
+      }
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["lint"],
+      "options": {
+        "command": "tsc -p tsconfig.json --noEmit"
+      }
+    },
+    "dependency-cruiser": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["typecheck"],
+      "options": {
+        "command": "depcruise apps packages --config .dependency-cruiser.cjs --output-type err"
+      }
+    },
+    "unit": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["dependency-cruiser"],
+      "options": {
+        "command": "vitest run --config vitest.config.ts"
+      }
+    },
+    "integration": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["unit"],
+      "options": {
+        "command": "vitest run --config vitest.integration.config.ts"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["integration"],
+      "options": {
+        "command": "nx run-many -t build --all --exclude=workspace"
+      }
+    },
+    "verify": {
+      "executor": "nx:noop",
+      "dependsOn": ["build"]
+    }
+  },
+  "tags": ["type:workspace"]
+}

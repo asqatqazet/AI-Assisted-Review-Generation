@@ -1,0 +1,20 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "context-service",
+  "root": "apps/context-service",
+  "sourceRoot": "apps/context-service/src",
+  "projectType": "application",
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": { "command": "PORT=3001 tsx watch apps/context-service/src/main.ts" }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/apps/context-service"],
+      "options": { "command": "tsup apps/context-service/src/main.ts --format esm --out-dir dist/apps/context-service --clean" }
+    }
+  },
+  "tags": ["type:deployable", "plane:control"]
+}
+
