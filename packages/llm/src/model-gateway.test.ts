@@ -112,4 +112,20 @@ describe("FakeModelGateway", () => {
       vi.useRealTimers();
     }
   });
+
+  it("rejects a pre-aborted call without consuming a provider step", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const gateway = new FakeModelGateway([
+      { outcome: "success", run: firstRun },
+    ]);
+
+    const error = await gateway
+      .generate(request, controller.signal)
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({ code: "cancellation" });
+    await expect(gateway.generate(request)).resolves.toEqual(firstRun);
+  });
 });
