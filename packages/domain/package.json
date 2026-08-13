@@ -8,6 +8,7 @@
     "./review-session": "./src/review-session/index.ts",
     "./generation": "./src/generation/index.ts",
     "./policy": "./src/policy/index.ts",
-    "./review-format": "./src/review-format/index.ts"
+    "./review-format": "./src/review-format/index.ts",
+    "./prompt": "./src/prompt/index.ts"
   }
 }
