@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   FakeModelGateway,
+  ModelGatewayError,
+  type ModelFailureCode,
   type ModelRequest,
   type ModelRun,
 } from "@review/llm";
@@ -49,5 +51,31 @@ describe("FakeModelGateway", () => {
     ]);
 
     await expect(gateway.generate(request)).resolves.toEqual(firstRun);
+  });
+
+  it.each<ModelFailureCode>([
+    "timeout",
+    "rate-limit",
+    "auth",
+    "content-filter",
+    "provider",
+    "unavailable",
+    "cancellation",
+    "invalid-output",
+  ])("reports a scripted %s failure without losing its type", async (code) => {
+    const gateway = new FakeModelGateway([
+      {
+        outcome: "failure",
+        failure: {
+          code,
+          message: `scripted ${code}`,
+        },
+      },
+    ]);
+
+    const error = await gateway.generate(request).catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({ code, message: `scripted ${code}` });
   });
 });
