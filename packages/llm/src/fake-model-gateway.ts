@@ -23,6 +23,38 @@ export interface FakeModelFailure {
 
 export type FakeModelStep = FakeModelFailure | FakeModelSuccess;
 
+function cancelled(message: string): ModelGatewayError {
+  return new ModelGatewayError("cancellation", message);
+}
+
+function waitForLatency(
+  latencyMs: number,
+  signal: AbortSignal | undefined,
+): Promise<void> {
+  if (latencyMs <= 0) {
+    return Promise.resolve();
+  }
+  if (signal?.aborted === true) {
+    return Promise.reject(
+      cancelled("Model generation was cancelled before it started."),
+    );
+  }
+
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(cancelled("Model generation was cancelled."));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, latencyMs);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export class FakeModelGateway implements ModelGateway {
   readonly #steps: readonly FakeModelStep[];
   #nextStep = 0;
@@ -36,10 +68,7 @@ export class FakeModelGateway implements ModelGateway {
     signal?: AbortSignal,
   ): Promise<ModelRun> {
     if (signal?.aborted === true) {
-      throw new ModelGatewayError(
-        "cancellation",
-        "Model generation was cancelled before it started.",
-      );
+      throw cancelled("Model generation was cancelled before it started.");
     }
 
     const step = this.#steps[this.#nextStep];
@@ -52,11 +81,7 @@ export class FakeModelGateway implements ModelGateway {
       );
     }
 
-    if ((step.latencyMs ?? 0) > 0) {
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, step.latencyMs);
-      });
-    }
+    await waitForLatency(step.latencyMs ?? 0, signal);
 
     if (step.outcome === "failure") {
       throw new ModelGatewayError(step.failure.code, step.failure.message);
