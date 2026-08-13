@@ -128,4 +128,34 @@ describe("FakeModelGateway", () => {
     expect(error).toMatchObject({ code: "cancellation" });
     await expect(gateway.generate(request)).resolves.toEqual(firstRun);
   });
+
+  it("cancels an in-flight scripted delay without waiting for it to elapse", async () => {
+    vi.useFakeTimers();
+    try {
+      const controller = new AbortController();
+      const gateway = new FakeModelGateway([
+        { outcome: "success", run: firstRun, latencyMs: 5_000 },
+      ]);
+      let observed: unknown;
+      const run = gateway.generate(request, controller.signal).then(
+        (value) => {
+          observed = value;
+        },
+        (reason: unknown) => {
+          observed = reason;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(observed).toBeInstanceOf(ModelGatewayError);
+      expect(observed).toMatchObject({ code: "cancellation" });
+      await run;
+    } finally {
+      await vi.runAllTimersAsync();
+      vi.useRealTimers();
+    }
+  });
 });
