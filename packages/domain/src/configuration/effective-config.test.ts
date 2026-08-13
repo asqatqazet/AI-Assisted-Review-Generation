@@ -4,10 +4,24 @@ import {
   ConfigurationResolutionError,
   resetLocationOverride,
   resolveEffectiveConfig,
+  type FactOption,
   type LocationConfiguration,
   type PlatformConfiguration,
   type TenantConfiguration,
 } from "./effective-config.js";
+
+const factOption = (overrides: Partial<FactOption> = {}): FactOption => ({
+  id: "fact-1",
+  version: "fact-1-v1",
+  owner: { scope: "tenant", tenantId: "tenant-a" },
+  categoryId: "category-service",
+  proposition: "The service was attentive.",
+  polarity: "positive",
+  locale: "en-GB",
+  active: true,
+  sortOrder: 10,
+  ...overrides,
+});
 
 const platform: PlatformConfiguration = {
   id: "platform",
@@ -199,5 +213,154 @@ describe("resolveEffectiveConfig override lifecycle", () => {
 
     expect(result.value.requireDisclosure).toBe(true);
     expect(result.provenance.requireDisclosure.scope).toBe("location");
+  });
+});
+
+describe("resolveEffectiveConfig Fact Option merge", () => {
+  it("sorts Tenant Fact Options by sortOrder", () => {
+    const result = resolveEffectiveConfig({
+      platform,
+      tenant: {
+        ...tenant,
+        factOptions: [
+          factOption({ id: "fact-later", sortOrder: 20 }),
+          factOption({ id: "fact-earlier", sortOrder: 10 }),
+        ],
+      },
+      location,
+    });
+
+    expect(result.value.factOptions.map(({ id }) => id)).toEqual([
+      "fact-earlier",
+      "fact-later",
+    ]);
+  });
+
+  it("places Location additions after the Tenant set regardless of sortOrder", () => {
+    const result = resolveEffectiveConfig({
+      platform,
+      tenant: {
+        ...tenant,
+        factOptions: [factOption({ id: "tenant-fact", sortOrder: 100 })],
+      },
+      location: {
+        ...location,
+        factOptionAdditions: [
+          factOption({
+            id: "location-fact",
+            sortOrder: 1,
+            owner: {
+              scope: "location",
+              tenantId: "tenant-a",
+              locationId: "location-a",
+            },
+          }),
+        ],
+      },
+    });
+
+    expect(result.value.factOptions.map(({ id }) => id)).toEqual([
+      "tenant-fact",
+      "location-fact",
+    ]);
+  });
+
+  it("sorts Location additions by sortOrder within their scope", () => {
+    const locationOwner: FactOption["owner"] = {
+      scope: "location",
+      tenantId: "tenant-a",
+      locationId: "location-a",
+    };
+    const result = resolveEffectiveConfig({
+      platform,
+      tenant,
+      location: {
+        ...location,
+        factOptionAdditions: [
+          factOption({ id: "location-later", sortOrder: 20, owner: locationOwner }),
+          factOption({ id: "location-earlier", sortOrder: 10, owner: locationOwner }),
+        ],
+      },
+    });
+
+    expect(result.value.factOptions.map(({ id }) => id)).toEqual([
+      "location-earlier",
+      "location-later",
+    ]);
+  });
+
+  it("rejects a Tenant Fact Option owned by another Tenant", () => {
+    expect(() =>
+      resolveEffectiveConfig({
+        platform,
+        tenant: {
+          ...tenant,
+          factOptions: [
+            factOption({
+              owner: { scope: "tenant", tenantId: "tenant-b" },
+            }),
+          ],
+        },
+        location,
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ConfigurationResolutionError>>({
+        code: "invalid-fact-option-owner",
+      }),
+    );
+  });
+
+  it("rejects a Location addition owned by another Location", () => {
+    expect(() =>
+      resolveEffectiveConfig({
+        platform,
+        tenant,
+        location: {
+          ...location,
+          factOptionAdditions: [
+            factOption({
+              owner: {
+                scope: "location",
+                tenantId: "tenant-a",
+                locationId: "location-b",
+              },
+            }),
+          ],
+        },
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ConfigurationResolutionError>>({
+        code: "invalid-fact-option-owner",
+      }),
+    );
+  });
+
+  it("rejects duplicate Fact Option identities across scopes", () => {
+    expect(() =>
+      resolveEffectiveConfig({
+        platform,
+        tenant: {
+          ...tenant,
+          factOptions: [factOption({ id: "duplicate-fact" })],
+        },
+        location: {
+          ...location,
+          factOptionAdditions: [
+            factOption({
+              id: "duplicate-fact",
+              owner: {
+                scope: "location",
+                tenantId: "tenant-a",
+                locationId: "location-a",
+              },
+            }),
+          ],
+        },
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ConfigurationResolutionError>>({
+        code: "duplicate-fact-option",
+      }),
+    );
   });
 });
