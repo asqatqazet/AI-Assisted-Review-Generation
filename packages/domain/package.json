@@ -6,6 +6,7 @@
   "exports": {
     "./configuration": "./src/configuration/index.ts",
     "./review-session": "./src/review-session/index.ts",
-    "./generation": "./src/generation/index.ts"
+    "./generation": "./src/generation/index.ts",
+    "./policy": "./src/policy/index.ts"
   }
 }
