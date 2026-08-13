@@ -1,1 +1,1 @@
-export {};
+export * from "./effective-configuration-snapshot.js";
