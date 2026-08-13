@@ -53,8 +53,8 @@ export const ReviewFormatVersionDtoSchema = z.strictObject({
   displayName: z.string().min(1),
   targetPlatform: IdentifierDtoSchema,
   locale: ReviewFormatLocaleDtoSchema,
-  description: z.record(LocaleDtoSchema, z.string().min(1)),
-  sample: z.record(LocaleDtoSchema, z.string().min(1)),
+  description: z.partialRecord(LocaleDtoSchema, z.string().min(1)),
+  sample: z.partialRecord(LocaleDtoSchema, z.string().min(1)),
   constraints: ReviewFormatConstraintsDtoSchema,
   supportedCommands: z.array(
     z.enum([
