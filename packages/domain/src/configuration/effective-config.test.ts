@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ConfigurationResolutionError,
+  resetLocationOverride,
   resolveEffectiveConfig,
   type LocationConfiguration,
   type PlatformConfiguration,
@@ -103,5 +105,99 @@ describe("resolveEffectiveConfig scope precedence", () => {
             : "location-a",
       revision: expectedRevision,
     });
+  });
+});
+
+describe("resolveEffectiveConfig override lifecycle", () => {
+  it("rejects unknown Location override keys", () => {
+    expect(() =>
+      resolveEffectiveConfig({
+        platform,
+        tenant,
+        location: {
+          ...location,
+          overrides: { requireDisclosure: false, surpriseSetting: true },
+        },
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ConfigurationResolutionError>>({
+        code: "unknown-location-override",
+      }),
+    );
+  });
+
+  it("rejects a Location resolved against a different Tenant", () => {
+    expect(() =>
+      resolveEffectiveConfig({
+        platform,
+        tenant,
+        location: { ...location, tenantId: "tenant-b" },
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<ConfigurationResolutionError>>({
+        code: "location-tenant-mismatch",
+      }),
+    );
+  });
+
+  it("deletes an override when it is reset", () => {
+    const overridden: LocationConfiguration = {
+      ...location,
+      overrides: { requireDisclosure: false },
+    };
+
+    const reset = resetLocationOverride(overridden, "requireDisclosure");
+
+    expect(reset.overrides).not.toHaveProperty("requireDisclosure");
+    expect(
+      resolveEffectiveConfig({ platform, tenant, location: reset }).value
+        .requireDisclosure,
+    ).toBe(true);
+  });
+
+  it("inherits a later Tenant change after an override is reset", () => {
+    const reset = resetLocationOverride(
+      { ...location, overrides: { requireDisclosure: false } },
+      "requireDisclosure",
+    );
+    const changedTenant: TenantConfiguration = {
+      ...tenant,
+      revision: "tenant-r8",
+      settings: { ...tenant.settings, requireDisclosure: false },
+    };
+
+    const result = resolveEffectiveConfig({
+      platform,
+      tenant: changedTenant,
+      location: reset,
+    });
+
+    expect(result.value.requireDisclosure).toBe(false);
+    expect(result.provenance.requireDisclosure).toEqual({
+      scope: "tenant",
+      sourceId: "tenant-a",
+      revision: "tenant-r8",
+    });
+  });
+
+  it("keeps an explicit equal-valued override insulated from later Tenant changes", () => {
+    const explicitlyOverridden: LocationConfiguration = {
+      ...location,
+      overrides: { requireDisclosure: true },
+    };
+    const changedTenant: TenantConfiguration = {
+      ...tenant,
+      revision: "tenant-r8",
+      settings: { ...tenant.settings, requireDisclosure: false },
+    };
+
+    const result = resolveEffectiveConfig({
+      platform,
+      tenant: changedTenant,
+      location: explicitlyOverridden,
+    });
+
+    expect(result.value.requireDisclosure).toBe(true);
+    expect(result.provenance.requireDisclosure.scope).toBe("location");
   });
 });
