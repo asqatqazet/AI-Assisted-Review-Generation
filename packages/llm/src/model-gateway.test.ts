@@ -158,4 +158,27 @@ describe("FakeModelGateway", () => {
       vi.useRealTimers();
     }
   });
+
+  it("preserves provider attempt evidence on a typed failure", async () => {
+    const gateway = new FakeModelGateway([
+      {
+        outcome: "failure",
+        failure: {
+          code: "rate-limit",
+          message: "Quota window is full.",
+          retryAfterMs: 1_250,
+          attempt: firstRun.attempt,
+        },
+      },
+    ]);
+
+    const error = await gateway.generate(request).catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({
+      code: "rate-limit",
+      retryAfterMs: 1_250,
+      attempt: firstRun.attempt,
+    });
+  });
 });
