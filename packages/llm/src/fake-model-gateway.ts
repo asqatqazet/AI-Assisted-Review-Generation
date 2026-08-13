@@ -9,10 +9,12 @@ import { ModelGatewayError } from "./model-gateway.js";
 export interface FakeModelSuccess {
   readonly outcome: "success";
   readonly run: ModelRun;
+  readonly latencyMs?: number;
 }
 
 export interface FakeModelFailure {
   readonly outcome: "failure";
+  readonly latencyMs?: number;
   readonly failure: {
     readonly code: ModelFailureCode;
     readonly message: string;
@@ -41,6 +43,12 @@ export class FakeModelGateway implements ModelGateway {
         "unavailable",
         "No scripted model run remains.",
       );
+    }
+
+    if ((step.latencyMs ?? 0) > 0) {
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, step.latencyMs);
+      });
     }
 
     if (step.outcome === "failure") {
