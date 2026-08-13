@@ -78,4 +78,16 @@ describe("FakeModelGateway", () => {
     expect(error).toBeInstanceOf(ModelGatewayError);
     expect(error).toMatchObject({ code, message: `scripted ${code}` });
   });
+
+  it("reports provider unavailability after its script is exhausted", async () => {
+    const gateway = new FakeModelGateway([
+      { outcome: "success", run: firstRun },
+    ]);
+    await gateway.generate(request);
+
+    const error = await gateway.generate(request).catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({ code: "unavailable" });
+  });
 });
