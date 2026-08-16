@@ -83,6 +83,7 @@ function StartRoute({
           <button
             type="button"
             disabled={state.rating === null}
+            aria-pressed={state.selectedAction === "generate"}
             onClick={() =>
               setState((current) =>
                 transition(current, {
@@ -97,6 +98,7 @@ function StartRoute({
           <button
             type="button"
             disabled={state.rating === null}
+            aria-pressed={state.selectedAction === "paraphrase"}
             onClick={() =>
               setState((current) =>
                 transition(current, {
