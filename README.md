@@ -4,6 +4,14 @@
 
 An assisted review-writing system that turns only reviewer-confirmed assertions into grounded drafts.
 
+## Design
+
+- [Accepted student assessment system and AWS architecture](docs/SYSTEM-ARCHITECTURE.md)
+- [Zero-budget hosting facts and primary sources](docs/research/ZERO-BUDGET-HOSTING.md)
+- [Accepted product Epics and prototype traceability](stories/EPICS.md)
+- [Canonical domain language and invariants](docs/agents/domain.md)
+- [Accepted package boundaries](docs/adr/ADR-004-package-boundaries.md)
+
 ## Local development
 
 Prerequisites: Node 24, pnpm, and Docker.

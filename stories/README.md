@@ -1,11 +1,15 @@
-# Technical backlog
+# Historical technical backlog
+
+> **Planning status:** [`EPICS.md`](EPICS.md) is the accepted planning authority. The TS files remain
+> implementation history, test evidence and reusable detail; accepted ADRs and `docs/agents/domain.md`
+> outrank conflicting TS text.
 
 21 stories, written from the technical standpoint. Each is a vertical or infrastructural slice with its
 own acceptance criteria and its own harness prompt. Story ids are stable — use them in commit messages
 (`feat(TS-09): ...`) and in `docs/workflow/<TS-id>/`.
 
-Derived from `01-SYSTEM-DESIGN.md` and the prototypes. Where a story and a prototype disagree, the
-prototype wins.
+Derived from the older `01-SYSTEM-DESIGN.md` and prototypes. The current authority order is defined in
+`AGENTS.md`; a prototype interaction does not override an accepted safety or domain decision.
 
 ## Index
 

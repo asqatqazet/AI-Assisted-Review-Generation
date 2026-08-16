@@ -1,10 +1,10 @@
 # 01 · System design
 
-**Assisted review writing** — a pool-model multi-tenant B2B SaaS with a control plane, an execution
-plane, and an LLM inference core behind a plugin-extensible policy layer.
-
-This document is the technical source of truth. Where it disagrees with the prototypes, **the
-prototypes win** — they are the interaction contract, and this document exists to make them buildable.
+**Status: historical design sketch.** The canonical domain language/invariants are in
+`docs/agents/domain.md`, package decisions are in accepted ADRs, the accepted student assessment/deployment
+architecture is in `docs/SYSTEM-ARCHITECTURE.md`, and the accepted delivery plan is in
+`stories/EPICS.md`. This file remains
+useful as source context but is not authoritative when those artifacts disagree with it.
 
 ---
 
