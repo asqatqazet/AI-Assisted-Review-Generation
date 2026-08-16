@@ -29,5 +29,11 @@ describe("TS-06 Role Grants Test", () => {
     // 5. generation_svc does NOT have access to operators or write on tenants
     expect(sql).not.toMatch(/GRANT.*ON.*operators.*TO generation_svc;/);
     expect(sql).not.toMatch(/GRANT.*INSERT.*ON.*tenants.*TO generation_svc;/);
+
+    // 6. generation_svc receives resolved configuration as a value and has no
+    // database grant that could become a second configuration-reader path.
+    expect(sql).not.toMatch(
+      /GRANT\s+SELECT\s+ON[^;]*(?:platform_settings|providers|provider_models|price_rates|review_format_versions|effective_configuration_snapshots)[^;]*TO generation_svc;/,
+    );
   });
 });
