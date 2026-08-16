@@ -3,6 +3,22 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("student AWS topology invariants", () => {
+  it("never reports deployment or smoke evidence from placeholder commands", () => {
+    const deployWorkflowPath = path.join(
+      __dirname,
+      "../../../.github/workflows/deploy.yml",
+    );
+    if (!fs.existsSync(deployWorkflowPath)) {
+      return;
+    }
+
+    const workflow = fs.readFileSync(deployWorkflowPath, "utf8");
+
+    expect(workflow).not.toMatch(/#\s*aws\s+lambda\s+update-function-code/);
+    expect(workflow).not.toMatch(/echo\s+["']Smoke test passed/);
+    expect(workflow).not.toMatch(/echo\s+["']Lambda alias shifted/);
+  });
+
   it("does not create Function URLs for private Context or Generation services", () => {
     const terraform = fs.readFileSync(
       path.join(__dirname, "main.tf"),
