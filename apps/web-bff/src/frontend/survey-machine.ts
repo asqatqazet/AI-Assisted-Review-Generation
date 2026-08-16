@@ -21,6 +21,10 @@ export type SurveyEvent =
   | {
       readonly type: "RATING_SELECTED";
       readonly rating: 1 | 2 | 3 | 4 | 5;
+    }
+  | {
+      readonly type: "ACTION_SELECTED";
+      readonly action: "generate" | "paraphrase";
     };
 
 export function createSurveyState(entryChallengeHandle: string): SurveyState {
@@ -40,6 +44,10 @@ export function transition(state: SurveyState, event: SurveyEvent): SurveyState 
 
   if (state.value === "entry" && event.type === "RATING_SELECTED") {
     return { ...state, rating: event.rating };
+  }
+
+  if (state.value === "entry" && event.type === "ACTION_SELECTED") {
+    return { ...state, selectedAction: event.action };
   }
 
   return state;
