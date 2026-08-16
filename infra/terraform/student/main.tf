@@ -193,7 +193,7 @@ resource "aws_lambda_function" "generation_service" {
   handler       = "main.handler"
   runtime       = "nodejs20.x"
   memory_size   = 512
-  timeout       = 30
+  timeout       = 75
   filename      = "${path.module}/dummy-gen.zip"
 
   environment {
