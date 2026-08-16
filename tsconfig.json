@@ -9,6 +9,7 @@
     "apps/**/*.tsx",
     "packages/**/*.ts",
     "packages/**/*.tsx",
+    "infra/**/*.ts",
     "evals/**/*.ts",
     "*.ts"
   ],
