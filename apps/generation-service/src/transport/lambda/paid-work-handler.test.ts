@@ -108,4 +108,113 @@ describe("US-03.2 paid-work Generation handler", () => {
     });
     expect(executionCalls).toBe(0);
   });
+
+  it("claims Attempt 1 atomically before entering provider execution", async () => {
+    const events: string[] = [];
+    const handler = createPaidWorkGenerationHandler({
+      permitVerifier: {
+        verify: async () => ({
+          permitJti: "permit-jti-a",
+          expiresAt: "2026-08-17T12:01:00.000Z",
+        }),
+      },
+      activationVerifier: {
+        verify: async (activation, leaseId, receivedWorkload) => {
+          events.push("activation-verified");
+          expect(activation).toBe("signed-context-activation");
+          expect(leaseId).toBe("lease-a");
+          expect(receivedWorkload).toEqual(workload);
+          return { expiresAt: "2026-08-17T12:00:40.000Z" };
+        },
+      },
+      leaseJournal: {
+        prepare: async () => {
+          throw new Error("prepare must not run during execute");
+        },
+        claimExecution: async (input) => {
+          events.push("attempt-claimed");
+          expect(input).toMatchObject({
+            leaseId: "lease-a",
+            attemptOrdinal: 1,
+            activationExpiresAt: "2026-08-17T12:00:40.000Z",
+            workload,
+          });
+          return { status: "claimed", attemptId: "attempt-a" };
+        },
+      },
+      receiptSigner: {
+        signLease: async () => {
+          throw new Error("lease signing must not run during execute");
+        },
+      },
+      execute: async (input) => {
+        events.push("provider-entered");
+        expect(input).toEqual({ attemptId: "attempt-a", workload });
+        return { status: "completed", generationId: "generation-a" };
+      },
+      tailExisting: async () => {
+        throw new Error("a winning execution must not tail");
+      },
+    });
+
+    await expect(
+      handler({
+        operation: "execute",
+        leaseId: "lease-a",
+        activation: "signed-context-activation",
+        workload,
+      }),
+    ).resolves.toEqual({ status: "completed", generationId: "generation-a" });
+    expect(events).toEqual([
+      "activation-verified",
+      "attempt-claimed",
+      "provider-entered",
+    ]);
+  });
+
+  it("tails the winner and never enters the provider on replay", async () => {
+    let providerCalls = 0;
+    const handler = createPaidWorkGenerationHandler({
+      permitVerifier: {
+        verify: async () => {
+          throw new Error("permit verification is prepare-only");
+        },
+      },
+      activationVerifier: {
+        verify: async () => ({ expiresAt: "2026-08-17T12:00:40.000Z" }),
+      },
+      leaseJournal: {
+        prepare: async () => {
+          throw new Error("prepare must not run during execute");
+        },
+        claimExecution: async () => ({
+          status: "existing",
+          attemptId: "attempt-a",
+        }),
+      },
+      receiptSigner: {
+        signLease: async () => {
+          throw new Error("lease signing must not run during execute");
+        },
+      },
+      execute: async () => {
+        providerCalls += 1;
+        throw new Error("replay must not enter provider execution");
+      },
+      tailExisting: async (input) => {
+        expect(input).toEqual({ attemptId: "attempt-a", workload });
+        return { status: "completed", generationId: "generation-a" };
+      },
+    });
+
+    await expect(
+      handler({
+        operation: "execute",
+        leaseId: "lease-a",
+        activation: "signed-context-activation",
+        workload,
+      }),
+    ).resolves.toEqual({ status: "completed", generationId: "generation-a" });
+    expect(providerCalls).toBe(0);
+  });
 });
