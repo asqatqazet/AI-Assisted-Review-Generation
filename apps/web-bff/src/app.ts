@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { getCookie } from "hono/cookie";
 
 import { ConfigCache } from "./config-cache.js";
 import { processOutcome, type OutcomePayload, type StoredOutcome } from "./outcome.js";
@@ -28,7 +29,13 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
 
   app.get("/s/:tenantSlug/:locationSlug", async (c) => {
-    const browserCapability = newBrowserCapability();
+    const existingBrowserCapability = getCookie(c, "__Host-review_browser");
+    const reuseBrowserCapability =
+      existingBrowserCapability !== undefined &&
+      /^[A-Za-z0-9_-]{20,128}$/.test(existingBrowserCapability);
+    const browserCapability = reuseBrowserCapability
+      ? existingBrowserCapability
+      : newBrowserCapability();
     const preparation = await contextPort.prepareEntry({
       tenantSlug: c.req.param("tenantSlug"),
       locationSlug: c.req.param("locationSlug"),
@@ -49,10 +56,12 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       );
     }
 
-    c.header(
-      "Set-Cookie",
-      `__Host-review_browser=${browserCapability}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`,
-    );
+    if (!reuseBrowserCapability) {
+      c.header(
+        "Set-Cookie",
+        `__Host-review_browser=${browserCapability}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      );
+    }
     return c.redirect(`/start/${preparation.entryChallengeHandle}`, 303);
   });
 
