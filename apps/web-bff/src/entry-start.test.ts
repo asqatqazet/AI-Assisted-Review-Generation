@@ -53,4 +53,58 @@ describe("reviewer entry admission", () => {
       },
     });
   });
+
+  it("rejects a CSRF token that is not bound to this browser and Entry Challenge", async () => {
+    let advanceCalls = 0;
+    const contextPort: ContextPort = {
+      prepareEntry: async () => ({ status: "unavailable" }),
+      readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async () => {
+        advanceCalls += 1;
+        return {
+          status: "admitted",
+          reviewSessionHandle: "must-not-be-disclosed",
+        };
+      },
+    };
+    const app = createWebBffApp({
+      contextPort,
+      csrfProtector: {
+        issue: async () => "issued-token-with-at-least-thirty-two-characters",
+        verify: async () => false,
+      },
+    });
+
+    const response = await app.request(
+      "/api/v1/entry-challenges/entry-challenge-demo/start",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "__Host-review_browser=existing-browser-capability-123",
+          Origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          rating: 4,
+          action: "generate",
+          csrfToken: "wrong-token-with-at-least-thirty-two-characters",
+        }),
+      },
+    );
+
+    const responseText = await response.text();
+
+    expect({
+      status: response.status,
+      body: responseText === "" ? null : JSON.parse(responseText),
+      advanceCalls,
+    }).toEqual({
+      status: 404,
+      body: {
+        code: "ENTRY_UNAVAILABLE",
+        message: "This review link is unavailable.",
+      },
+      advanceCalls: 0,
+    });
+  });
 });
