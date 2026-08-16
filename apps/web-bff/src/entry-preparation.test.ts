@@ -37,4 +37,33 @@ describe("reviewer entry preparation", () => {
       leakedToken: false,
     });
   });
+
+  it("reuses one browser capability across separate reviewer links", async () => {
+    const contextPort: ContextPort = {
+      prepareEntry: async (input) =>
+        input.browserCapability === "existing-browser-capability-123"
+          ? { status: "prepared", entryChallengeHandle: "second-challenge" }
+          : { status: "unavailable" },
+    };
+    const app = createWebBffApp({
+      contextPort,
+      newBrowserCapability: () => "unexpected-replacement-capability",
+    });
+
+    const response = await app.request("/s/lumina-optics/flagship?v=second-token", {
+      headers: {
+        Cookie: "__Host-review_browser=existing-browser-capability-123",
+      },
+    });
+
+    expect({
+      status: response.status,
+      location: response.headers.get("location"),
+      replacementCookie: response.headers.get("set-cookie"),
+    }).toEqual({
+      status: 303,
+      location: "/start/second-challenge",
+      replacementCookie: null,
+    });
+  });
 });
