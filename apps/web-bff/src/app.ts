@@ -5,7 +5,6 @@ import {
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
-import { processOutcome, type OutcomePayload, type StoredOutcome } from "./outcome.js";
 import type { ContextPort } from "./ports/context.port.js";
 import {
   type CsrfProtector,
@@ -188,15 +187,6 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     }
 
     return c.redirect(`/review/${result.reviewSessionHandle}`, 303);
-  });
-
-  const outcomes: StoredOutcome[] = [];
-
-  app.post("/api/outcome", async (c) => {
-    const payload = (await c.req.json()) as OutcomePayload;
-    const stored = processOutcome(payload);
-    outcomes.push(stored);
-    return c.json({ status: "recorded", outcome: stored }, 200);
   });
 
   return app;
