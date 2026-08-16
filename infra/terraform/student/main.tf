@@ -161,13 +161,15 @@ resource "aws_iam_role_policy_attachment" "generation_service_attach" {
 
 # 4. Lambda Functions & Aliases
 resource "aws_lambda_function" "context_service" {
-  function_name = "review-context-service-student"
-  role          = aws_iam_role.context_service_role.arn
-  handler       = "main.handler"
-  runtime       = "nodejs24.x"
-  memory_size   = 256
-  timeout       = 10
-  filename      = "${path.module}/dummy-context.zip"
+  function_name    = "review-context-service-student"
+  role             = aws_iam_role.context_service_role.arn
+  handler          = "main.handler"
+  runtime          = "nodejs24.x"
+  memory_size      = 256
+  timeout          = 10
+  filename         = var.context_artifact_path
+  source_code_hash = filebase64sha256(var.context_artifact_path)
+  publish          = true
 
   environment {
     variables = {
@@ -175,40 +177,34 @@ resource "aws_lambda_function" "context_service" {
       MANIFEST_BUCKET = aws_s3_bucket.manifests.bucket
     }
   }
-
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
-  }
 }
 
 resource "aws_lambda_alias" "context_service_live" {
   name             = "live"
   function_name    = aws_lambda_function.context_service.function_name
-  function_version = "$LATEST"
+  function_version = aws_lambda_function.context_service.version
 }
 
 resource "aws_lambda_function" "generation_service" {
-  function_name = "review-generation-service-student"
-  role          = aws_iam_role.generation_service_role.arn
-  handler       = "main.handler"
-  runtime       = "nodejs24.x"
-  memory_size   = 512
-  timeout       = 75
-  filename      = "${path.module}/dummy-gen.zip"
+  function_name    = "review-generation-service-student"
+  role             = aws_iam_role.generation_service_role.arn
+  handler          = "main.handler"
+  runtime          = "nodejs24.x"
+  memory_size      = 512
+  timeout          = 75
+  filename         = var.generation_artifact_path
+  source_code_hash = filebase64sha256(var.generation_artifact_path)
+  publish          = true
 
   environment {
     variables = {
       NODE_ENV = "production"
     }
   }
-
-  lifecycle {
-    ignore_changes = [filename, source_code_hash]
-  }
 }
 
 resource "aws_lambda_alias" "generation_service_live" {
   name             = "live"
   function_name    = aws_lambda_function.generation_service.function_name
-  function_version = "$LATEST"
+  function_version = aws_lambda_function.generation_service.version
 }
