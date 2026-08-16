@@ -1,8 +1,13 @@
 import {
+  CancelExpiredLeaseResultDtoSchema,
   GenerationFunctionInvocationDtoSchema,
+  GenerationStatusResultDtoSchema,
   PrepareGenerationResultDtoSchema,
+  type GenerationStatusInvocationDto,
   type GenerationWorkloadDto,
 } from "@review/contracts/generation";
+
+type GenerationExecutionScope = GenerationStatusInvocationDto["scope"];
 
 export interface VerifiedGenerationPermit {
   readonly permitJti: string;
@@ -37,6 +42,15 @@ export interface GenerationLeaseJournal {
     | { readonly status: "claimed"; readonly attemptId: string }
     | { readonly status: "existing"; readonly attemptId: string }
   >;
+  status(scope: GenerationExecutionScope): Promise<{
+    readonly state: "no-lease" | "leased" | "running" | "cancelled" | "terminal";
+  }>;
+  cancelExpired(input: {
+    readonly leaseId: string;
+    readonly scope: GenerationExecutionScope;
+  }): Promise<{
+    readonly state: "cancelled" | "running" | "terminal" | "no-lease";
+  }>;
 }
 
 export interface VerifiedGenerationActivation {
@@ -69,6 +83,22 @@ export interface GenerationReceiptSigner {
     readonly snapshotHash: string;
     readonly idempotencyKey: string;
   }): Promise<string>;
+  signStatus(
+    claims:
+      | {
+          readonly operation: "status";
+          readonly state:
+            | "no-lease"
+            | "leased"
+            | "running"
+            | "cancelled"
+            | "terminal";
+        }
+      | {
+          readonly operation: "cancel-expired-lease";
+          readonly state: "cancelled" | "running" | "terminal" | "no-lease";
+        },
+  ): Promise<string>;
 }
 
 export interface PaidWorkGenerationHandlerOptions {
@@ -142,6 +172,29 @@ export function createPaidWorkGenerationHandler({
       return claim.status === "claimed"
         ? await execute(executionInput)
         : await tailExisting(executionInput);
+    }
+
+    if (invocation.operation === "status") {
+      const journalStatus = await leaseJournal.status(invocation.scope);
+      const unsigned = { operation: invocation.operation, state: journalStatus.state };
+      const signedStatusReceipt = await receiptSigner.signStatus(unsigned);
+      return GenerationStatusResultDtoSchema.parse({
+        ...unsigned,
+        signedStatusReceipt,
+      });
+    }
+
+    if (invocation.operation === "cancel-expired-lease") {
+      const cancellation = await leaseJournal.cancelExpired({
+        leaseId: invocation.leaseId,
+        scope: invocation.scope,
+      });
+      const unsigned = { operation: invocation.operation, state: cancellation.state };
+      const signedStatusReceipt = await receiptSigner.signStatus(unsigned);
+      return CancelExpiredLeaseResultDtoSchema.parse({
+        ...unsigned,
+        signedStatusReceipt,
+      });
     }
 
     throw new Error("GENERATION_OPERATION_NOT_IMPLEMENTED");

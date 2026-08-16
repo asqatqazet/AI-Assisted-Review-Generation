@@ -79,6 +79,12 @@ describe("US-03.2 paid-work Generation handler", () => {
         claimExecution: async () => {
           throw new Error("Attempt claiming must not run during prepare");
         },
+        status: async () => {
+          throw new Error("status must not run during prepare");
+        },
+        cancelExpired: async () => {
+          throw new Error("cancellation must not run during prepare");
+        },
       },
       receiptSigner: {
         signLease: async (claims) => {
@@ -88,6 +94,9 @@ describe("US-03.2 paid-work Generation handler", () => {
             generationId: "generation-a",
           });
           return "signed-generation-lease-receipt";
+        },
+        signStatus: async () => {
+          throw new Error("status signing must not run during prepare");
         },
       },
       execute: async () => {
@@ -152,10 +161,19 @@ describe("US-03.2 paid-work Generation handler", () => {
           });
           return { status: "claimed", attemptId: "attempt-a" };
         },
+        status: async () => {
+          throw new Error("status must not run during execute");
+        },
+        cancelExpired: async () => {
+          throw new Error("cancellation must not run during execute");
+        },
       },
       receiptSigner: {
         signLease: async () => {
           throw new Error("lease signing must not run during execute");
+        },
+        signStatus: async () => {
+          throw new Error("status signing must not run during execute");
         },
       },
       execute: async (input) => {
@@ -202,10 +220,19 @@ describe("US-03.2 paid-work Generation handler", () => {
           status: "existing",
           attemptId: "attempt-a",
         }),
+        status: async () => {
+          throw new Error("status must not run during execute");
+        },
+        cancelExpired: async () => {
+          throw new Error("cancellation must not run during execute");
+        },
       },
       receiptSigner: {
         signLease: async () => {
           throw new Error("lease signing must not run during execute");
+        },
+        signStatus: async () => {
+          throw new Error("status signing must not run during execute");
         },
       },
       execute: async () => {
