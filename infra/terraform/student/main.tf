@@ -3,7 +3,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.50"
+      version = "~> 6.0"
     }
   }
 }
@@ -173,7 +173,7 @@ resource "aws_lambda_function" "context_service" {
 
   environment {
     variables = {
-      NODE_ENV       = "production"
+      NODE_ENV        = "production"
       MANIFEST_BUCKET = aws_s3_bucket.manifests.bucket
     }
   }

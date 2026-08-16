@@ -1,11 +1,11 @@
-output "context_service_url" {
-  value       = aws_lambda_function_url.context_service_url.function_url
-  description = "Public URL for context-service Lambda"
+output "context_service_alias_arn" {
+  value       = aws_lambda_alias.context_service_live.arn
+  description = "Private qualified Context Lambda alias invoked only through IAM"
 }
 
-output "generation_service_url" {
-  value       = aws_lambda_function_url.generation_service_url.function_url
-  description = "Streaming Function URL for generation-service Lambda"
+output "generation_service_alias_arn" {
+  value       = aws_lambda_alias.generation_service_live.arn
+  description = "Private qualified Generation Lambda alias invoked only through IAM"
 }
 
 output "manifests_bucket_name" {
