@@ -12,9 +12,14 @@
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{workspaceRoot}/dist/apps/web-bff"],
-      "options": { "command": "tsup apps/web-bff/src/main.ts --format esm --out-dir dist/apps/web-bff --clean" }
+      "options": {
+        "commands": [
+          "tsup apps/web-bff/src/main.ts --format esm --out-dir dist/apps/web-bff --clean",
+          "vite build apps/web-bff --config apps/web-bff/vite.config.ts"
+        ],
+        "parallel": false
+      }
     }
   },
   "tags": ["type:deployable", "plane:edge"]
 }
-
