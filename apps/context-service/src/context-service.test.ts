@@ -19,6 +19,10 @@ describe("TS-15 Context Service Control Plane", () => {
     expect(snapshot.snapshotId).toBeDefined();
     expect(snapshot.tenantId).toBe("tenant-a");
     expect(snapshot.locationId).toBe("location-a");
+    expect(snapshot.providerRouting).toMatchObject({
+      primaryProvider: "gemini",
+      primaryModel: "gemini-3.5-flash-lite",
+    });
 
     // 2. Stable ETag on identical subsequent read
     const res2 = await app.request("/context/tenant-a/location-a");
