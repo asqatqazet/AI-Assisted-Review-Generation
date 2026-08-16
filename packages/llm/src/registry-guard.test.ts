@@ -6,9 +6,7 @@ describe("TS-13 Provider Registry Guard", () => {
   it("registers all production and testing providers in the capability matrix", () => {
     const knownProviders = Object.keys(PROVIDER_CAPABILITY_MATRIX);
 
-    expect(knownProviders).toContain("fake");
-    expect(knownProviders).toContain("openai");
-    expect(knownProviders).toContain("anthropic");
+    expect(knownProviders.sort()).toEqual(["fake", "gemini", "openai"]);
 
     for (const capabilities of Object.values(PROVIDER_CAPABILITY_MATRIX)) {
       expect(capabilities.displayName).toBeDefined();
