@@ -62,6 +62,11 @@ describe("US-03.2 paid-work Generation handler", () => {
           };
         },
       },
+      activationVerifier: {
+        verify: async () => {
+          throw new Error("activation verification must not run during prepare");
+        },
+      },
       leaseJournal: {
         prepare: async (input) => {
           journalInput = input;
@@ -70,6 +75,9 @@ describe("US-03.2 paid-work Generation handler", () => {
             leaseId: "lease-a",
             leaseExpiresAt: "2026-08-17T12:00:45.000Z",
           };
+        },
+        claimExecution: async () => {
+          throw new Error("Attempt claiming must not run during prepare");
         },
       },
       receiptSigner: {
@@ -84,6 +92,9 @@ describe("US-03.2 paid-work Generation handler", () => {
       },
       execute: async () => {
         executionCalls += 1;
+      },
+      tailExisting: async () => {
+        throw new Error("tailing must not run during prepare");
       },
     });
 
