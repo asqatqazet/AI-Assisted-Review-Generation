@@ -27,9 +27,24 @@ export type ReadEntryChallengeResult =
     }
   | { readonly status: "unavailable" };
 
+export interface AdvanceEntryInput {
+  readonly entryChallengeHandle: string;
+  readonly browserCapability: string;
+  readonly rating: 1 | 2 | 3 | 4 | 5;
+  readonly action: "generate" | "paraphrase";
+}
+
+export type AdvanceEntryResult =
+  | {
+      readonly status: "admitted";
+      readonly reviewSessionHandle: string;
+    }
+  | { readonly status: "unavailable" };
+
 export interface ContextPort {
   prepareEntry(input: PrepareEntryInput): Promise<PrepareEntryResult>;
   readEntryChallenge(
     input: ReadEntryChallengeInput,
   ): Promise<ReadEntryChallengeResult>;
+  advanceEntry(input: AdvanceEntryInput): Promise<AdvanceEntryResult>;
 }

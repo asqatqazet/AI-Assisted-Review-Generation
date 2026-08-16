@@ -1,4 +1,7 @@
-import { EntryChallengeProjectionDtoSchema } from "@review/contracts/context";
+import {
+  EntryChallengeProjectionDtoSchema,
+  StartEntryRequestDtoSchema,
+} from "@review/contracts/context";
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
@@ -19,6 +22,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   const contextPort: ContextPort = options.contextPort ?? {
     prepareEntry: async () => ({ status: "unavailable" }),
     readEntryChallenge: async () => ({ status: "unavailable" }),
+    advanceEntry: async () => ({ status: "unavailable" }),
   };
   const newBrowserCapability =
     options.newBrowserCapability ?? (() => globalThis.crypto.randomUUID());
@@ -106,6 +110,39 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       }),
       200,
     );
+  });
+
+  app.post("/api/v1/entry-challenges/:entryChallengeHandle/start", async (c) => {
+    c.header("Cache-Control", "private, no-store");
+    const browserCapability = getCookie(c, "__Host-review_browser");
+    const body = StartEntryRequestDtoSchema.safeParse(await c.req.json());
+
+    if (
+      browserCapability === undefined ||
+      !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+      !body.success
+    ) {
+      return c.json(
+        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        404,
+      );
+    }
+
+    const result = await contextPort.advanceEntry({
+      entryChallengeHandle: c.req.param("entryChallengeHandle"),
+      browserCapability,
+      rating: body.data.rating,
+      action: body.data.action,
+    });
+
+    if (result.status !== "admitted") {
+      return c.json(
+        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        404,
+      );
+    }
+
+    return c.redirect(`/review/${result.reviewSessionHandle}`, 303);
   });
 
   app.post("/api/generate", async (c) => {

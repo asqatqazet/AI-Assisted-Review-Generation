@@ -11,6 +11,7 @@ describe("reviewer entry preparation", () => {
         entryChallengeHandle: "entry-challenge-demo",
       }),
       readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
@@ -46,6 +47,7 @@ describe("reviewer entry preparation", () => {
           ? { status: "prepared", entryChallengeHandle: "second-challenge" }
           : { status: "unavailable" },
       readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
@@ -88,6 +90,7 @@ describe("reviewer entry preparation", () => {
               },
             }
           : { status: "unavailable" },
+      advanceEntry: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
