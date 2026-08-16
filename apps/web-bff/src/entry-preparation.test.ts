@@ -66,4 +66,68 @@ describe("reviewer entry preparation", () => {
       replacementCookie: null,
     });
   });
+
+  it("returns a browser-bound public Entry Challenge projection", async () => {
+    const contextPort: ContextPort = {
+      prepareEntry: async () => ({ status: "unavailable" }),
+      readEntryChallenge: async (input) =>
+        input.browserCapability === "existing-browser-capability-123" &&
+        input.entryChallengeHandle === "entry-challenge-demo"
+          ? {
+              status: "ready",
+              context: {
+                tenantDisplayName: "Apex Dental",
+                locationDisplayName: "Central Clinic",
+                locale: "en-GB",
+                entryMode: "invite",
+                ratingRequired: true,
+                factOptions: [],
+                reviewFormats: [],
+              },
+            }
+          : { status: "unavailable" },
+    };
+    const app = createWebBffApp({
+      contextPort,
+      newCsrfToken: () => "csrf-token-with-at-least-thirty-two-characters",
+    });
+
+    const response = await app.request(
+      "/api/v1/entry-challenges/entry-challenge-demo",
+      {
+        headers: {
+          Cookie: "__Host-review_browser=existing-browser-capability-123",
+        },
+      },
+    );
+    const responseText = await response.text();
+    const responseBody: unknown = response.headers
+      .get("content-type")
+      ?.includes("application/json")
+      ? JSON.parse(responseText)
+      : responseText;
+
+    expect({
+      status: response.status,
+      cacheControl: response.headers.get("cache-control"),
+      body: responseBody,
+    }).toEqual({
+      status: 200,
+      cacheControl: "private, no-store",
+      body: {
+        status: "ready",
+        entryChallengeHandle: "entry-challenge-demo",
+        csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+        context: {
+          tenantDisplayName: "Apex Dental",
+          locationDisplayName: "Central Clinic",
+          locale: "en-GB",
+          entryMode: "invite",
+          ratingRequired: true,
+          factOptions: [],
+          reviewFormats: [],
+        },
+      },
+    });
+  });
 });
