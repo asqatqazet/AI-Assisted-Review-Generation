@@ -25,4 +25,17 @@ describe("Survey transition table", () => {
       selectedAction: null,
     });
   });
+
+  it("keeps the reviewer-selected rating in the entry state", () => {
+    const prepared = transition(createSurveyState("challenge-demo"), {
+      type: "ENTRY_PREPARED",
+      context,
+    });
+
+    expect(transition(prepared, { type: "RATING_SELECTED", rating: 4 })).toMatchObject({
+      value: "entry",
+      rating: 4,
+      selectedAction: null,
+    });
+  });
 });
