@@ -1,4 +1,7 @@
+import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
+
+const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 
 function StartRoute(): React.JSX.Element {
   return (
@@ -25,6 +28,14 @@ export function ReviewerApplication(): React.JSX.Element {
     <Routes>
       <Route path="/start/:entryChallengeHandle" element={<StartRoute />} />
       <Route path="/review/:reviewSessionHandle" element={<ReviewRoute />} />
+      <Route
+        path="/console/*"
+        element={
+          <Suspense fallback={<p role="status">Loading operator console…</p>}>
+            <OperatorConsole />
+          </Suspense>
+        }
+      />
     </Routes>
   );
 }
