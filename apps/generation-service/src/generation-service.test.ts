@@ -281,7 +281,7 @@ describe("TS-16 Generation Service Execution Plane", () => {
           id: "a1",
           version: "a1-v1",
           reviewSessionId: "session-1",
-          semanticId: "service",
+          semanticId: "c1",
           semanticKind: "experience-fact",
           polarity: "positive",
           source: {

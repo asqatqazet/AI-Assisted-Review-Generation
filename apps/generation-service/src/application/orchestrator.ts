@@ -72,6 +72,13 @@ export interface GenerationOrchestrator {
   ): Promise<GenerationResult>;
 }
 
+export class GroundingRejectedError extends Error {
+  public constructor() {
+    super("The generated candidate failed grounding.");
+    this.name = "GroundingRejectedError";
+  }
+}
+
 function calculateCostMicros(
   rate: PriceRate | undefined,
   inputTokens: number,
@@ -285,9 +292,38 @@ export function createGenerationOrchestrator(
         postcondition,
       });
 
+      const priceRate = snapshot.priceRates.find(
+        (r) =>
+          r.provider === modelRun.attempt.provider &&
+          r.model === modelRun.attempt.model,
+      );
+      const costMicros = calculateCostMicros(
+        priceRate,
+        modelRun.attempt.usage.inputTokens,
+        modelRun.attempt.usage.outputTokens,
+      );
+
+      if (groundingVerdict.verdict === "rejected") {
+        telemetry?.emit({
+          service: "generation-service",
+          tenantId: snapshot.tenantId,
+          locationId: snapshot.locationId,
+          commandKind: action,
+          provider: modelRun.attempt.provider,
+          model: modelRun.attempt.model,
+          inputTokens: modelRun.attempt.usage.inputTokens,
+          outputTokens: modelRun.attempt.usage.outputTokens,
+          costMicros,
+          latencyMs: Date.now() - startTime,
+          outcome: "rejected",
+          fallbackUsed: Boolean(modelRun.attempt.receipt.metadata?.["fallbackUsed"]),
+        });
+        throw new GroundingRejectedError();
+      }
+
       // 8. Apply Policy
       const policyResult = applyPolicy({
-        draft: groundingVerdict.draftBody ?? rawDraft,
+        draft: groundingVerdict.draftBody,
         claims: candidate.claims.map((c) => ({
           id: c.id,
           semanticId: c.semanticId,
@@ -302,18 +338,6 @@ export function createGenerationOrchestrator(
         tenantName: snapshot.tenantName,
         locale: snapshot.settings.locale,
       });
-
-      // 9. Compute Cost
-      const priceRate = snapshot.priceRates.find(
-        (r) =>
-          r.provider === modelRun.attempt.provider &&
-          r.model === modelRun.attempt.model,
-      );
-      const costMicros = calculateCostMicros(
-        priceRate,
-        modelRun.attempt.usage.inputTokens,
-        modelRun.attempt.usage.outputTokens,
-      );
 
       const result: GenerationResult = {
         generationId: `gen-${Date.now()}`,

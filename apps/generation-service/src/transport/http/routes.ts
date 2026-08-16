@@ -8,6 +8,7 @@ import { Hono } from "hono";
 
 import {
   createGenerationOrchestrator,
+  GroundingRejectedError,
   type GenerationOrchestrator,
   type GenerationRequest,
 } from "../../application/orchestrator.js";
@@ -79,6 +80,12 @@ export function createGenerationApp(options: GenerationAppOptions = {}): Hono {
       const result = await orchestrator.generate(body);
       return c.json(result, 200);
     } catch (error) {
+      if (error instanceof GroundingRejectedError) {
+        return c.json(
+          { status: "failed", code: "GROUNDING_REJECTED" },
+          422,
+        );
+      }
       return c.json(
         {
           status: "failed",
