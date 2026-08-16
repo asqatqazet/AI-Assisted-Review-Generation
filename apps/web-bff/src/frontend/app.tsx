@@ -9,6 +9,13 @@ import { createSurveyState, transition, type SurveyState } from "./survey-machin
 
 const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
+const ratings = [
+  { value: 1, label: "Poor" },
+  { value: 2, label: "Not good" },
+  { value: 3, label: "Mixed" },
+  { value: 4, label: "Good" },
+  { value: 5, label: "Very good" },
+] as const;
 
 function StartRoute({
   entryChallengeClient,
@@ -43,6 +50,34 @@ function StartRoute({
       <main>
         <p>{state.context.locationDisplayName}</p>
         <h1>Write your review of {state.context.tenantDisplayName}</h1>
+        <section aria-labelledby="rating-question">
+          <h2 id="rating-question">How was it?</h2>
+          <div role="group" aria-label="Rating, 1 to 5">
+            {ratings.map((rating) => (
+              <button
+                key={rating.value}
+                type="button"
+                aria-label={`${rating.value}, ${rating.label}`}
+                aria-pressed={state.rating === rating.value}
+                onClick={() =>
+                  setState((current) =>
+                    transition(current, {
+                      type: "RATING_SELECTED",
+                      rating: rating.value,
+                    }),
+                  )
+                }
+              >
+                {rating.value}
+              </button>
+            ))}
+          </div>
+          <p aria-live="polite">
+            {state.rating === null
+              ? "Choose a rating to continue."
+              : ratings[state.rating - 1]?.label}
+          </p>
+        </section>
       </main>
     );
   }
