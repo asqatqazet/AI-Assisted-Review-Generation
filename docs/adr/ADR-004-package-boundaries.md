@@ -166,7 +166,7 @@ It hides wire-version parsing, compatibility, and error shaping. It does not con
 
 ### `packages/llm`
 
-`llm` earns a package because Anthropic, OpenAI, and FakeProvider are three adapters at a real Provider seam, and timeout, breaker, failover, structured decoding, and provider error normalization sit behind one small interface:
+`llm` earns a package because Gemini, OpenAI, and FakeProvider are three adapters at a real Provider seam, and timeout, breaker, failover, structured decoding, and provider error normalization sit behind one small interface:
 
 ```ts
 interface ModelGateway {

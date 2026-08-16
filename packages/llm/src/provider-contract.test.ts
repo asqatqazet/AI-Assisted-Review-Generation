@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { AnthropicProvider } from "./anthropic-provider.js";
 import { FakeModelGateway } from "./fake-model-gateway.js";
+import { GeminiProvider } from "./gemini-provider.js";
 import {
   type ModelGateway,
   type ModelGatewayError,
@@ -72,22 +72,32 @@ describe("TS-13 Model Gateway Contract Suite", () => {
         }),
     },
     {
-      name: "AnthropicProvider (mocked transport)",
+      name: "GeminiProvider (mocked transport)",
       create: () =>
-        new AnthropicProvider({
+        new GeminiProvider({
           apiKey: "test-key",
           fetchFn: async () =>
             new Response(
               JSON.stringify({
-                id: "msg-123",
-                content: [
+                id: "interaction-123",
+                status: "completed",
+                steps: [
                   {
-                    type: "text",
-                    text: JSON.stringify({ draft: "Punctual and gentle hygienist." }),
+                    type: "model_output",
+                    content: [
+                      {
+                        type: "text",
+                        text: JSON.stringify({
+                          draft: "Punctual and gentle hygienist.",
+                        }),
+                      },
+                    ],
                   },
                 ],
-                stop_reason: "end_turn",
-                usage: { input_tokens: 50, output_tokens: 20 },
+                usage: {
+                  total_input_tokens: 50,
+                  total_output_tokens: 20,
+                },
               }),
               { status: 200, headers: { "Content-Type": "application/json" } },
             ),

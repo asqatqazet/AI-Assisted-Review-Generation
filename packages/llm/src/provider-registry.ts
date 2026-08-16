@@ -20,10 +20,10 @@ export const PROVIDER_CAPABILITY_MATRIX: Readonly<
     supportsStreaming: true,
     maxContextTokens: 128_000,
   },
-  anthropic: {
-    displayName: "Anthropic Claude Models",
+  gemini: {
+    displayName: "Google Gemini Models",
     supportsStructuredOutput: true,
     supportsStreaming: true,
-    maxContextTokens: 200_000,
+    maxContextTokens: 1_000_000,
   },
 };
