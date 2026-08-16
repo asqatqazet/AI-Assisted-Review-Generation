@@ -302,4 +302,66 @@ describe("TS-16 Generation Service Execution Plane", () => {
     const result = await res.json();
     expect(result.sourceGenerationId).toBe("gen-parent-123");
   });
+
+  it("never returns candidate bytes when the grounding guard rejects them", async () => {
+    const fakeGateway = new FakeModelGateway([
+      {
+        outcome: "success",
+        run: {
+          output: {
+            draft: "The staff gave me a free upgrade.",
+            claims: [
+              {
+                id: "unsupported-claim",
+                text: "The staff gave me a free upgrade.",
+                assertionIds: ["missing-assertion"],
+              },
+            ],
+          },
+          attempt: {
+            provider: "fake",
+            model: "fake-v1",
+            usage: { inputTokens: 50, outputTokens: 12 },
+            receipt: { requestId: "req-unsafe", finishReason: "stop" },
+          },
+        },
+      },
+    ]);
+    const app = createGenerationApp({ gateway: fakeGateway });
+
+    const response = await app.request("/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        idempotencyKey: "idem-unsafe",
+        reviewSessionId: "session-1",
+        action: "generate",
+        reviewFormatKey: "concise-blurb",
+        snapshot: defaultSnapshot,
+        assertions: [
+          {
+            id: "a1",
+            version: "a1-v1",
+            reviewSessionId: "session-1",
+            semanticId: "service",
+            semanticKind: "experience-fact",
+            polarity: "positive",
+            source: {
+              kind: "fact-option",
+              factOptionId: "fact-1",
+              factOptionVersion: "fact-1-v1",
+            },
+          },
+        ],
+      }),
+    });
+    const responseText = await response.text();
+
+    expect(response.status).toBe(422);
+    expect(responseText).not.toContain("free upgrade");
+    expect(JSON.parse(responseText)).toEqual({
+      status: "failed",
+      code: "GROUNDING_REJECTED",
+    });
+  });
 });
