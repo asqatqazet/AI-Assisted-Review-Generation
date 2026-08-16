@@ -222,7 +222,7 @@ describe("reviewer application routes", () => {
       "/api/v1/entry-challenges/entry-challenge-demo/start",
     );
     expect(form).toHaveAttribute("method", "post");
-    expect(form).toHaveFormValues({
+    expect(Object.fromEntries(new FormData(form as HTMLFormElement))).toEqual({
       rating: "4",
       action: "generate",
       csrfToken: "csrf-token-with-at-least-thirty-two-characters",

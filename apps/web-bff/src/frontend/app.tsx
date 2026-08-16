@@ -26,6 +26,7 @@ function StartRoute({
   const [state, setState] = useState<SurveyState>(() =>
     createSurveyState(entryChallengeHandle),
   );
+  const [csrfToken, setCsrfToken] = useState("");
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -33,6 +34,7 @@ function StartRoute({
     void entryChallengeClient
       .read(entryChallengeHandle, abortController.signal)
       .then((projection) => {
+        setCsrfToken(projection.csrfToken);
         setState((current) =>
           transition(current, {
             type: "ENTRY_PREPARED",
@@ -50,67 +52,85 @@ function StartRoute({
       <main>
         <p>{state.context.locationDisplayName}</p>
         <h1>Write your review of {state.context.tenantDisplayName}</h1>
-        <section aria-labelledby="rating-question">
-          <h2 id="rating-question">How was it?</h2>
-          <div role="group" aria-label="Rating, 1 to 5">
-            {ratings.map((rating) => (
-              <button
-                key={rating.value}
-                type="button"
-                aria-label={`${rating.value}, ${rating.label}`}
-                aria-pressed={state.rating === rating.value}
-                onClick={() =>
-                  setState((current) =>
-                    transition(current, {
-                      type: "RATING_SELECTED",
-                      rating: rating.value,
-                    }),
-                  )
-                }
-              >
-                {rating.value}
-              </button>
-            ))}
-          </div>
-          <p aria-live="polite">
-            {state.rating === null
-              ? "Choose a rating to continue."
-              : ratings[state.rating - 1]?.label}
-          </p>
-        </section>
-        <section aria-labelledby="drafting-path-question">
-          <h2 id="drafting-path-question">How would you like to write?</h2>
+        <form
+          method="post"
+          action={`/api/v1/entry-challenges/${encodeURIComponent(entryChallengeHandle)}/start`}
+        >
+          <input type="hidden" name="rating" value={state.rating ?? ""} />
+          <input
+            type="hidden"
+            name="action"
+            value={state.selectedAction ?? ""}
+          />
+          <input type="hidden" name="csrfToken" value={csrfToken} />
+          <section aria-labelledby="rating-question">
+            <h2 id="rating-question">How was it?</h2>
+            <div role="group" aria-label="Rating, 1 to 5">
+              {ratings.map((rating) => (
+                <button
+                  key={rating.value}
+                  type="button"
+                  aria-label={`${rating.value}, ${rating.label}`}
+                  aria-pressed={state.rating === rating.value}
+                  onClick={() =>
+                    setState((current) =>
+                      transition(current, {
+                        type: "RATING_SELECTED",
+                        rating: rating.value,
+                      }),
+                    )
+                  }
+                >
+                  {rating.value}
+                </button>
+              ))}
+            </div>
+            <p aria-live="polite">
+              {state.rating === null
+                ? "Choose a rating to continue."
+                : ratings[state.rating - 1]?.label}
+            </p>
+          </section>
+          <section aria-labelledby="drafting-path-question">
+            <h2 id="drafting-path-question">How would you like to write?</h2>
+            <button
+              type="button"
+              disabled={state.rating === null}
+              aria-pressed={state.selectedAction === "generate"}
+              onClick={() =>
+                setState((current) =>
+                  transition(current, {
+                    type: "ACTION_SELECTED",
+                    action: "generate",
+                  }),
+                )
+              }
+            >
+              Generate from my facts
+            </button>
+            <button
+              type="button"
+              disabled={state.rating === null}
+              aria-pressed={state.selectedAction === "paraphrase"}
+              onClick={() =>
+                setState((current) =>
+                  transition(current, {
+                    type: "ACTION_SELECTED",
+                    action: "paraphrase",
+                  }),
+                )
+              }
+            >
+              Improve my wording
+            </button>
+          </section>
           <button
-            type="button"
-            disabled={state.rating === null}
-            aria-pressed={state.selectedAction === "generate"}
-            onClick={() =>
-              setState((current) =>
-                transition(current, {
-                  type: "ACTION_SELECTED",
-                  action: "generate",
-                }),
-              )
-            }
+            type="submit"
+            disabled={state.rating === null || state.selectedAction === null}
           >
-            Generate from my facts
+            Start
           </button>
-          <button
-            type="button"
-            disabled={state.rating === null}
-            aria-pressed={state.selectedAction === "paraphrase"}
-            onClick={() =>
-              setState((current) =>
-                transition(current, {
-                  type: "ACTION_SELECTED",
-                  action: "paraphrase",
-                }),
-              )
-            }
-          >
-            Improve my wording
-          </button>
-        </section>
+        </form>
       </main>
     );
   }
