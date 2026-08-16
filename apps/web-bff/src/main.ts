@@ -7,9 +7,14 @@ const csrfSecret = process.env["REVIEW_CSRF_SECRET"];
 if (csrfSecret === undefined) {
   throw new Error("REVIEW_CSRF_SECRET is required");
 }
+const publicOrigin = process.env["REVIEW_PUBLIC_ORIGIN"];
+if (publicOrigin === undefined) {
+  throw new Error("REVIEW_PUBLIC_ORIGIN is required");
+}
 
 export const app = createWebBffApp({
   csrfProtector: createHmacCsrfProtector(csrfSecret),
+  publicOrigin,
 });
 
 const port = Number.parseInt(process.env["PORT"] ?? "3000", 10);

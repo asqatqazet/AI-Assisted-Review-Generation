@@ -19,6 +19,7 @@ describe("reviewer entry admission", () => {
     };
     const app = createWebBffApp({
       contextPort,
+      publicOrigin: "http://localhost",
       csrfProtector: {
         issue: async () => "csrf-token-with-at-least-thirty-two-characters",
         verify: async () => true,
@@ -75,6 +76,7 @@ describe("reviewer entry admission", () => {
     };
     const app = createWebBffApp({
       contextPort,
+      publicOrigin: "http://localhost",
       csrfProtector: {
         issue: async () => "issued-token-with-at-least-thirty-two-characters",
         verify: async () => false,

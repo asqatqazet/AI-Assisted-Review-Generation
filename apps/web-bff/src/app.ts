@@ -17,6 +17,7 @@ export interface WebBffOptions {
   readonly contextPort?: ContextPort | undefined;
   readonly newBrowserCapability?: (() => string) | undefined;
   readonly csrfProtector?: CsrfProtector | undefined;
+  readonly publicOrigin?: string | undefined;
   readonly configCache?: ConfigCache | undefined;
   readonly generationServiceBaseUrl?: string | undefined;
   readonly fetchFn?: typeof fetch | undefined;
@@ -31,6 +32,10 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   const newBrowserCapability =
     options.newBrowserCapability ?? (() => globalThis.crypto.randomUUID());
   const csrfProtector = options.csrfProtector ?? unavailableCsrfProtector;
+  const publicOrigin =
+    options.publicOrigin === undefined
+      ? undefined
+      : new URL(options.publicOrigin).origin;
   const configCache = options.configCache ?? new ConfigCache();
   const generationServiceBaseUrl =
     options.generationServiceBaseUrl ?? "http://localhost:3002";
@@ -123,8 +128,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     const browserCapability = getCookie(c, "__Host-review_browser");
     const body = StartEntryRequestDtoSchema.safeParse(await c.req.json());
     const entryChallengeHandle = c.req.param("entryChallengeHandle");
+    const origin = c.req.header("Origin");
 
     if (
+      publicOrigin === undefined ||
+      origin !== publicOrigin ||
       browserCapability === undefined ||
       !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
       !body.success ||
