@@ -52,4 +52,20 @@ describe("Survey transition table", () => {
       selectedAction: "paraphrase",
     });
   });
+
+  it("submits a complete entry choice without discarding confirmed input", () => {
+    const prepared = transition(createSurveyState("challenge-demo"), {
+      type: "ENTRY_PREPARED",
+      context,
+    });
+    const rated = transition(prepared, { type: "RATING_SELECTED", rating: 5 });
+    const selected = transition(rated, { type: "ACTION_SELECTED", action: "generate" });
+
+    expect(transition(selected, { type: "START_REQUESTED" })).toMatchObject({
+      value: "entry-submitting",
+      entryChallengeHandle: "challenge-demo",
+      rating: 5,
+      selectedAction: "generate",
+    });
+  });
 });
