@@ -1,7 +1,7 @@
 variable "aws_region" {
   type        = string
   description = "AWS region for deployment"
-  default     = "eu-west-1"
+  default     = "eu-central-1"
 }
 
 variable "alert_email" {

@@ -164,7 +164,7 @@ resource "aws_lambda_function" "context_service" {
   function_name = "review-context-service-student"
   role          = aws_iam_role.context_service_role.arn
   handler       = "main.handler"
-  runtime       = "nodejs20.x"
+  runtime       = "nodejs24.x"
   memory_size   = 256
   timeout       = 10
   filename      = "${path.module}/dummy-context.zip"
@@ -191,7 +191,7 @@ resource "aws_lambda_function" "generation_service" {
   function_name = "review-generation-service-student"
   role          = aws_iam_role.generation_service_role.arn
   handler       = "main.handler"
-  runtime       = "nodejs20.x"
+  runtime       = "nodejs24.x"
   memory_size   = 512
   timeout       = 75
   filename      = "${path.module}/dummy-gen.zip"
