@@ -228,4 +228,85 @@ describe("US-03.2 paid-work Generation handler", () => {
     ).resolves.toEqual({ status: "completed", generationId: "generation-a" });
     expect(providerCalls).toBe(0);
   });
+
+  it.each([
+    [
+      {
+        operation: "status" as const,
+        scope: {
+          tenantId: "tenant-a",
+          locationId: "location-a",
+          reviewSessionId: "session-a",
+          generationBatchId: "batch-a",
+          generationId: "generation-a",
+          permitJti: "permit-jti-a",
+        },
+      },
+      { operation: "status", state: "leased" },
+    ],
+    [
+      {
+        operation: "cancel-expired-lease" as const,
+        leaseId: "lease-a",
+        scope: {
+          tenantId: "tenant-a",
+          locationId: "location-a",
+          reviewSessionId: "session-a",
+          generationBatchId: "batch-a",
+          generationId: "generation-a",
+          permitJti: "permit-jti-a",
+        },
+      },
+      { operation: "cancel-expired-lease", state: "cancelled" },
+    ],
+  ])("returns signed reconciliation evidence for $operation", async (event, unsigned) => {
+    const handler = createPaidWorkGenerationHandler({
+      permitVerifier: {
+        verify: async () => {
+          throw new Error("permit verification must not run during reconciliation");
+        },
+      },
+      activationVerifier: {
+        verify: async () => {
+          throw new Error("activation verification must not run during reconciliation");
+        },
+      },
+      leaseJournal: {
+        prepare: async () => {
+          throw new Error("prepare must not run during reconciliation");
+        },
+        claimExecution: async () => {
+          throw new Error("execution claim must not run during reconciliation");
+        },
+        status: async (scope) => {
+          expect(scope).toEqual(event.scope);
+          return { state: "leased" };
+        },
+        cancelExpired: async (input) => {
+          expect(input).toEqual({ leaseId: "lease-a", scope: event.scope });
+          return { state: "cancelled" };
+        },
+      },
+      receiptSigner: {
+        signLease: async () => {
+          throw new Error("lease signing must not run during reconciliation");
+        },
+        signStatus: async (claims) => {
+          expect(claims).toEqual(unsigned);
+          return "signed-generation-status-receipt";
+        },
+      },
+      execute: async () => {
+        throw new Error("provider must not run during reconciliation");
+      },
+      tailExisting: async () => {
+        throw new Error("tail must not run during reconciliation");
+      },
+    });
+
+    await expect(handler(event)).resolves.toEqual({
+      ...unsigned,
+      signedStatusReceipt: "signed-generation-status-receipt",
+    });
+  });
 });
