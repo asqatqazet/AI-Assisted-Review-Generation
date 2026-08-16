@@ -17,6 +17,22 @@ describe("student AWS topology invariants", () => {
     expect(terraform.match(/runtime\s*=\s*"nodejs24\.x"/g)).toHaveLength(2);
   });
 
+  it("publishes immutable service artifacts behind qualified live aliases", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform).not.toContain("dummy-context.zip");
+    expect(terraform).not.toContain("dummy-gen.zip");
+    expect(terraform).not.toContain('function_version = "$LATEST"');
+    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(2);
+    expect(terraform.match(/source_code_hash\s*=\s*filebase64sha256/g)).toHaveLength(2);
+    expect(terraform).toContain(
+      "function_version = aws_lambda_function.context_service.version",
+    );
+    expect(terraform).toContain(
+      "function_version = aws_lambda_function.generation_service.version",
+    );
+  });
+
   it("never reports deployment or smoke evidence from placeholder commands", () => {
     const deployWorkflowPath = path.join(
       __dirname,
