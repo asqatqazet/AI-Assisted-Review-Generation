@@ -211,12 +211,6 @@ resource "aws_lambda_alias" "context_service_live" {
   function_version = "$LATEST"
 }
 
-resource "aws_lambda_function_url" "context_service_url" {
-  function_name      = aws_lambda_function.context_service.function_name
-  qualifier          = aws_lambda_alias.context_service_live.name
-  authorization_type = "NONE"
-}
-
 resource "aws_lambda_function" "generation_service" {
   function_name = "review-generation-service-student"
   role          = aws_iam_role.generation_service_role.arn
@@ -241,11 +235,4 @@ resource "aws_lambda_alias" "generation_service_live" {
   name             = "live"
   function_name    = aws_lambda_function.generation_service.function_name
   function_version = "$LATEST"
-}
-
-resource "aws_lambda_function_url" "generation_service_url" {
-  function_name      = aws_lambda_function.generation_service.function_name
-  qualifier          = aws_lambda_alias.generation_service_live.name
-  authorization_type = "NONE"
-  invoke_mode        = "RESPONSE_STREAM"
 }
