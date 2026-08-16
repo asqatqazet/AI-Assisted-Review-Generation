@@ -13,10 +13,15 @@ export type SurveyState =
       readonly selectedAction: "generate" | "paraphrase" | null;
     };
 
-export type SurveyEvent = {
-  readonly type: "ENTRY_PREPARED";
-  readonly context: PublicSurveyContextDto;
-};
+export type SurveyEvent =
+  | {
+      readonly type: "ENTRY_PREPARED";
+      readonly context: PublicSurveyContextDto;
+    }
+  | {
+      readonly type: "RATING_SELECTED";
+      readonly rating: 1 | 2 | 3 | 4 | 5;
+    };
 
 export function createSurveyState(entryChallengeHandle: string): SurveyState {
   return { value: "entry-loading", entryChallengeHandle };
@@ -31,6 +36,10 @@ export function transition(state: SurveyState, event: SurveyEvent): SurveyState 
       rating: null,
       selectedAction: null,
     };
+  }
+
+  if (state.value === "entry" && event.type === "RATING_SELECTED") {
+    return { ...state, rating: event.rating };
   }
 
   return state;
