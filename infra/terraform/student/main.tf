@@ -19,6 +19,8 @@ provider "aws" {
   }
 }
 
+data "aws_caller_identity" "current" {}
+
 # 1. AWS Budget Alarm ($10 Hard Limit)
 resource "aws_budgets_budget" "student_cost_limit" {
   name              = "student-monthly-budget"
@@ -59,30 +61,7 @@ resource "aws_s3_bucket_public_access_block" "manifests_block" {
   restrict_public_buckets = true
 }
 
-# 3. Parameter Store Secrets
-resource "aws_ssm_parameter" "anthropic_api_key" {
-  name        = "/review-gen/student/anthropic_api_key"
-  description = "Anthropic Provider API Key"
-  type        = "SecureString"
-  value       = "dummy-key-to-be-overridden"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
-}
-
-resource "aws_ssm_parameter" "openai_api_key" {
-  name        = "/review-gen/student/openai_api_key"
-  description = "OpenAI Provider API Key"
-  type        = "SecureString"
-  value       = "dummy-key-to-be-overridden"
-
-  lifecycle {
-    ignore_changes = [value]
-  }
-}
-
-# 4. IAM Roles (Disjoint least-privilege)
+# 3. IAM Roles (Disjoint least-privilege)
 resource "aws_iam_role" "context_service_role" {
   name = "review-context-service-student-role"
 
@@ -169,10 +148,7 @@ resource "aws_iam_policy" "generation_service_policy" {
           "ssm:GetParameter",
           "ssm:GetParameters"
         ]
-        Resource = [
-          aws_ssm_parameter.anthropic_api_key.arn,
-          aws_ssm_parameter.openai_api_key.arn
-        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/review-gen/student/providers/*"
       }
     ]
   })
@@ -183,7 +159,7 @@ resource "aws_iam_role_policy_attachment" "generation_service_attach" {
   policy_arn = aws_iam_policy.generation_service_policy.arn
 }
 
-# 5. Lambda Functions & Aliases
+# 4. Lambda Functions & Aliases
 resource "aws_lambda_function" "context_service" {
   function_name = "review-context-service-student"
   role          = aws_iam_role.context_service_role.arn

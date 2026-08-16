@@ -60,9 +60,9 @@ Provider keys are stored in AWS SSM Parameter Store as `SecureString`:
 ```bash
 # 1. Update parameter in SSM
 aws ssm put-parameter \
-  --name "/review-gen/student/anthropic_api_key" \
+  --name "/review-gen/student/providers/gemini_api_key" \
   --type "SecureString" \
-  --value "sk-ant-new-key-value" \
+  --value "new-gemini-key-value" \
   --overwrite
 
 # 2. Trigger graceful Lambda reload by publishing a new configuration revision
@@ -79,7 +79,7 @@ aws lambda update-function-configuration \
 |---|---|---|---|
 | `BudgetHardLimitAlarm` | Cost > $10/mo | Monetary limit | Inspect top tenant spend in CloudWatch metrics; verify rate limiting. |
 | `GroundingRejectionSpike` | Rejections > 5% in 5m | Model drift / Prompt hallucination | Roll back prompt version to prior candidate; run `pnpm eval:golden`. |
-| `CircuitBreakerTripped` | 5 consecutive LLM errors | Provider outage | Resilient gateway automatically falls back to secondary provider. |
+| `CircuitBreakerTripped` | 5 consecutive LLM errors | Provider outage | Disable funded generation and preserve the manual writing path; never auto-fail over into a second paid Attempt. |
 
 ---
 
