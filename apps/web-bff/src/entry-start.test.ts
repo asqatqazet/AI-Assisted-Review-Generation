@@ -113,4 +113,49 @@ describe("reviewer entry admission", () => {
       advanceCalls: 0,
     });
   });
+
+  it("rejects a Start command from a different browser origin", async () => {
+    let advanceCalls = 0;
+    const contextPort: ContextPort = {
+      prepareEntry: async () => ({ status: "unavailable" }),
+      readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async () => {
+        advanceCalls += 1;
+        return {
+          status: "admitted",
+          reviewSessionHandle: "must-not-be-disclosed",
+        };
+      },
+    };
+    const app = createWebBffApp({
+      contextPort,
+      publicOrigin: "https://reviews.example.test",
+      csrfProtector: {
+        issue: async () => "csrf-token-with-at-least-thirty-two-characters",
+        verify: async () => true,
+      },
+    });
+
+    const response = await app.request(
+      "/api/v1/entry-challenges/entry-challenge-demo/start",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "__Host-review_browser=existing-browser-capability-123",
+          Origin: "https://attacker.example",
+        },
+        body: JSON.stringify({
+          rating: 4,
+          action: "generate",
+          csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+        }),
+      },
+    );
+
+    expect({ status: response.status, advanceCalls }).toEqual({
+      status: 404,
+      advanceCalls: 0,
+    });
+  });
 });
