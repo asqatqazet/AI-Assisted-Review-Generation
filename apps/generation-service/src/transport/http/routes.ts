@@ -89,7 +89,7 @@ export function createGenerationApp(options: GenerationAppOptions = {}): Hono {
       return c.json(
         {
           status: "failed",
-          error: error instanceof Error ? error.message : String(error),
+          code: "GENERATION_FAILED",
         },
         500,
       );
