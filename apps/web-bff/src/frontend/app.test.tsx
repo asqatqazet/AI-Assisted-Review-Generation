@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -72,5 +73,36 @@ describe("reviewer application routes", () => {
         name: "Write your review of Apex Dental",
       }),
     ).toBeVisible();
+  });
+
+  it("lets the reviewer select one clearly named rating", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
+        <ReviewerApplication
+          entryChallengeClient={{
+            read: async () => ({
+              status: "ready",
+              entryChallengeHandle: "entry-challenge-demo",
+              csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+              context: {
+                tenantDisplayName: "Apex Dental",
+                locationDisplayName: "Central Clinic",
+                locale: "en-GB",
+                entryMode: "invite",
+                ratingRequired: true,
+                factOptions: [],
+                reviewFormats: [],
+              },
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    const rating = await screen.findByRole("button", { name: "4, Good" });
+    await user.click(rating);
+
+    expect(rating).toHaveAttribute("aria-pressed", "true");
   });
 });
