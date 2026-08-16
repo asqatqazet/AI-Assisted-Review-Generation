@@ -166,7 +166,7 @@ It hides wire-version parsing, compatibility, and error shaping. It does not con
 
 ### `packages/llm`
 
-`llm` earns a package because Gemini, OpenAI, and FakeProvider are three adapters at a real Provider seam, and timeout, breaker, failover, structured decoding, and provider error normalization sit behind one small interface:
+`llm` earns a package because Gemini, OpenAI, and FakeProvider are three adapters at a real Provider seam, and bounded timeout, structured decoding, usage reporting and provider error normalization sit behind one small interface:
 
 ```ts
 interface ModelGateway {
@@ -226,7 +226,7 @@ Rejected. `plugins` would expose almost as much interface as implementation: sch
 
 ### Put Provider adapters inside Generation
 
-Rejected for now. There are already three adapters, shared provider contract tests, and substantial breaker/failover/error-normalization behavior. `llm` has a real seam and a small interface even though Generation is its only production caller. Reconsider if it degenerates into provider SDK re-exports.
+Rejected for now. There are already three adapters, shared provider contract tests, and substantial bounded-call, structured-output and error-normalization behavior. `llm` has a real seam and a small interface even though Generation is its only production caller. It intentionally owns no automatic retry or provider failover: the paid-work protocol admits one explicit Attempt and the selected provider/model are immutable snapshot inputs. Reconsider the package if it degenerates into provider SDK re-exports.
 
 ### Put persistence adapters inside each deployable
 
