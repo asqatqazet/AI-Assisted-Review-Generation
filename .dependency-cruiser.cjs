@@ -10,6 +10,7 @@
 
 const WORKSPACE_SOURCE = "^(?:apps|packages)/";
 const WEB_BFF = "^apps/web-bff/src/";
+const WEB_FRONTEND = "^apps/web-bff/src/frontend/";
 const CONTEXT_SERVICE = "^apps/context-service/src/";
 const GENERATION_SERVICE = "^apps/generation-service/src/";
 const GENERATION_CORE =
@@ -57,6 +58,22 @@ module.exports = {
       severity: "error",
       from: { path: WEB_BFF },
       to: { path: "^apps/(?:context-service|generation-service)/" },
+    },
+    {
+      name: "web-frontend-cannot-reach-server-or-runtime-packages",
+      severity: "error",
+      from: { path: WEB_FRONTEND },
+      to: {
+        path:
+          "^(?:apps/web-bff/src/(?!frontend/)|packages/(?:domain|db|llm|observability)/|node_modules/(?:@hono/|hono/))",
+        reachable: true,
+      },
+    },
+    {
+      name: "web-frontend-no-node-builtins",
+      severity: "error",
+      from: { path: WEB_FRONTEND },
+      to: { dependencyTypes: ["core"] },
     },
     {
       name: "context-cannot-import-other-deployables",
@@ -372,7 +389,8 @@ module.exports = {
       dependencyTypes: EXTERNAL_DEPENDENCY_TYPES,
     },
     exclude: {
-      path: "(?:^|/)(?:node_modules|dist|coverage|\\.nx)/",
+      path:
+        "(?:^|/)(?:node_modules|dist|coverage|\\.nx)/|\\.test\\.[cm]?[jt]sx?$|(?:^|/)vite\\.config\\.ts$",
     },
     skipAnalysisNotInRules: true,
   },
