@@ -1,4 +1,4 @@
-export * from "./effective-configuration-snapshot.js";
+export * from "../shared/effective-configuration-snapshot.js";
 export * from "./context-function.js";
 export * from "./entry-challenge.js";
 export * from "./public-survey-context.js";

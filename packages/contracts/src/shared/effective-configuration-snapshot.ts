@@ -6,7 +6,7 @@ import {
   IsoDateTimeDtoSchema,
   LocaleDtoSchema,
   ReviewFormatLocaleDtoSchema,
-} from "../shared/primitives.js";
+} from "./primitives.js";
 
 export const ConfigurationProvenanceDtoSchema = z.strictObject({
   scope: ConfigurationScopeDtoSchema,

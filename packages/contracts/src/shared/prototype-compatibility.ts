@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { ReviewFormatConstraintsDtoSchema } from "../context/effective-configuration-snapshot.js";
+import { ReviewFormatConstraintsDtoSchema } from "./effective-configuration-snapshot.js";
 import { LocaleDtoSchema, ReviewFormatLocaleDtoSchema } from "./primitives.js";
 
 export const PrototypeGenerationActionDtoSchema = z.enum([

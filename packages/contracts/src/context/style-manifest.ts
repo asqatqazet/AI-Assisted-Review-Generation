@@ -5,7 +5,7 @@ import {
   LocaleDtoSchema,
   ReviewFormatLocaleDtoSchema,
 } from "../shared/primitives.js";
-import { ReviewFormatConstraintsDtoSchema } from "./effective-configuration-snapshot.js";
+import { ReviewFormatConstraintsDtoSchema } from "../shared/effective-configuration-snapshot.js";
 
 export const FewShotExampleDtoSchema = z.strictObject({
   input: z.string().min(1),

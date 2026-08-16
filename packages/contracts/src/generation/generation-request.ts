@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { EffectiveConfigurationSnapshotDtoSchema } from "../context/effective-configuration-snapshot.js";
+import { EffectiveConfigurationSnapshotDtoSchema } from "../shared/effective-configuration-snapshot.js";
 import { IdentifierDtoSchema, IsoDateTimeDtoSchema } from "../shared/primitives.js";
 
 const BoundHashDtoSchema = z.string().min(1).max(200);
