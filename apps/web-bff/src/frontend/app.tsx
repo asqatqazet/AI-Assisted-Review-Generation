@@ -78,6 +78,37 @@ function StartRoute({
               : ratings[state.rating - 1]?.label}
           </p>
         </section>
+        <section aria-labelledby="drafting-path-question">
+          <h2 id="drafting-path-question">How would you like to write?</h2>
+          <button
+            type="button"
+            disabled={state.rating === null}
+            onClick={() =>
+              setState((current) =>
+                transition(current, {
+                  type: "ACTION_SELECTED",
+                  action: "generate",
+                }),
+              )
+            }
+          >
+            Generate from my facts
+          </button>
+          <button
+            type="button"
+            disabled={state.rating === null}
+            onClick={() =>
+              setState((current) =>
+                transition(current, {
+                  type: "ACTION_SELECTED",
+                  action: "paraphrase",
+                }),
+              )
+            }
+          >
+            Improve my wording
+          </button>
+        </section>
       </main>
     );
   }
