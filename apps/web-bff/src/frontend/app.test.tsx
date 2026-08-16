@@ -182,4 +182,50 @@ describe("reviewer application routes", () => {
     expect(generate).toHaveAttribute("aria-pressed", "false");
     expect(paraphrase).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("builds an explicit Start command from memory-only reviewer choices", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
+        <ReviewerApplication
+          entryChallengeClient={{
+            read: async () => ({
+              status: "ready",
+              entryChallengeHandle: "entry-challenge-demo",
+              csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+              context: {
+                tenantDisplayName: "Apex Dental",
+                locationDisplayName: "Central Clinic",
+                locale: "en-GB",
+                entryMode: "invite",
+                ratingRequired: true,
+                factOptions: [],
+                reviewFormats: [],
+              },
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "4, Good" }));
+    await user.click(
+      screen.getByRole("button", { name: "Generate from my facts" }),
+    );
+
+    const start = screen.getByRole("button", { name: "Start" });
+    const form = start.closest("form");
+
+    expect(start).toBeEnabled();
+    expect(form).toHaveAttribute(
+      "action",
+      "/api/v1/entry-challenges/entry-challenge-demo/start",
+    );
+    expect(form).toHaveAttribute("method", "post");
+    expect(form).toHaveFormValues({
+      rating: "4",
+      action: "generate",
+      csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+    });
+  });
 });
