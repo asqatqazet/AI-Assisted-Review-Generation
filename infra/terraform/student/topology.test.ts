@@ -26,4 +26,15 @@ describe("student AWS topology invariants", () => {
     );
     expect(terraform).toContain("parameter/review-gen/student/providers/*");
   });
+
+  it("allows the Generation Lambda to outlive the bounded 60-second provider call", () => {
+    const terraform = fs.readFileSync(
+      path.join(__dirname, "main.tf"),
+      "utf8",
+    );
+
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"generation_service"\s*\{[\s\S]*?timeout\s*=\s*75/,
+    );
+  });
 });
