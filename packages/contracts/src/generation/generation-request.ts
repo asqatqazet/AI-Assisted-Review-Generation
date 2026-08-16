@@ -1,73 +1,201 @@
 import { z } from "zod";
 
 import { EffectiveConfigurationSnapshotDtoSchema } from "../context/effective-configuration-snapshot.js";
-import { IdentifierDtoSchema } from "../shared/primitives.js";
+import { IdentifierDtoSchema, IsoDateTimeDtoSchema } from "../shared/primitives.js";
 
-const BaseCommandDtoSchema = z.strictObject({
-  reviewSessionId: IdentifierDtoSchema,
-  reviewFormatVersionIds: z.array(IdentifierDtoSchema).min(1),
-  idempotencyKey: z.string().min(1).max(200),
-});
+const BoundHashDtoSchema = z.string().min(1).max(200);
 
-export const GenerateCommandDtoSchema = BaseCommandDtoSchema.extend({
+export const GenerationActionDtoSchema = z.enum([
+  "generate",
+  "paraphrase",
+  "reformat",
+  "condense",
+  "expand",
+  "revise-wording",
+  "resample",
+]);
+
+export const GenerateChildCommandDtoSchema = z.strictObject({
   kind: z.literal("generate"),
   assertionIds: z.array(IdentifierDtoSchema).min(1),
   rating: z.number().int().min(1).max(5),
 });
 
-export const ParaphraseCommandDtoSchema = BaseCommandDtoSchema.extend({
+export const ParaphraseChildCommandDtoSchema = z.strictObject({
   kind: z.literal("paraphrase"),
   sourceTextRevisionId: IdentifierDtoSchema,
 });
 
-export const ReformatCommandDtoSchema = BaseCommandDtoSchema.extend({
+export const ReformatChildCommandDtoSchema = z.strictObject({
   kind: z.literal("reformat"),
   sourceGenerationId: IdentifierDtoSchema,
 });
 
-export const CondenseCommandDtoSchema = BaseCommandDtoSchema.extend({
+export const CondenseChildCommandDtoSchema = z.strictObject({
   kind: z.literal("condense"),
   sourceGenerationId: IdentifierDtoSchema,
   targetMaxChars: z.number().int().positive(),
 });
 
-export const ExpandCommandDtoSchema = BaseCommandDtoSchema.extend({
+export const ExpandChildCommandDtoSchema = z.strictObject({
   kind: z.literal("expand"),
   sourceGenerationId: IdentifierDtoSchema,
   targetMinChars: z.number().int().positive(),
 });
 
-export const ReviseWordingCommandDtoSchema = BaseCommandDtoSchema.extend({
+export const ReviseWordingChildCommandDtoSchema = z.strictObject({
   kind: z.literal("revise-wording"),
   sourceGenerationId: IdentifierDtoSchema,
   presentationInstruction: z.string().min(1),
 });
 
-export const GenerationCommandDtoSchema = z.discriminatedUnion("kind", [
-  GenerateCommandDtoSchema,
-  ParaphraseCommandDtoSchema,
-  ReformatCommandDtoSchema,
-  CondenseCommandDtoSchema,
-  ExpandCommandDtoSchema,
-  ReviseWordingCommandDtoSchema,
+export const ResampleChildCommandDtoSchema = z.strictObject({
+  kind: z.literal("resample"),
+  sourceGenerationId: IdentifierDtoSchema,
+});
+
+export const GenerationChildCommandDtoSchema = z.discriminatedUnion("kind", [
+  GenerateChildCommandDtoSchema,
+  ParaphraseChildCommandDtoSchema,
+  ReformatChildCommandDtoSchema,
+  CondenseChildCommandDtoSchema,
+  ExpandChildCommandDtoSchema,
+  ReviseWordingChildCommandDtoSchema,
+  ResampleChildCommandDtoSchema,
 ]);
 
-export const ResampleGenerationCommandDtoSchema = z.strictObject({
-  kind: z.literal("resample"),
+export const GenerationWorkloadBindingsDtoSchema = z.strictObject({
+  tenantId: IdentifierDtoSchema,
+  locationId: IdentifierDtoSchema,
   reviewSessionId: IdentifierDtoSchema,
-  sourceGenerationId: IdentifierDtoSchema,
+  generationBatchId: IdentifierDtoSchema,
+  generationId: IdentifierDtoSchema,
+  action: GenerationActionDtoSchema,
+  reviewFormatVersionId: IdentifierDtoSchema,
+  assertionSetHash: BoundHashDtoSchema,
+  requestHash: BoundHashDtoSchema,
+  snapshotId: IdentifierDtoSchema,
+  snapshotHash: BoundHashDtoSchema,
   idempotencyKey: z.string().min(1).max(200),
 });
 
-export const GenerateRequestDtoSchema = z.strictObject({
+export const GenerationWorkloadDtoSchema = z
+  .strictObject({
+    bindings: GenerationWorkloadBindingsDtoSchema,
+    snapshot: EffectiveConfigurationSnapshotDtoSchema,
+    command: GenerationChildCommandDtoSchema,
+  })
+  .superRefine((workload, context) => {
+    const checks: readonly [boolean, string, readonly (string | number)[]][] = [
+      [
+        workload.bindings.tenantId === workload.snapshot.tenantId,
+        "Tenant binding does not match the supplied snapshot",
+        ["bindings", "tenantId"],
+      ],
+      [
+        workload.bindings.locationId === workload.snapshot.locationId,
+        "Location binding does not match the supplied snapshot",
+        ["bindings", "locationId"],
+      ],
+      [
+        workload.bindings.snapshotId === workload.snapshot.snapshotId,
+        "Snapshot binding does not match the supplied snapshot",
+        ["bindings", "snapshotId"],
+      ],
+      [
+        workload.bindings.action === workload.command.kind,
+        "Action binding does not match the supplied command",
+        ["bindings", "action"],
+      ],
+    ];
+
+    for (const [valid, message, path] of checks) {
+      if (!valid) {
+        context.addIssue({ code: "custom", message, path: [...path] });
+      }
+    }
+  });
+
+export const PrepareGenerationInvocationDtoSchema = z.strictObject({
+  operation: z.literal("prepare"),
   permit: z.string().min(1),
-  snapshot: EffectiveConfigurationSnapshotDtoSchema,
-  command: z.union([GenerationCommandDtoSchema, ResampleGenerationCommandDtoSchema]),
+  workload: GenerationWorkloadDtoSchema,
 });
 
-export type GenerationCommandDto = z.infer<typeof GenerationCommandDtoSchema>;
-export type ResampleGenerationCommandDto = z.infer<
-  typeof ResampleGenerationCommandDtoSchema
->;
-export type GenerateRequestDto = z.infer<typeof GenerateRequestDtoSchema>;
+export const ExecuteGenerationInvocationDtoSchema = z.strictObject({
+  operation: z.literal("execute"),
+  leaseId: IdentifierDtoSchema,
+  activation: z.string().min(1),
+  workload: GenerationWorkloadDtoSchema,
+});
 
+export const GenerationExecutionScopeDtoSchema = z.strictObject({
+  tenantId: IdentifierDtoSchema,
+  locationId: IdentifierDtoSchema,
+  reviewSessionId: IdentifierDtoSchema,
+  generationBatchId: IdentifierDtoSchema,
+  generationId: IdentifierDtoSchema,
+  permitJti: IdentifierDtoSchema,
+});
+
+export const GenerationStatusInvocationDtoSchema = z.strictObject({
+  operation: z.literal("status"),
+  scope: GenerationExecutionScopeDtoSchema,
+});
+
+export const CancelExpiredLeaseInvocationDtoSchema = z.strictObject({
+  operation: z.literal("cancel-expired-lease"),
+  leaseId: IdentifierDtoSchema,
+  scope: GenerationExecutionScopeDtoSchema,
+});
+
+export const GenerationFunctionInvocationDtoSchema = z.discriminatedUnion(
+  "operation",
+  [
+    PrepareGenerationInvocationDtoSchema,
+    ExecuteGenerationInvocationDtoSchema,
+    GenerationStatusInvocationDtoSchema,
+    CancelExpiredLeaseInvocationDtoSchema,
+  ],
+);
+
+export const PrepareGenerationResultDtoSchema = z.strictObject({
+  operation: z.literal("prepare"),
+  status: z.enum(["leased", "existing"]),
+  leaseId: IdentifierDtoSchema,
+  leaseExpiresAt: IsoDateTimeDtoSchema,
+  leaseReceipt: z.string().min(1),
+});
+
+export const GenerationStatusResultDtoSchema = z.strictObject({
+  operation: z.literal("status"),
+  state: z.enum(["no-lease", "leased", "running", "cancelled", "terminal"]),
+  signedStatusReceipt: z.string().min(1),
+});
+
+export const CancelExpiredLeaseResultDtoSchema = z.strictObject({
+  operation: z.literal("cancel-expired-lease"),
+  state: z.enum(["cancelled", "running", "terminal", "no-lease"]),
+  signedStatusReceipt: z.string().min(1),
+});
+
+export type GenerationActionDto = z.infer<typeof GenerationActionDtoSchema>;
+export type GenerationChildCommandDto = z.infer<
+  typeof GenerationChildCommandDtoSchema
+>;
+export type GenerationWorkloadDto = z.infer<typeof GenerationWorkloadDtoSchema>;
+export type PrepareGenerationInvocationDto = z.infer<
+  typeof PrepareGenerationInvocationDtoSchema
+>;
+export type ExecuteGenerationInvocationDto = z.infer<
+  typeof ExecuteGenerationInvocationDtoSchema
+>;
+export type GenerationStatusInvocationDto = z.infer<
+  typeof GenerationStatusInvocationDtoSchema
+>;
+export type CancelExpiredLeaseInvocationDto = z.infer<
+  typeof CancelExpiredLeaseInvocationDtoSchema
+>;
+export type GenerationFunctionInvocationDto = z.infer<
+  typeof GenerationFunctionInvocationDtoSchema
+>;
