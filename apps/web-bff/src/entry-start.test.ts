@@ -17,7 +17,13 @@ describe("reviewer entry admission", () => {
         };
       },
     };
-    const app = createWebBffApp({ contextPort });
+    const app = createWebBffApp({
+      contextPort,
+      csrfProtector: {
+        issue: async () => "csrf-token-with-at-least-thirty-two-characters",
+        verify: async () => true,
+      },
+    });
 
     const response = await app.request(
       "/api/v1/entry-challenges/entry-challenge-demo/start",

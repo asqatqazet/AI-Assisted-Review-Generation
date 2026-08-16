@@ -94,7 +94,10 @@ describe("reviewer entry preparation", () => {
     };
     const app = createWebBffApp({
       contextPort,
-      newCsrfToken: () => "csrf-token-with-at-least-thirty-two-characters",
+      csrfProtector: {
+        issue: async () => "csrf-token-with-at-least-thirty-two-characters",
+        verify: async () => false,
+      },
     });
 
     const response = await app.request(

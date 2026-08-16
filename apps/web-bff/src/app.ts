@@ -8,11 +8,15 @@ import { getCookie } from "hono/cookie";
 import { ConfigCache } from "./config-cache.js";
 import { processOutcome, type OutcomePayload, type StoredOutcome } from "./outcome.js";
 import type { ContextPort } from "./ports/context.port.js";
+import {
+  type CsrfProtector,
+  unavailableCsrfProtector,
+} from "./security/csrf-protector.js";
 
 export interface WebBffOptions {
   readonly contextPort?: ContextPort | undefined;
   readonly newBrowserCapability?: (() => string) | undefined;
-  readonly newCsrfToken?: (() => string) | undefined;
+  readonly csrfProtector?: CsrfProtector | undefined;
   readonly configCache?: ConfigCache | undefined;
   readonly generationServiceBaseUrl?: string | undefined;
   readonly fetchFn?: typeof fetch | undefined;
@@ -26,8 +30,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   };
   const newBrowserCapability =
     options.newBrowserCapability ?? (() => globalThis.crypto.randomUUID());
-  const newCsrfToken =
-    options.newCsrfToken ?? (() => globalThis.crypto.randomUUID());
+  const csrfProtector = options.csrfProtector ?? unavailableCsrfProtector;
   const configCache = options.configCache ?? new ConfigCache();
   const generationServiceBaseUrl =
     options.generationServiceBaseUrl ?? "http://localhost:3002";
@@ -105,7 +108,10 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       EntryChallengeProjectionDtoSchema.parse({
         status: "ready",
         entryChallengeHandle,
-        csrfToken: newCsrfToken(),
+        csrfToken: await csrfProtector.issue({
+          entryChallengeHandle,
+          browserCapability,
+        }),
         context: entry.context,
       }),
       200,
@@ -116,11 +122,17 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     c.header("Cache-Control", "private, no-store");
     const browserCapability = getCookie(c, "__Host-review_browser");
     const body = StartEntryRequestDtoSchema.safeParse(await c.req.json());
+    const entryChallengeHandle = c.req.param("entryChallengeHandle");
 
     if (
       browserCapability === undefined ||
       !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
-      !body.success
+      !body.success ||
+      !(await csrfProtector.verify({
+        entryChallengeHandle,
+        browserCapability,
+        token: body.data.csrfToken,
+      }))
     ) {
       return c.json(
         { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
@@ -129,7 +141,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     }
 
     const result = await contextPort.advanceEntry({
-      entryChallengeHandle: c.req.param("entryChallengeHandle"),
+      entryChallengeHandle,
       browserCapability,
       rating: body.data.rating,
       action: body.data.action,
