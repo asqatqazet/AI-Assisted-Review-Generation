@@ -7,8 +7,6 @@ import {
   type VenueDataLookup,
 } from "./entry-resolver.js";
 import { processOutcome, type OutcomePayload, type StoredOutcome } from "./outcome.js";
-import { servePrototypeFile } from "./static-files.js";
-import { renderSurveyHtml } from "./ui.js";
 
 export interface WebBffOptions {
   readonly venueLookup?: VenueDataLookup | undefined;
@@ -58,50 +56,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
 
-  app.get("/", (c) => {
-    return servePrototypeFile("Index.dc.html", c) ?? c.html(renderSurveyHtml());
-  });
-
-  app.get("/survey", (c) => {
-    return servePrototypeFile("Survey.dc.html", c) ?? c.html(renderSurveyHtml());
-  });
-
-  app.get("/admin", (c) => {
-    return servePrototypeFile("Admin.dc.html", c) ?? c.notFound();
-  });
-
-  app.get("/gallery", (c) => {
-    return servePrototypeFile("Gallery.dc.html", c) ?? c.notFound();
-  });
-
-  app.get("/marketing", (c) => {
-    return servePrototypeFile("MarketingPage.dc.html", c) ?? c.notFound();
-  });
-
-  app.get("/support.js", (c) => {
-    return servePrototypeFile("support.js", c) ?? c.notFound();
-  });
-
-  app.get("/ds-base.js", (c) => {
-    return servePrototypeFile("ds-base.js", c) ?? c.notFound();
-  });
-
-  app.get("/_ds/*", (c) => {
-    const relative = c.req.path.replace(/^\//, "");
-    return servePrototypeFile(relative, c) ?? c.notFound();
-  });
-
-  app.get("/:filename{.+\\.dc\\.html$}", (c) => {
-    const filename = c.req.param("filename");
-    return servePrototypeFile(filename, c) ?? c.notFound();
-  });
-
   app.get("/s/:tenantSlug/:locationSlug", async (c) => {
-    const isHtml = c.req.header("accept")?.includes("text/html");
-    if (isHtml) {
-      return servePrototypeFile("Survey.dc.html", c) ?? c.html(renderSurveyHtml());
-    }
-
     const tenantSlug = c.req.param("tenantSlug");
     const locationSlug = c.req.param("locationSlug");
     const visitToken = c.req.query("v");
