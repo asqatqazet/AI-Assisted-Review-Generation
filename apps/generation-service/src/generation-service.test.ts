@@ -364,4 +364,33 @@ describe("TS-16 Generation Service Execution Plane", () => {
       code: "GROUNDING_REJECTED",
     });
   });
+
+  it("projects unexpected failures without exposing internal or Tenant details", async () => {
+    const app = createGenerationApp({
+      orchestrator: {
+        generate: () =>
+          Promise.reject(
+            new Error(
+              "tenant-a provider key sk-live-secret failed at postgres://internal-host",
+            ),
+          ),
+      },
+    });
+
+    const response = await app.request("/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const responseText = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(responseText).not.toContain("tenant-a");
+    expect(responseText).not.toContain("sk-live-secret");
+    expect(responseText).not.toContain("internal-host");
+    expect(JSON.parse(responseText)).toEqual({
+      status: "failed",
+      code: "GENERATION_FAILED",
+    });
+  });
 });
