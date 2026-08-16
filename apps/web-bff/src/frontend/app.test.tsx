@@ -29,4 +29,16 @@ describe("reviewer application routes", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Resuming your review");
   });
+
+  it("loads the Operator Console only for a Console route", async () => {
+    render(
+      <MemoryRouter initialEntries={["/console"]}>
+        <ReviewerApplication />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Operator console" }),
+    ).toBeVisible();
+  });
 });
