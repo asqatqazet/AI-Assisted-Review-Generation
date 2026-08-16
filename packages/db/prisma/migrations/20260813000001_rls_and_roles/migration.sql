@@ -73,5 +73,4 @@ GRANT SELECT, INSERT, UPDATE ON tenants, tenant_access_grants, tenant_action_ena
 
 -- Generation Service Grants (Execution Plane):
 GRANT USAGE ON SCHEMA public TO generation_svc;
-GRANT SELECT ON platform_settings, providers, provider_models, price_rates, review_format_versions, effective_configuration_snapshots TO generation_svc;
 GRANT SELECT, INSERT, UPDATE ON budget_reservations, generation_batches, generation_batch_assertions, generations, provider_attempts, claims, claim_groundings, unsupported_outputs, drafts, draft_revisions, dispositions TO generation_svc;
