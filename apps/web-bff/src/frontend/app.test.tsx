@@ -41,4 +41,36 @@ describe("reviewer application routes", () => {
       await screen.findByRole("heading", { name: "Operator console" }),
     ).toBeVisible();
   });
+
+  it("renders the prepared business and rating question on the Start route", async () => {
+    render(
+      <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
+        <ReviewerApplication
+          entryChallengeClient={{
+            read: async () => ({
+              status: "ready",
+              entryChallengeHandle: "entry-challenge-demo",
+              csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+              context: {
+                tenantDisplayName: "Apex Dental",
+                locationDisplayName: "Central Clinic",
+                locale: "en-GB",
+                entryMode: "invite",
+                ratingRequired: true,
+                factOptions: [],
+                reviewFormats: [],
+              },
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Write your review of Apex Dental",
+      }),
+    ).toBeVisible();
+  });
 });
