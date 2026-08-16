@@ -383,6 +383,10 @@ module.exports = {
     tsConfig: {
       fileName: "tsconfig.base.json",
     },
+    enhancedResolveOptions: {
+      exportsFields: ["exports"],
+      conditionNames: ["import", "require", "node", "default", "types"],
+    },
     tsPreCompilationDeps: "specify",
     detectProcessBuiltinModuleCalls: true,
     doNotFollow: {
