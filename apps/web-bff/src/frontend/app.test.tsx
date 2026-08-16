@@ -105,4 +105,39 @@ describe("reviewer application routes", () => {
 
     expect(rating).toHaveAttribute("aria-pressed", "true");
   });
+
+  it("offers drafting paths only after the reviewer chooses a rating", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
+        <ReviewerApplication
+          entryChallengeClient={{
+            read: async () => ({
+              status: "ready",
+              entryChallengeHandle: "entry-challenge-demo",
+              csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+              context: {
+                tenantDisplayName: "Apex Dental",
+                locationDisplayName: "Central Clinic",
+                locale: "en-GB",
+                entryMode: "invite",
+                ratingRequired: true,
+                factOptions: [],
+                reviewFormats: [],
+              },
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    const generate = await screen.findByRole("button", {
+      name: "Generate from my facts",
+    });
+    expect(generate).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "4, Good" }));
+
+    expect(generate).toBeEnabled();
+  });
 });
