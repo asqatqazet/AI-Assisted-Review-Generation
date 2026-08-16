@@ -1,52 +1,23 @@
 import { Hono } from "hono";
 
 import { ConfigCache } from "./config-cache.js";
-import {
-  resolveEntry,
-  type EntryResolution,
-  type VenueDataLookup,
-} from "./entry-resolver.js";
 import { processOutcome, type OutcomePayload, type StoredOutcome } from "./outcome.js";
+import type { ContextPort } from "./ports/context.port.js";
 
 export interface WebBffOptions {
-  readonly venueLookup?: VenueDataLookup | undefined;
+  readonly contextPort?: ContextPort | undefined;
+  readonly newBrowserCapability?: (() => string) | undefined;
   readonly configCache?: ConfigCache | undefined;
   readonly generationServiceBaseUrl?: string | undefined;
   readonly fetchFn?: typeof fetch | undefined;
 }
 
 export function createWebBffApp(options: WebBffOptions = {}): Hono {
-  const venueLookup: VenueDataLookup =
-    options.venueLookup ?? {
-      findTenantBySlug: (slug) =>
-        slug === "apex-dental"
-          ? { id: "tenant-apex", name: "Apex Dental", status: "ACTIVE" }
-          : slug === "lumina-optics"
-            ? { id: "tenant-lumina", name: "Lumina Optics", status: "ACTIVE" }
-            : undefined,
-      findLocationBySlug: (tenantId, slug) =>
-        (tenantId === "tenant-apex" && (slug === "central" || slug === "open-branch")) ||
-        (tenantId === "tenant-lumina" && slug === "flagship")
-          ? {
-              id: slug === "central" ? "loc-central" : slug === "flagship" ? "loc-flagship" : "loc-open",
-              name: slug === "central" ? "Central Clinic" : slug === "flagship" ? "Flagship Store" : "Open Branch",
-              status: "ACTIVE",
-              entryMode: slug === "open-branch" ? "open-qr" : "open-qr",
-            }
-          : undefined,
-      findVisitToken: (token) =>
-        token
-          ? {
-              id: "tok-demo",
-              visitId: "visit-demo",
-              tenantId: "tenant-apex",
-              locationId: "loc-central",
-              expiresAt: new Date(Date.now() + 86400000),
-              consumedAt: null,
-            }
-          : undefined,
-    };
-
+  const contextPort: ContextPort = options.contextPort ?? {
+    prepareEntry: async () => ({ status: "unavailable" }),
+  };
+  const newBrowserCapability =
+    options.newBrowserCapability ?? (() => globalThis.crypto.randomUUID());
   const configCache = options.configCache ?? new ConfigCache();
   const generationServiceBaseUrl =
     options.generationServiceBaseUrl ?? "http://localhost:3002";
@@ -57,54 +28,32 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
 
   app.get("/s/:tenantSlug/:locationSlug", async (c) => {
-    const tenantSlug = c.req.param("tenantSlug");
-    const locationSlug = c.req.param("locationSlug");
-    const visitToken = c.req.query("v");
-    const tableRef = c.req.query("t");
+    const browserCapability = newBrowserCapability();
+    const preparation = await contextPort.prepareEntry({
+      tenantSlug: c.req.param("tenantSlug"),
+      locationSlug: c.req.param("locationSlug"),
+      invitationToken: c.req.query("v"),
+      tableRef: c.req.query("t"),
+      browserCapability,
+    });
 
-    const resolution: EntryResolution = resolveEntry(
-      { tenantSlug, locationSlug, visitToken, tableRef },
-      venueLookup,
+    c.header("Cache-Control", "private, no-store");
+
+    if (preparation.status !== "prepared") {
+      return c.json(
+        {
+          code: "ENTRY_UNAVAILABLE",
+          message: "This review link is unavailable.",
+        },
+        404,
+      );
+    }
+
+    c.header(
+      "Set-Cookie",
+      `__Host-review_browser=${browserCapability}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`,
     );
-
-    if (resolution.status !== "valid") {
-      return c.json(
-        {
-          status: resolution.status,
-          message: "Please scan a valid venue QR code or request an invitation link.",
-        },
-        resolution.status === "requires-verification" ? 401 : 404,
-      );
-    }
-
-    try {
-      const { snapshot, stale } = await configCache.getSnapshot(
-        resolution.tenantId,
-        resolution.locationId,
-      );
-
-      return c.json(
-        {
-          status: "ready",
-          tenantName: snapshot.tenantName,
-          locationName: snapshot.locationName,
-          tableRef: resolution.tableRef,
-          reviewFormats: snapshot.reviewFormats,
-          factOptions: snapshot.factOptions,
-          snapshotId: snapshot.snapshotId,
-          staleConfig: stale,
-        },
-        200,
-      );
-    } catch (error) {
-      return c.json(
-        {
-          status: "error",
-          message: error instanceof Error ? error.message : "Failed to load venue configuration.",
-        },
-        503,
-      );
-    }
+    return c.redirect(`/start/${preparation.entryChallengeHandle}`, 303);
   });
 
   app.post("/api/generate", async (c) => {
