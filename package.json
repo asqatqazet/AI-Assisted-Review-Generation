@@ -8,6 +8,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "aws:preflight": "tsx infra/aws/preflight-command.ts",
     "dev": "nx run workspace:dev",
     "verify": "nx run workspace:verify",
     "db:reset": "nx run db:reset",

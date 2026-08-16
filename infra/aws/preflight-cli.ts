@@ -14,6 +14,25 @@ export interface CollectAwsPreflightOptions {
   readonly checkedAt: string;
 }
 
+export function assertTemporaryCredentialSource(
+  environment: Readonly<Record<string, string | undefined>>,
+): void {
+  const accessKey = environment["AWS_ACCESS_KEY_ID"];
+  const secretKey = environment["AWS_SECRET_ACCESS_KEY"];
+  const sessionToken = environment["AWS_SESSION_TOKEN"];
+  const profile = environment["AWS_PROFILE"];
+
+  if ((accessKey !== undefined || secretKey !== undefined) && sessionToken === undefined) {
+    throw new Error("STATIC_AWS_CREDENTIALS_FORBIDDEN");
+  }
+  if (sessionToken !== undefined && (accessKey === undefined || secretKey === undefined)) {
+    throw new Error("INCOMPLETE_TEMPORARY_AWS_CREDENTIALS");
+  }
+  if (profile === undefined && sessionToken === undefined) {
+    throw new Error("TEMPORARY_AWS_CREDENTIAL_SOURCE_REQUIRED");
+  }
+}
+
 function objectValue(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(`${label} must be a JSON object`);
