@@ -61,6 +61,61 @@ describe("reviewer entry admission", () => {
     });
   });
 
+  it("accepts the production browser form encoding for an admitted Start", async () => {
+    let received: AdvanceEntryInput | undefined;
+    const contextPort: ContextPort = {
+      prepareEntry: async () => ({ status: "unavailable" }),
+      readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async (input) => {
+        received = input;
+        return {
+          status: "admitted",
+          reviewSessionHandle: "review-session-form",
+        };
+      },
+    };
+    const app = createWebBffApp({
+      contextPort,
+      publicOrigin: "http://localhost",
+      csrfProtector: {
+        issue: async () => "csrf-token-with-at-least-thirty-two-characters",
+        verify: async () => true,
+      },
+    });
+
+    const response = await app.request(
+      "/api/v1/entry-challenges/entry-challenge-demo/start",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Cookie: "__Host-review_browser=existing-browser-capability-123",
+          Origin: "http://localhost",
+        },
+        body: new URLSearchParams({
+          rating: "4",
+          action: "generate",
+          csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+        }),
+      },
+    );
+
+    expect({
+      status: response.status,
+      location: response.headers.get("location"),
+      received,
+    }).toEqual({
+      status: 303,
+      location: "/review/review-session-form",
+      received: {
+        entryChallengeHandle: "entry-challenge-demo",
+        browserCapability: "existing-browser-capability-123",
+        rating: 4,
+        action: "generate",
+      },
+    });
+  });
+
   it("rejects a CSRF token that is not bound to this browser and Entry Challenge", async () => {
     let advanceCalls = 0;
     const contextPort: ContextPort = {
