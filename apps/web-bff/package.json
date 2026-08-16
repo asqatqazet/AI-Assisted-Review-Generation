@@ -5,9 +5,12 @@
   "type": "module",
   "dependencies": {
     "@hono/node-server": "^2.1.0",
-    "hono": "^4.13.1",
     "@review/contracts": "workspace:*",
     "@review/domain": "workspace:*",
-    "@review/observability": "workspace:*"
+    "@review/observability": "workspace:*",
+    "hono": "^4.13.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.18.2"
   }
 }

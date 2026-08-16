@@ -6,7 +6,9 @@
   },
   "include": [
     "apps/**/*.ts",
+    "apps/**/*.tsx",
     "packages/**/*.ts",
+    "packages/**/*.tsx",
     "evals/**/*.ts",
     "*.ts"
   ],
