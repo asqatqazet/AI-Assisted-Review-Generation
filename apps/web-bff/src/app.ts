@@ -126,7 +126,6 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   app.post("/api/v1/entry-challenges/:entryChallengeHandle/start", async (c) => {
     c.header("Cache-Control", "private, no-store");
     const browserCapability = getCookie(c, "__Host-review_browser");
-    const body = StartEntryRequestDtoSchema.safeParse(await c.req.json());
     const entryChallengeHandle = c.req.param("entryChallengeHandle");
     const origin = c.req.header("Origin");
 
@@ -134,7 +133,42 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       publicOrigin === undefined ||
       origin !== publicOrigin ||
       browserCapability === undefined ||
-      !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+      !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
+    ) {
+      return c.json(
+        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        404,
+      );
+    }
+
+    let rawBody: unknown;
+    try {
+      if (
+        c.req.header("Content-Type")?.startsWith(
+          "application/x-www-form-urlencoded",
+        ) === true
+      ) {
+        const fields = new URLSearchParams(await c.req.text());
+        const entries = Array.from(fields.entries());
+        const expectedNames = new Set(["rating", "action", "csrfToken"]);
+        rawBody =
+          entries.length === expectedNames.size &&
+          entries.every(([name]) => expectedNames.has(name))
+            ? {
+                rating: Number(fields.get("rating")),
+                action: fields.get("action"),
+                csrfToken: fields.get("csrfToken"),
+              }
+            : undefined;
+      } else {
+        rawBody = await c.req.json();
+      }
+    } catch {
+      rawBody = undefined;
+    }
+
+    const body = StartEntryRequestDtoSchema.safeParse(rawBody);
+    if (
       !body.success ||
       !(await csrfProtector.verify({
         entryChallengeHandle,
