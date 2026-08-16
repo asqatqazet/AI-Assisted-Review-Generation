@@ -85,3 +85,21 @@ export const AdvanceEntryInvocationResultDtoSchema = z.strictObject({
 export type ContextFunctionInvocationDto = z.infer<
   typeof ContextFunctionInvocationDtoSchema
 >;
+export type PrepareEntryInvocationDto = z.infer<
+  typeof PrepareEntryInvocationDtoSchema
+>;
+export type ReadEntryChallengeInvocationDto = z.infer<
+  typeof ReadEntryChallengeInvocationDtoSchema
+>;
+export type AdvanceEntryInvocationDto = z.infer<
+  typeof AdvanceEntryInvocationDtoSchema
+>;
+export type PrepareEntryInvocationResultDto = z.infer<
+  typeof PrepareEntryInvocationResultDtoSchema
+>;
+export type ReadEntryChallengeInvocationResultDto = z.infer<
+  typeof ReadEntryChallengeInvocationResultDtoSchema
+>;
+export type AdvanceEntryInvocationResultDto = z.infer<
+  typeof AdvanceEntryInvocationResultDtoSchema
+>;
