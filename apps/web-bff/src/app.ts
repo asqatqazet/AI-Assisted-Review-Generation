@@ -5,7 +5,6 @@ import {
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
-import { ConfigCache } from "./config-cache.js";
 import { processOutcome, type OutcomePayload, type StoredOutcome } from "./outcome.js";
 import type { ContextPort } from "./ports/context.port.js";
 import {
@@ -18,9 +17,6 @@ export interface WebBffOptions {
   readonly newBrowserCapability?: (() => string) | undefined;
   readonly csrfProtector?: CsrfProtector | undefined;
   readonly publicOrigin?: string | undefined;
-  readonly configCache?: ConfigCache | undefined;
-  readonly generationServiceBaseUrl?: string | undefined;
-  readonly fetchFn?: typeof fetch | undefined;
 }
 
 export function createWebBffApp(options: WebBffOptions = {}): Hono {
@@ -36,11 +32,6 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     options.publicOrigin === undefined
       ? undefined
       : new URL(options.publicOrigin).origin;
-  const configCache = options.configCache ?? new ConfigCache();
-  const generationServiceBaseUrl =
-    options.generationServiceBaseUrl ?? "http://localhost:3002";
-  const fetchFn = options.fetchFn ?? globalThis.fetch;
-
   const app = new Hono();
 
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
@@ -197,73 +188,6 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     }
 
     return c.redirect(`/review/${result.reviewSessionHandle}`, 303);
-  });
-
-  app.post("/api/generate", async (c) => {
-    const body = (await c.req.json()) as {
-      tenantId: string;
-      locationId: string;
-      action: string;
-      reviewFormatKey: string;
-      assertions: unknown[];
-      idempotencyKey?: string;
-    };
-
-    try {
-      const { snapshot } = await configCache.getSnapshot(
-        body.tenantId,
-        body.locationId,
-      );
-
-      const genPayload = {
-        idempotencyKey: body.idempotencyKey ?? `idem-${Date.now()}`,
-        reviewSessionId: `sess-${Date.now()}`,
-        action: body.action,
-        reviewFormatKey: body.reviewFormatKey,
-        snapshot,
-        assertions: body.assertions,
-      };
-
-      const response = await fetchFn(`${generationServiceBaseUrl}/generate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(genPayload),
-      });
-
-      if (!response.ok) {
-        return c.json({ error: "Generation failed" }, 502);
-      }
-
-      const result = await response.json();
-      return c.json(result, 200);
-    } catch {
-      // Fallback for standalone demo mode
-      const rawClaims =
-        (body.assertions as Array<{ text?: string; proposition?: string; semanticId?: string }>)?.map(
-          (a, i) => ({
-            id: `c${i + 1}`,
-            text: a.text ?? a.proposition ?? "Attentive service provided.",
-            semanticId: a.semanticId ?? `c${i + 1}`,
-          }),
-        ) ?? [{ id: "c1", text: "Attentive service provided.", semanticId: "s1" }];
-
-      const tenantName =
-        body.tenantId === "lumina-optics" ? "Lumina Optics" : "Apex Dental";
-      const draft = `${rawClaims.map((c) => c.text).join(" ")}\n\nAI-assisted review generated for ${tenantName}.`;
-
-      return c.json(
-        {
-          generationId: `gen-${Date.now()}`,
-          status: "completed",
-          draft,
-          claims: rawClaims,
-          groundingVerdict: { verdict: "pass", draftBody: draft },
-          costMicros: 3500,
-          cached: false,
-        },
-        200,
-      );
-    }
   });
 
   const outcomes: StoredOutcome[] = [];

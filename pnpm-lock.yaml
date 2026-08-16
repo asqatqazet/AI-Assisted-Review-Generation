@@ -89,9 +89,6 @@ importers:
       '@review/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@review/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
       '@review/observability':
         specifier: workspace:*
         version: link:../../packages/observability
