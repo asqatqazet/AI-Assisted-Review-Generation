@@ -35,5 +35,20 @@ describe("TS-06 Role Grants Test", () => {
     expect(sql).not.toMatch(
       /GRANT\s+SELECT\s+ON[^;]*(?:platform_settings|providers|provider_models|price_rates|review_format_versions|effective_configuration_snapshots)[^;]*TO generation_svc;/,
     );
+
+    // 7. Context is the only admission/reservation writer; Generation receives
+    // the resulting permit and snapshot through its function parameters.
+    expect(sql).toMatch(
+      /GRANT SELECT, INSERT, UPDATE ON[^;]*budget_reservations[^;]*generation_batches[^;]*generation_batch_assertions[^;]*TO context_svc;/,
+    );
+    expect(sql).not.toMatch(
+      /GRANT[^;]*ON[^;]*(?:budget_reservations|generation_batches|generation_batch_assertions)[^;]*TO generation_svc;/,
+    );
+
+    // 8. Deployment supplies database credentials out of band; migrations do
+    // not commit passwords or password-shaped placeholders.
+    expect(sql).not.toMatch(/CREATE ROLE[^;]*PASSWORD/i);
+    expect(sql).not.toContain("context_svc_secret");
+    expect(sql).not.toContain("generation_svc_secret");
   });
 });
