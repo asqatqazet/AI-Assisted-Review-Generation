@@ -1,8 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { collectAwsPreflightEvidence } from "./preflight-cli.js";
+import {
+  assertTemporaryCredentialSource,
+  collectAwsPreflightEvidence,
+} from "./preflight-cli.js";
 
 describe("US-06.1 AWS CLI preflight adapter", () => {
+  it("rejects static access keys before making any AWS request", () => {
+    expect(() =>
+      assertTemporaryCredentialSource({
+        AWS_ACCESS_KEY_ID: "static-access-key",
+        AWS_SECRET_ACCESS_KEY: "static-secret",
+      }),
+    ).toThrowError("STATIC_AWS_CREDENTIALS_FORBIDDEN");
+
+    expect(() =>
+      assertTemporaryCredentialSource({
+        AWS_ACCESS_KEY_ID: "temporary-access-key",
+        AWS_SECRET_ACCESS_KEY: "temporary-secret",
+        AWS_SESSION_TOKEN: "temporary-session-token",
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertTemporaryCredentialSource({ AWS_PROFILE: "student-sso" }),
+    ).not.toThrow();
+  });
+
   it("collects only identity, Free Plan and regional Lambda limit evidence", async () => {
     const calls: string[][] = [];
     const run = async (args: readonly string[]): Promise<string> => {
