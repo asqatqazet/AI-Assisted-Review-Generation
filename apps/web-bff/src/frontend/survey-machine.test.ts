@@ -38,4 +38,18 @@ describe("Survey transition table", () => {
       selectedAction: null,
     });
   });
+
+  it("keeps the selected drafting path without losing the rating", () => {
+    const prepared = transition(createSurveyState("challenge-demo"), {
+      type: "ENTRY_PREPARED",
+      context,
+    });
+    const rated = transition(prepared, { type: "RATING_SELECTED", rating: 5 });
+
+    expect(transition(rated, { type: "ACTION_SELECTED", action: "paraphrase" })).toMatchObject({
+      value: "entry",
+      rating: 5,
+      selectedAction: "paraphrase",
+    });
+  });
 });
