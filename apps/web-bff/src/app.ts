@@ -1,3 +1,4 @@
+import { EntryChallengeProjectionDtoSchema } from "@review/contracts/context";
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
@@ -8,6 +9,7 @@ import type { ContextPort } from "./ports/context.port.js";
 export interface WebBffOptions {
   readonly contextPort?: ContextPort | undefined;
   readonly newBrowserCapability?: (() => string) | undefined;
+  readonly newCsrfToken?: (() => string) | undefined;
   readonly configCache?: ConfigCache | undefined;
   readonly generationServiceBaseUrl?: string | undefined;
   readonly fetchFn?: typeof fetch | undefined;
@@ -16,9 +18,12 @@ export interface WebBffOptions {
 export function createWebBffApp(options: WebBffOptions = {}): Hono {
   const contextPort: ContextPort = options.contextPort ?? {
     prepareEntry: async () => ({ status: "unavailable" }),
+    readEntryChallenge: async () => ({ status: "unavailable" }),
   };
   const newBrowserCapability =
     options.newBrowserCapability ?? (() => globalThis.crypto.randomUUID());
+  const newCsrfToken =
+    options.newCsrfToken ?? (() => globalThis.crypto.randomUUID());
   const configCache = options.configCache ?? new ConfigCache();
   const generationServiceBaseUrl =
     options.generationServiceBaseUrl ?? "http://localhost:3002";
@@ -63,6 +68,44 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       );
     }
     return c.redirect(`/start/${preparation.entryChallengeHandle}`, 303);
+  });
+
+  app.get("/api/v1/entry-challenges/:entryChallengeHandle", async (c) => {
+    c.header("Cache-Control", "private, no-store");
+    const browserCapability = getCookie(c, "__Host-review_browser");
+
+    if (
+      browserCapability === undefined ||
+      !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
+    ) {
+      return c.json(
+        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        404,
+      );
+    }
+
+    const entryChallengeHandle = c.req.param("entryChallengeHandle");
+    const entry = await contextPort.readEntryChallenge({
+      entryChallengeHandle,
+      browserCapability,
+    });
+
+    if (entry.status !== "ready") {
+      return c.json(
+        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        404,
+      );
+    }
+
+    return c.json(
+      EntryChallengeProjectionDtoSchema.parse({
+        status: "ready",
+        entryChallengeHandle,
+        csrfToken: newCsrfToken(),
+        context: entry.context,
+      }),
+      200,
+    );
   });
 
   app.post("/api/generate", async (c) => {

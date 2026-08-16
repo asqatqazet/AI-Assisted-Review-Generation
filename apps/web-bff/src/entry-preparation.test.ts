@@ -10,6 +10,7 @@ describe("reviewer entry preparation", () => {
         status: "prepared",
         entryChallengeHandle: "entry-challenge-demo",
       }),
+      readEntryChallenge: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
@@ -44,6 +45,7 @@ describe("reviewer entry preparation", () => {
         input.browserCapability === "existing-browser-capability-123"
           ? { status: "prepared", entryChallengeHandle: "second-challenge" }
           : { status: "unavailable" },
+      readEntryChallenge: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
