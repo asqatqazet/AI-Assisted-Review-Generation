@@ -89,7 +89,7 @@ export function createHmacCsrfProtector(
       }
 
       const expiry = Number.parseInt(expiresAt, 36);
-      if (!Number.isSafeInteger(expiry) || expiry < now()) {
+      if (!Number.isSafeInteger(expiry) || expiry <= now()) {
         return false;
       }
 
