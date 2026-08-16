@@ -3,6 +3,20 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("student AWS topology invariants", () => {
+  it("targets the accepted Frankfurt region and repository Node runtime", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+    const variables = fs.readFileSync(
+      path.join(__dirname, "variables.tf"),
+      "utf8",
+    );
+
+    expect(variables).toMatch(
+      /variable\s+"aws_region"\s*\{[\s\S]*?default\s*=\s*"eu-central-1"/,
+    );
+    expect(terraform).not.toContain('runtime       = "nodejs20.x"');
+    expect(terraform.match(/runtime\s*=\s*"nodejs24\.x"/g)).toHaveLength(2);
+  });
+
   it("never reports deployment or smoke evidence from placeholder commands", () => {
     const deployWorkflowPath = path.join(
       __dirname,
