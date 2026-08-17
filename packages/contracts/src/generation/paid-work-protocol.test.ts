@@ -10,20 +10,26 @@ import {
 
 const snapshot = {
   snapshotId: "snap-01",
-  schemaVersion: 1,
+  schemaVersion: 2,
   tenantId: "tenant-a",
   locationId: "location-a",
-  locale: "en-GB",
   tenantName: "Brightsmile Dental",
   locationName: "Downtown Clinic",
   provenance: {
     locale: { scope: "tenant", sourceId: "tenant-a", revision: "tenant-r7" },
   },
-  policy: {
+  settings: {
+    locale: "en-GB",
+    toneGuidelines: "Warm and specific.",
+    entryMode: "invite",
     requireDisclosure: true,
     requireVerifiedExperience: true,
     maxReviewFormatsPerRequest: 1,
     bannedTerms: ["guaranteed"],
+    enabledReviewFormatVersionIds: [],
+    enabledCommands: ["generate"],
+    monthlyBudgetMicros: 1_000_000,
+    alertThresholdPct: 80,
   },
   factOptions: [],
   reviewFormats: [],

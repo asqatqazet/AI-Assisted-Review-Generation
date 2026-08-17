@@ -14,23 +14,51 @@ export const ConfigurationProvenanceDtoSchema = z.strictObject({
   revision: IdentifierDtoSchema,
 });
 
-export const EffectivePolicyDtoSchema = z.strictObject({
+export const EffectiveSettingsDtoSchema = z.strictObject({
+  locale: LocaleDtoSchema,
+  toneGuidelines: z.string().min(1),
+  entryMode: z.enum(["invite", "open-qr", "both"]),
   requireDisclosure: z.boolean(),
   requireVerifiedExperience: z.boolean(),
   maxReviewFormatsPerRequest: z.number().int().positive(),
   bannedTerms: z.array(z.string().min(1)),
+  enabledReviewFormatVersionIds: z.array(IdentifierDtoSchema),
+  enabledCommands: z.array(
+    z.enum([
+      "generate",
+      "paraphrase",
+      "reformat",
+      "condense",
+      "expand",
+      "revise-wording",
+    ]),
+  ),
+  monthlyBudgetMicros: z.number().int().nonnegative(),
+  alertThresholdPct: z.number().min(0).max(100),
 });
+
+export const FactOptionOwnerDtoSchema = z.discriminatedUnion("scope", [
+  z.strictObject({
+    scope: z.literal("tenant"),
+    tenantId: IdentifierDtoSchema,
+  }),
+  z.strictObject({
+    scope: z.literal("location"),
+    tenantId: IdentifierDtoSchema,
+    locationId: IdentifierDtoSchema,
+  }),
+]);
 
 export const FactOptionVersionDtoSchema = z.strictObject({
   id: IdentifierDtoSchema,
   version: IdentifierDtoSchema,
+  owner: FactOptionOwnerDtoSchema,
   proposition: z.string().min(1),
   categoryId: IdentifierDtoSchema,
   polarity: z.enum(["positive", "neutral", "negative"]),
   locale: LocaleDtoSchema,
   active: z.boolean(),
   sortOrder: z.number().int(),
-  locationId: IdentifierDtoSchema.nullable(),
 });
 
 export const ReviewFormatConstraintsDtoSchema = z
@@ -105,14 +133,13 @@ export const ProviderRoutingDtoSchema = z.strictObject({
 
 export const EffectiveConfigurationSnapshotDtoSchema = z.strictObject({
   snapshotId: IdentifierDtoSchema,
-  schemaVersion: z.number().int().positive(),
+  schemaVersion: z.literal(2),
   tenantId: IdentifierDtoSchema,
   locationId: IdentifierDtoSchema,
-  locale: LocaleDtoSchema,
   tenantName: z.string().min(1),
   locationName: z.string().min(1),
+  settings: EffectiveSettingsDtoSchema,
   provenance: z.record(z.string().min(1), ConfigurationProvenanceDtoSchema),
-  policy: EffectivePolicyDtoSchema,
   factOptions: z.array(FactOptionVersionDtoSchema),
   reviewFormats: z.array(ReviewFormatVersionDtoSchema),
   promptVersions: z.array(PromptVersionDtoSchema),
