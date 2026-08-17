@@ -23,6 +23,12 @@ const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
 const defaultGenerationClient = createHttpGenerationClient();
 const defaultReviewSessionClient = createHttpReviewSessionClient();
+const defaultCopyText = async (text: string): Promise<void> => {
+  if (globalThis.navigator.clipboard === undefined) {
+    throw new Error("CLIPBOARD_UNAVAILABLE");
+  }
+  await globalThis.navigator.clipboard.writeText(text);
+};
 const ratings = [
   { value: 1, label: "Poor" },
   { value: 2, label: "Not good" },
@@ -162,15 +168,20 @@ function ReviewRoute({
   reviewSessionClient,
   generationClient,
   newIdempotencyKey,
+  copyText,
 }: {
   readonly reviewSessionClient: ReviewSessionClient;
   readonly generationClient: GenerationClient;
   readonly newIdempotencyKey: () => string;
+  readonly copyText: (text: string) => Promise<void>;
 }): React.JSX.Element {
   const { reviewSessionHandle = "" } = useParams();
   const [state, setState] = useState(() =>
     createReviewSessionState(reviewSessionHandle),
   );
+  const [copyStatus, setCopyStatus] = useState<
+    "idle" | "copied" | "manual"
+  >("idle");
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -212,10 +223,29 @@ function ReviewRoute({
                 draft: event.draft,
               }),
             );
+            return;
+          }
+          if (event.type === "terminal" && event.status === "rejected") {
+            setState((current) =>
+              transitionReviewSession(current, {
+                type: "GENERATION_FAILED",
+                code: event.code,
+                retryable: event.retryable,
+              }),
+            );
+            return;
           }
         }
       } catch {
-        // A failure projection and retry transition belong to the next slice.
+        if (!abortController.signal.aborted) {
+          setState((current) =>
+            transitionReviewSession(current, {
+              type: "GENERATION_FAILED",
+              code: "GENERATION_FAILED",
+              retryable: true,
+            }),
+          );
+        }
       }
     })();
 
@@ -334,7 +364,54 @@ function ReviewRoute({
       <main>
         <p>{state.projection.locationDisplayName}</p>
         <h1>Your review</h1>
-        <p>{state.draft.text}</p>
+        <label>
+          Review text
+          <textarea aria-label="Review text" readOnly value={state.draft.text} />
+        </label>
+        <button
+          type="button"
+          onClick={() => {
+            void copyText(state.draft.text)
+              .then(() => setCopyStatus("copied"))
+              .catch(() => setCopyStatus("manual"));
+          }}
+        >
+          Copy review
+        </button>
+        <p role="status" aria-live="polite">
+          {copyStatus === "copied"
+            ? "Copied"
+            : copyStatus === "manual"
+              ? "Select the review text and copy it manually."
+              : "Ready to copy."}
+        </p>
+      </main>
+    );
+  }
+
+  if (state.value === "generation-failed") {
+    return (
+      <main>
+        <p>{state.projection.locationDisplayName}</p>
+        <h1>We couldn't create a draft</h1>
+        <p role="alert">
+          No review text was saved. You can try again or write it yourself.
+        </p>
+        {state.retryable ? (
+          <button
+            type="button"
+            onClick={() =>
+              setState((current) =>
+                transitionReviewSession(current, {
+                  type: "RETRY_REQUESTED",
+                  idempotencyKey: newIdempotencyKey(),
+                }),
+              )
+            }
+          >
+            Try again
+          </button>
+        ) : null}
       </main>
     );
   }
@@ -353,6 +430,7 @@ export interface ReviewerApplicationProps {
   readonly reviewSessionClient?: ReviewSessionClient | undefined;
   readonly generationClient?: GenerationClient | undefined;
   readonly newIdempotencyKey?: (() => string) | undefined;
+  readonly copyText?: ((text: string) => Promise<void>) | undefined;
 }
 
 export function ReviewerApplication({
@@ -360,6 +438,7 @@ export function ReviewerApplication({
   reviewSessionClient = defaultReviewSessionClient,
   generationClient = defaultGenerationClient,
   newIdempotencyKey = () => globalThis.crypto.randomUUID(),
+  copyText = defaultCopyText,
 }: ReviewerApplicationProps = {}): React.JSX.Element {
   return (
     <Routes>
@@ -374,6 +453,7 @@ export function ReviewerApplication({
             reviewSessionClient={reviewSessionClient}
             generationClient={generationClient}
             newIdempotencyKey={newIdempotencyKey}
+            copyText={copyText}
           />
         }
       />

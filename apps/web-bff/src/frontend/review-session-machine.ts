@@ -1,4 +1,5 @@
 import type { ReviewSessionProjectionDto } from "@review/contracts/context";
+import type { ReviewerGenerationRejectionCodeDto } from "@review/contracts/generation";
 
 export interface ReviewerDraft {
   readonly id: string;
@@ -40,6 +41,15 @@ export type ReviewSessionState =
       readonly selectedFactOptionIds: readonly string[];
       readonly selectedReviewFormatId: string;
       readonly draft: ReviewerDraft;
+    }
+  | {
+      readonly value: "generation-failed";
+      readonly reviewSessionHandle: string;
+      readonly projection: ReviewSessionProjectionDto;
+      readonly selectedFactOptionIds: readonly string[];
+      readonly selectedReviewFormatId: string;
+      readonly code: ReviewerGenerationRejectionCodeDto;
+      readonly retryable: boolean;
     };
 
 export type ReviewSessionEvent =
@@ -63,6 +73,15 @@ export type ReviewSessionEvent =
   | {
       readonly type: "GENERATION_SUCCEEDED";
       readonly draft: ReviewerDraft;
+    }
+  | {
+      readonly type: "GENERATION_FAILED";
+      readonly code: ReviewerGenerationRejectionCodeDto;
+      readonly retryable: boolean;
+    }
+  | {
+      readonly type: "RETRY_REQUESTED";
+      readonly idempotencyKey: string;
     };
 
 export function createReviewSessionState(
@@ -160,6 +179,33 @@ export function transitionReviewSession(
       selectedFactOptionIds: state.selectedFactOptionIds,
       selectedReviewFormatId: state.selectedReviewFormatId,
       draft: event.draft,
+    };
+  }
+
+  if (state.value === "generating" && event.type === "GENERATION_FAILED") {
+    return {
+      value: "generation-failed",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      selectedReviewFormatId: state.selectedReviewFormatId,
+      code: event.code,
+      retryable: event.retryable,
+    };
+  }
+
+  if (
+    state.value === "generation-failed" &&
+    state.retryable &&
+    event.type === "RETRY_REQUESTED"
+  ) {
+    return {
+      value: "generating",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      selectedReviewFormatId: state.selectedReviewFormatId,
+      idempotencyKey: event.idempotencyKey,
     };
   }
 
