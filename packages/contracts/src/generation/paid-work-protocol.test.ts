@@ -4,6 +4,7 @@ import * as generationContracts from "./index.js";
 import {
   ExecuteGenerationInvocationDtoSchema,
   GenerationFunctionInvocationDtoSchema,
+  GenerationWorkloadDtoSchema,
   PrepareGenerationInvocationDtoSchema,
 } from "./generation-request.js";
 
@@ -75,6 +76,33 @@ const workload = {
 };
 
 describe("ADR-005 paid-work Generation contract", () => {
+  it("carries normalized Assertions needed to prepare and ground the provider request", () => {
+    const groundedWorkload = {
+      ...workload,
+      assertions: [
+        {
+          id: "assertion-a",
+          version: "assertion-a@1",
+          reviewSessionId: "session-a",
+          semanticId: "service-explained-clearly",
+          semanticKind: "experience-fact",
+          polarity: "positive",
+          source: {
+            kind: "reviewer-text",
+            sourceRevisionId: "source-revision-a",
+            start: 0,
+            end: 30,
+            quotedText: "The treatment was explained well.",
+          },
+        },
+      ],
+    };
+
+    expect(GenerationWorkloadDtoSchema.parse(groundedWorkload).assertions).toEqual(
+      groundedWorkload.assertions,
+    );
+  });
+
   it("prepares one fully bound child Generation without calling a provider", () => {
     expect(
       PrepareGenerationInvocationDtoSchema.parse({
