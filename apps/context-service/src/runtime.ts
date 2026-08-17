@@ -10,6 +10,7 @@ import { createContextEd25519GenerationAuthority } from "./ed25519-generation-au
 import { createEntryService } from "./entry-service.js";
 import { createReviewerGenerationService } from "./reviewer-generation-service.js";
 import { createReviewSessionService } from "./review-session-service.js";
+import { createReconciliationService } from "./reconciliation-service.js";
 
 export function createContextRuntime({
   databaseUrl,
@@ -33,13 +34,18 @@ export function createContextRuntime({
   const reviewSession = createReviewSessionService({
     reader: reviewSessionReader,
   });
+  const authority = createContextEd25519GenerationAuthority({
+    contextPrivateKeyPem,
+    generationPublicKeyPem,
+  });
   const reviewerGeneration = createReviewerGenerationService({
     store: generationStore,
-    authority: createContextEd25519GenerationAuthority({
-      contextPrivateKeyPem,
-      generationPublicKeyPem,
-    }),
+    authority,
     hashCapability,
+  });
+  const reconciliation = createReconciliationService({
+    store: generationStore,
+    authority,
   });
 
   return createContextFunctionHandler({
@@ -52,6 +58,10 @@ export function createContextRuntime({
         reviewerGeneration.prepareReviewerGeneration,
       activateGeneration: reviewerGeneration.activateGeneration,
       settleGeneration: reviewerGeneration.settleGeneration,
+      listReconciliationCandidates:
+        reconciliation.listReconciliationCandidates,
+      releaseReconciledGeneration:
+        reconciliation.releaseReconciledGeneration,
     },
   });
 }

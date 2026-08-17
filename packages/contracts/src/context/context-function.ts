@@ -81,6 +81,44 @@ export const SettleGenerationInvocationDtoSchema = z.strictObject({
   }),
 });
 
+const ReconciliationCandidateDtoSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("never-leased"),
+    permitJti: IdentifierDtoSchema,
+    workload: GenerationWorkloadDtoSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("expired-lease"),
+    permitJti: IdentifierDtoSchema,
+    leaseId: IdentifierDtoSchema,
+    workload: GenerationWorkloadDtoSchema,
+  }),
+]);
+
+export const ListReconciliationCandidatesInvocationDtoSchema = z.strictObject({
+  operation: z.literal("list-reconciliation-candidates"),
+  input: z.strictObject({ limit: z.number().int().min(1).max(100) }),
+});
+
+export const ReleaseReconciledGenerationInvocationDtoSchema = z.strictObject({
+  operation: z.literal("release-reconciled-generation"),
+  input: z.discriminatedUnion("outcome", [
+    z.strictObject({
+      outcome: z.literal("no-lease"),
+      permitJti: IdentifierDtoSchema,
+      signedStatusReceipt: z.string().min(1),
+      workload: GenerationWorkloadDtoSchema,
+    }),
+    z.strictObject({
+      outcome: z.literal("cancelled"),
+      permitJti: IdentifierDtoSchema,
+      leaseId: IdentifierDtoSchema,
+      signedStatusReceipt: z.string().min(1),
+      workload: GenerationWorkloadDtoSchema,
+    }),
+  ]),
+});
+
 export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
   "operation",
   [
@@ -91,6 +129,8 @@ export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
     PrepareReviewerGenerationInvocationDtoSchema,
     ActivateGenerationInvocationDtoSchema,
     SettleGenerationInvocationDtoSchema,
+    ListReconciliationCandidatesInvocationDtoSchema,
+    ReleaseReconciledGenerationInvocationDtoSchema,
   ],
 );
 
@@ -171,6 +211,23 @@ export const SettleGenerationInvocationResultDtoSchema = z.strictObject({
   ]),
 });
 
+export const ListReconciliationCandidatesInvocationResultDtoSchema =
+  z.strictObject({
+    operation: z.literal("list-reconciliation-candidates"),
+    result: z.strictObject({
+      candidates: z.array(ReconciliationCandidateDtoSchema).max(100),
+    }),
+  });
+
+export const ReleaseReconciledGenerationInvocationResultDtoSchema =
+  z.strictObject({
+    operation: z.literal("release-reconciled-generation"),
+    result: z.discriminatedUnion("status", [
+      z.strictObject({ status: z.literal("released") }),
+      z.strictObject({ status: z.literal("rejected") }),
+    ]),
+  });
+
 export type ContextFunctionInvocationDto = z.infer<
   typeof ContextFunctionInvocationDtoSchema
 >;
@@ -195,6 +252,12 @@ export type ActivateGenerationInvocationDto = z.infer<
 export type SettleGenerationInvocationDto = z.infer<
   typeof SettleGenerationInvocationDtoSchema
 >;
+export type ListReconciliationCandidatesInvocationDto = z.infer<
+  typeof ListReconciliationCandidatesInvocationDtoSchema
+>;
+export type ReleaseReconciledGenerationInvocationDto = z.infer<
+  typeof ReleaseReconciledGenerationInvocationDtoSchema
+>;
 export type PrepareEntryInvocationResultDto = z.infer<
   typeof PrepareEntryInvocationResultDtoSchema
 >;
@@ -215,4 +278,10 @@ export type ActivateGenerationInvocationResultDto = z.infer<
 >;
 export type SettleGenerationInvocationResultDto = z.infer<
   typeof SettleGenerationInvocationResultDtoSchema
+>;
+export type ListReconciliationCandidatesInvocationResultDto = z.infer<
+  typeof ListReconciliationCandidatesInvocationResultDtoSchema
+>;
+export type ReleaseReconciledGenerationInvocationResultDto = z.infer<
+  typeof ReleaseReconciledGenerationInvocationResultDtoSchema
 >;

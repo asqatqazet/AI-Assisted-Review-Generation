@@ -619,7 +619,8 @@ describe("US-03.2 paid-work Generation handler", () => {
     });
 
     await expect(handler(event)).resolves.toEqual({
-      ...unsigned,
+      operation: unsigned.operation,
+      state: unsigned.state,
       signedStatusReceipt: "signed-generation-status-receipt",
     });
   });

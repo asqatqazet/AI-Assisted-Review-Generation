@@ -102,10 +102,13 @@ export interface GenerationReceiptSigner {
             | "running"
             | "cancelled"
             | "terminal";
+          readonly scope: GenerationExecutionScope;
         }
       | {
           readonly operation: "cancel-expired-lease";
           readonly state: "cancelled" | "running" | "terminal" | "no-lease";
+          readonly leaseId: string;
+          readonly scope: GenerationExecutionScope;
         },
   ): Promise<string>;
   signTerminal(claims: {
@@ -298,10 +301,15 @@ export function createPaidWorkGenerationHandler({
 
     if (invocation.operation === "status") {
       const journalStatus = await leaseJournal.status(invocation.scope);
-      const unsigned = { operation: invocation.operation, state: journalStatus.state };
+      const unsigned = {
+        operation: invocation.operation,
+        state: journalStatus.state,
+        scope: invocation.scope,
+      };
       const signedStatusReceipt = await receiptSigner.signStatus(unsigned);
       return GenerationStatusResultDtoSchema.parse({
-        ...unsigned,
+        operation: unsigned.operation,
+        state: unsigned.state,
         signedStatusReceipt,
       });
     }
@@ -311,10 +319,16 @@ export function createPaidWorkGenerationHandler({
         leaseId: invocation.leaseId,
         scope: invocation.scope,
       });
-      const unsigned = { operation: invocation.operation, state: cancellation.state };
+      const unsigned = {
+        operation: invocation.operation,
+        state: cancellation.state,
+        leaseId: invocation.leaseId,
+        scope: invocation.scope,
+      };
       const signedStatusReceipt = await receiptSigner.signStatus(unsigned);
       return CancelExpiredLeaseResultDtoSchema.parse({
-        ...unsigned,
+        operation: unsigned.operation,
+        state: unsigned.state,
         signedStatusReceipt,
       });
     }

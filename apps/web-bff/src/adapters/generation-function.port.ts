@@ -1,6 +1,10 @@
 import {
+  CancelExpiredLeaseInvocationDtoSchema,
+  CancelExpiredLeaseResultDtoSchema,
   ExecuteGenerationInvocationDtoSchema,
   GenerationFunctionInvocationDtoSchema,
+  GenerationStatusInvocationDtoSchema,
+  GenerationStatusResultDtoSchema,
   PrepareGenerationInvocationDtoSchema,
   PrepareGenerationResultDtoSchema,
   PrivateGenerationTerminalEventDtoSchema,
@@ -8,6 +12,7 @@ import {
 } from "@review/contracts/generation";
 
 import type { ReviewerGenerationExecutionPort } from "../ports/reviewer-generation.port.js";
+import type { ReconciliationGenerationPort } from "../reconciliation.js";
 
 export interface GenerationFunctionInvoker {
   invoke(
@@ -88,6 +93,37 @@ export function createInvokedReviewerGenerationExecutionPort(
           elapsedSeconds: Math.floor((Date.now() - startedAt) / 1_000),
         };
       }
+    },
+  };
+}
+
+export function createInvokedReconciliationGenerationPort(
+  invoker: GenerationFunctionInvoker,
+): ReconciliationGenerationPort {
+  return {
+    async status(input) {
+      const request = GenerationStatusInvocationDtoSchema.parse({
+        operation: "status",
+        scope: input.scope,
+      });
+      return GenerationStatusResultDtoSchema.parse(
+        await invoker.invoke(
+          GenerationFunctionInvocationDtoSchema.parse(request),
+        ),
+      );
+    },
+
+    async cancelExpired(input) {
+      const request = CancelExpiredLeaseInvocationDtoSchema.parse({
+        operation: "cancel-expired-lease",
+        leaseId: input.leaseId,
+        scope: input.scope,
+      });
+      return CancelExpiredLeaseResultDtoSchema.parse(
+        await invoker.invoke(
+          GenerationFunctionInvocationDtoSchema.parse(request),
+        ),
+      );
     },
   };
 }

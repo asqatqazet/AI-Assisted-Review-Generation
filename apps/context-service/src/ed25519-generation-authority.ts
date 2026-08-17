@@ -6,11 +6,15 @@ import {
   type KeyObject,
 } from "node:crypto";
 import {
+  GenerationExecutionScopeDtoSchema,
   GenerationWorkloadBindingsDtoSchema,
   type GenerationWorkloadDto,
 } from "@review/contracts/generation";
 
-import type { ContextGenerationAuthority } from "./reviewer-generation-service.js";
+import type {
+  ContextGenerationAuthority,
+  ContextGenerationStatusAuthority,
+} from "./reviewer-generation-service.js";
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
@@ -90,7 +94,7 @@ export function createContextEd25519GenerationAuthority({
   readonly contextPrivateKeyPem: string;
   readonly generationPublicKeyPem: string;
   readonly now?: () => Date;
-}): ContextGenerationAuthority {
+}): ContextGenerationAuthority & ContextGenerationStatusAuthority {
   const contextPrivateKey = createPrivateKey(contextPrivateKeyPem);
   const generationPublicKey = createPublicKey(generationPublicKeyPem);
 
@@ -191,6 +195,53 @@ export function createContextEd25519GenerationAuthority({
         outcome: payload["outcome"],
         actualCostMicros: payload["actualCostMicros"],
       };
+    },
+
+    async verifyStatus(receipt, expected) {
+      const payload = verifyToken(receipt, generationPublicKey);
+      const expectedKeys =
+        expected.operation === "status"
+          ? ["kind", "issuer", "audience", "operation", "state", "scope"]
+          : [
+              "kind",
+              "issuer",
+              "audience",
+              "operation",
+              "state",
+              "leaseId",
+              "scope",
+            ];
+      exactKeys(payload, expectedKeys);
+      if (
+        payload["kind"] !== "generation-status" ||
+        payload["issuer"] !== "generation-service" ||
+        payload["audience"] !== "context-service" ||
+        payload["operation"] !== expected.operation ||
+        payload["state"] !== expected.outcome
+      ) {
+        throw new Error("GENERATION_RECEIPT_INVALID");
+      }
+      const scope = GenerationExecutionScopeDtoSchema.parse(payload["scope"]);
+      const bindings = expected.workload.bindings;
+      if (
+        JSON.stringify(scope) !==
+        JSON.stringify({
+          tenantId: bindings.tenantId,
+          locationId: bindings.locationId,
+          reviewSessionId: bindings.reviewSessionId,
+          generationBatchId: bindings.generationBatchId,
+          generationId: bindings.generationId,
+          permitJti: expected.permitJti,
+        })
+      ) {
+        throw new Error("GENERATION_RECEIPT_INVALID");
+      }
+      if (
+        expected.operation === "cancel-expired-lease" &&
+        payload["leaseId"] !== expected.leaseId
+      ) {
+        throw new Error("GENERATION_RECEIPT_INVALID");
+      }
     },
   };
 }

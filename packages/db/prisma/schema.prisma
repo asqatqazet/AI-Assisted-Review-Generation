@@ -828,10 +828,23 @@ model BudgetReservation {
   reviewSession    ReviewSession                  @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   snapshot         EffectiveConfigurationSnapshot @relation(fields: [snapshotId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   generationBatch  GenerationBatch?
+  reconciliationQueueItem ReconciliationQueueItem?
 
   @@unique([id, tenantId, locationId, reviewSessionId])
   @@index([tenantId, locationId])
   @@map("budget_reservations")
+}
+
+model ReconciliationQueueItem {
+  reservationId   String            @id @map("reservation_id") @db.Uuid
+  tenantId        String            @map("tenant_id") @db.Uuid
+  executionLeaseId String?           @map("execution_lease_id") @db.Uuid
+  dueAt           DateTime          @map("due_at") @db.Timestamptz(6)
+  createdAt       DateTime          @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  reservation     BudgetReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([dueAt, reservationId], map: "reconciliation_queue_items_due_idx")
+  @@map("reconciliation_queue_items")
 }
 
 model GenerationBatch {

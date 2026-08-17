@@ -4,6 +4,8 @@ import {
   AdvanceEntryInvocationDtoSchema,
   AdvanceEntryInvocationResultDtoSchema,
   type ContextFunctionInvocationDto,
+  ListReconciliationCandidatesInvocationDtoSchema,
+  ListReconciliationCandidatesInvocationResultDtoSchema,
   PrepareEntryInvocationDtoSchema,
   PrepareEntryInvocationResultDtoSchema,
   PrepareReviewerGenerationInvocationDtoSchema,
@@ -12,12 +14,15 @@ import {
   ReadEntryChallengeInvocationResultDtoSchema,
   ReadReviewSessionInvocationDtoSchema,
   ReadReviewSessionInvocationResultDtoSchema,
+  ReleaseReconciledGenerationInvocationDtoSchema,
+  ReleaseReconciledGenerationInvocationResultDtoSchema,
   SettleGenerationInvocationDtoSchema,
   SettleGenerationInvocationResultDtoSchema,
 } from "@review/contracts/context";
 
 import type { ContextPort } from "../ports/context.port.js";
 import type { ReviewerGenerationContextPort } from "../ports/reviewer-generation.port.js";
+import type { ReconciliationContextPort } from "../reconciliation.js";
 
 export interface ContextFunctionInvoker {
   invoke(request: ContextFunctionInvocationDto): Promise<unknown>;
@@ -57,6 +62,36 @@ export function createInvokedReviewerGenerationContextPort(
       const response = SettleGenerationInvocationResultDtoSchema.parse(
         await invoker.invoke(request),
       );
+      return response.result;
+    },
+  };
+}
+
+export function createInvokedReconciliationContextPort(
+  invoker: ContextFunctionInvoker,
+): ReconciliationContextPort {
+  return {
+    async listCandidates(input) {
+      const request = ListReconciliationCandidatesInvocationDtoSchema.parse({
+        operation: "list-reconciliation-candidates",
+        input,
+      });
+      const response =
+        ListReconciliationCandidatesInvocationResultDtoSchema.parse(
+          await invoker.invoke(request),
+        );
+      return response.result.candidates;
+    },
+
+    async release(input) {
+      const request = ReleaseReconciledGenerationInvocationDtoSchema.parse({
+        operation: "release-reconciled-generation",
+        input,
+      });
+      const response =
+        ReleaseReconciledGenerationInvocationResultDtoSchema.parse(
+          await invoker.invoke(request),
+        );
       return response.result;
     },
   };

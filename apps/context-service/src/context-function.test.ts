@@ -24,6 +24,8 @@ describe("private Context Function", () => {
         }),
         activateGeneration: async () => ({ status: "rejected" }),
         settleGeneration: async () => ({ status: "rejected" }),
+        listReconciliationCandidates: async () => ({ candidates: [] }),
+        releaseReconciledGeneration: async () => ({ status: "rejected" }),
       },
     });
 

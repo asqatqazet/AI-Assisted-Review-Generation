@@ -99,6 +99,44 @@ export interface PostgresReviewerGenerationAdmissionStore {
     readonly leaseId: string;
     readonly actualCostMicros: number;
   }): Promise<{ readonly status: "settled" } | { readonly status: "rejected" }>;
+  listReconciliationCandidates(input: { readonly limit: number }): Promise<
+    readonly (
+      | {
+          readonly kind: "never-leased";
+          readonly permitJti: string;
+          readonly workload: Readonly<Record<string, unknown>>;
+        }
+      | {
+          readonly kind: "expired-lease";
+          readonly permitJti: string;
+          readonly leaseId: string;
+          readonly workload: Readonly<Record<string, unknown>>;
+        }
+    )[]
+  >;
+  releaseReconciled(input:
+    | {
+        readonly outcome: "no-lease";
+        readonly tenantId: string;
+        readonly locationId: string;
+        readonly reviewSessionId: string;
+        readonly generationBatchId: string;
+        readonly generationId: string;
+        readonly requestHash: string;
+        readonly permitJti: string;
+      }
+    | {
+        readonly outcome: "cancelled";
+        readonly tenantId: string;
+        readonly locationId: string;
+        readonly reviewSessionId: string;
+        readonly generationBatchId: string;
+        readonly generationId: string;
+        readonly requestHash: string;
+        readonly permitJti: string;
+        readonly leaseId: string;
+      }
+  ): Promise<{ readonly status: "released" | "rejected" }>;
   disconnect(): Promise<void>;
 }
 
@@ -202,6 +240,18 @@ interface ExistingAdmissionRow {
 interface ActivationRow {
   readonly execution_lease_id: string;
   readonly activation_expires_at: Date;
+}
+
+interface ReconciliationQueueRow {
+  readonly reservation_id: string;
+  readonly tenant_id: string;
+  readonly execution_lease_id: string | null;
+}
+
+interface ReconciliationCandidateRow {
+  readonly permit_jti: string;
+  readonly execution_lease_id: string | null;
+  readonly normalized_input: unknown;
 }
 
 interface EntryScopeRow {
@@ -991,6 +1041,15 @@ export function createPostgresReviewerGenerationAdmissionStore({
             ${JSON.stringify({ workload })}::jsonb
           )
         `;
+        await transaction.$executeRaw`
+          INSERT INTO reconciliation_queue_items (
+            reservation_id, tenant_id, due_at
+          ) VALUES (
+            ${reservationId}::uuid,
+            ${binding.tenant_id}::uuid,
+            ${permitExpiresAt}::timestamptz + interval '30 seconds'
+          )
+        `;
         for (const assertion of assertions) {
           await transaction.$executeRaw`
             INSERT INTO generation_batch_assertions (
@@ -1070,6 +1129,21 @@ export function createPostgresReviewerGenerationAdmissionStore({
                 AND activation_expires_at > clock_timestamp()
             `
           )[0];
+        if (current !== undefined) {
+          await transaction.$executeRaw`
+            UPDATE reconciliation_queue_items
+            SET
+              execution_lease_id = ${input.leaseId}::uuid,
+              due_at = ${leaseExpiresAt}::timestamptz
+            WHERE reservation_id = (
+              SELECT id
+              FROM budget_reservations
+              WHERE tenant_id = ${input.tenantId}::uuid
+                AND permit_jti = ${input.permitJti}
+                AND execution_lease_id = ${input.leaseId}::uuid
+            )
+          `;
+        }
         return current === undefined
           ? ({ status: "rejected" } as const)
           : {
@@ -1117,6 +1191,16 @@ export function createPostgresReviewerGenerationAdmissionStore({
             )
         `;
         if (settled === 1) {
+          await transaction.$executeRaw`
+            DELETE FROM reconciliation_queue_items
+            WHERE reservation_id = (
+              SELECT id
+              FROM budget_reservations
+              WHERE tenant_id = ${input.tenantId}::uuid
+                AND permit_jti = ${input.permitJti}
+                AND status = 'SETTLED'
+            )
+          `;
           return { status: "settled" } as const;
         }
         const existing = await transaction.$queryRaw<{ readonly found: boolean }[]>`
@@ -1134,6 +1218,162 @@ export function createPostgresReviewerGenerationAdmissionStore({
         `;
         return existing[0]?.found === true
           ? ({ status: "settled" } as const)
+          : ({ status: "rejected" } as const);
+      });
+    },
+
+    async listReconciliationCandidates({ limit }) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        throw new Error("Reconciliation limit is invalid");
+      }
+      const queued = await client.$queryRaw<ReconciliationQueueRow[]>`
+        SELECT reservation_id, tenant_id, execution_lease_id
+        FROM reconciliation_queue_items
+        WHERE due_at <= clock_timestamp()
+        ORDER BY due_at, reservation_id
+        LIMIT ${limit}
+      `;
+      const candidates: (
+        | {
+            readonly kind: "never-leased";
+            readonly permitJti: string;
+            readonly workload: Readonly<Record<string, unknown>>;
+          }
+        | {
+            readonly kind: "expired-lease";
+            readonly permitJti: string;
+            readonly leaseId: string;
+            readonly workload: Readonly<Record<string, unknown>>;
+          }
+      )[] = [];
+      for (const queuedItem of queued) {
+        const candidate = await client.$transaction(async (transaction) => {
+          await transaction.$executeRaw`
+            SELECT set_config('app.tenant_id', ${queuedItem.tenant_id}, true)
+          `;
+          return (
+            await transaction.$queryRaw<ReconciliationCandidateRow[]>`
+              SELECT
+                reservation.permit_jti,
+                reservation.execution_lease_id,
+                batch.normalized_input
+              FROM budget_reservations AS reservation
+              JOIN generation_batches AS batch
+                ON batch.budget_reservation_id = reservation.id
+               AND batch.tenant_id = reservation.tenant_id
+               AND batch.location_id = reservation.location_id
+               AND batch.review_session_id = reservation.review_session_id
+              WHERE reservation.id = ${queuedItem.reservation_id}::uuid
+                AND reservation.tenant_id = ${queuedItem.tenant_id}::uuid
+                AND reservation.status IN ('RESERVED', 'REDEEMED')
+              LIMIT 1
+            `
+          )[0];
+        });
+        if (candidate === undefined) {
+          continue;
+        }
+        const workload = asRecord(
+          asRecord(candidate.normalized_input)["workload"],
+        );
+        if (candidate.execution_lease_id === null) {
+          candidates.push({
+            kind: "never-leased",
+            permitJti: candidate.permit_jti,
+            workload,
+          });
+        } else {
+          candidates.push({
+            kind: "expired-lease",
+            permitJti: candidate.permit_jti,
+            leaseId: candidate.execution_lease_id,
+            workload,
+          });
+        }
+      }
+      return candidates;
+    },
+
+    async releaseReconciled(input) {
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${input.tenantId}, true)
+        `;
+        const leasePredicate =
+          input.outcome === "cancelled"
+            ? Prisma.sql`reservation.status = 'REDEEMED'
+                AND reservation.execution_lease_id = ${input.leaseId}::uuid
+                AND queue.execution_lease_id = ${input.leaseId}::uuid`
+            : Prisma.sql`reservation.status = 'RESERVED'
+                AND reservation.execution_lease_id IS NULL
+                AND queue.execution_lease_id IS NULL
+                AND reservation.expires_at + interval '30 seconds' <= clock_timestamp()`;
+        const released = await transaction.$queryRaw<
+          { readonly reservation_id: string }[]
+        >`
+          UPDATE budget_reservations AS reservation
+          SET
+            status = 'RELEASED',
+            actual_cost_micros = 0,
+            settled_at = clock_timestamp()
+          FROM reconciliation_queue_items AS queue
+          WHERE queue.reservation_id = reservation.id
+            AND queue.tenant_id = reservation.tenant_id
+            AND queue.due_at <= clock_timestamp()
+            AND reservation.tenant_id = ${input.tenantId}::uuid
+            AND reservation.location_id = ${input.locationId}::uuid
+            AND reservation.review_session_id = ${input.reviewSessionId}::uuid
+            AND reservation.permit_jti = ${input.permitJti}
+            AND reservation.request_hash = ${input.requestHash}
+            AND ${leasePredicate}
+            AND EXISTS (
+              SELECT 1
+              FROM generation_batches AS batch
+              WHERE batch.id = ${input.generationBatchId}::uuid
+                AND batch.budget_reservation_id = reservation.id
+                AND batch.tenant_id = reservation.tenant_id
+                AND batch.location_id = reservation.location_id
+                AND batch.review_session_id = reservation.review_session_id
+                AND batch.normalized_input #>> '{workload,bindings,generationId}' = ${input.generationId}
+            )
+          RETURNING reservation.id AS reservation_id
+        `;
+        const reservationId = released[0]?.reservation_id;
+        if (reservationId !== undefined) {
+          await transaction.$executeRaw`
+            DELETE FROM reconciliation_queue_items
+            WHERE reservation_id = ${reservationId}::uuid
+          `;
+          return { status: "released" } as const;
+        }
+        const existing = await transaction.$queryRaw<{ readonly found: boolean }[]>`
+          SELECT true AS found
+          FROM budget_reservations AS reservation
+          WHERE reservation.tenant_id = ${input.tenantId}::uuid
+            AND reservation.location_id = ${input.locationId}::uuid
+            AND reservation.review_session_id = ${input.reviewSessionId}::uuid
+            AND reservation.permit_jti = ${input.permitJti}
+            AND reservation.request_hash = ${input.requestHash}
+            AND reservation.status = 'RELEASED'
+            AND ${
+              input.outcome === "cancelled"
+                ? Prisma.sql`reservation.execution_lease_id = ${input.leaseId}::uuid`
+                : Prisma.sql`reservation.execution_lease_id IS NULL`
+            }
+            AND EXISTS (
+              SELECT 1
+              FROM generation_batches AS batch
+              WHERE batch.id = ${input.generationBatchId}::uuid
+                AND batch.budget_reservation_id = reservation.id
+                AND batch.tenant_id = reservation.tenant_id
+                AND batch.location_id = reservation.location_id
+                AND batch.review_session_id = reservation.review_session_id
+                AND batch.normalized_input #>> '{workload,bindings,generationId}' = ${input.generationId}
+            )
+          LIMIT 1
+        `;
+        return existing[0]?.found === true
+          ? ({ status: "released" } as const)
           : ({ status: "rejected" } as const);
       });
     },

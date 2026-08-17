@@ -48,6 +48,26 @@ export interface ContextGenerationAuthority {
   }>;
 }
 
+export interface ContextGenerationStatusAuthority {
+  verifyStatus(
+    receipt: string,
+    expected:
+      | {
+          readonly operation: "status";
+          readonly outcome: "no-lease";
+          readonly permitJti: string;
+          readonly workload: GenerationWorkloadDto;
+        }
+      | {
+          readonly operation: "cancel-expired-lease";
+          readonly outcome: "cancelled";
+          readonly permitJti: string;
+          readonly leaseId: string;
+          readonly workload: GenerationWorkloadDto;
+        },
+  ): Promise<void>;
+}
+
 export interface ReviewerGenerationServiceOptions {
   readonly store: AdmissionStore;
   readonly authority: ContextGenerationAuthority;

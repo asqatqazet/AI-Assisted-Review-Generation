@@ -2,16 +2,20 @@ import {
   ActivateGenerationInvocationResultDtoSchema,
   AdvanceEntryInvocationResultDtoSchema,
   ContextFunctionInvocationDtoSchema,
+  ListReconciliationCandidatesInvocationResultDtoSchema,
   PrepareEntryInvocationResultDtoSchema,
   PrepareReviewerGenerationInvocationResultDtoSchema,
   ReadEntryChallengeInvocationResultDtoSchema,
   ReadReviewSessionInvocationResultDtoSchema,
+  ReleaseReconciledGenerationInvocationResultDtoSchema,
   SettleGenerationInvocationResultDtoSchema,
   type ActivateGenerationInvocationDto,
   type ActivateGenerationInvocationResultDto,
   type AdvanceEntryInvocationDto,
   type AdvanceEntryInvocationResultDto,
   type ContextFunctionInvocationDto,
+  type ListReconciliationCandidatesInvocationDto,
+  type ListReconciliationCandidatesInvocationResultDto,
   type PrepareEntryInvocationDto,
   type PrepareEntryInvocationResultDto,
   type PrepareReviewerGenerationInvocationDto,
@@ -20,6 +24,8 @@ import {
   type ReadEntryChallengeInvocationResultDto,
   type ReadReviewSessionInvocationDto,
   type ReadReviewSessionInvocationResultDto,
+  type ReleaseReconciledGenerationInvocationDto,
+  type ReleaseReconciledGenerationInvocationResultDto,
   type SettleGenerationInvocationDto,
   type SettleGenerationInvocationResultDto,
 } from "@review/contracts/context";
@@ -46,6 +52,12 @@ export interface ContextEntryService {
   settleGeneration(
     input: SettleGenerationInvocationDto["input"],
   ): Promise<SettleGenerationInvocationResultDto["result"]>;
+  listReconciliationCandidates(
+    input: ListReconciliationCandidatesInvocationDto["input"],
+  ): Promise<ListReconciliationCandidatesInvocationResultDto["result"]>;
+  releaseReconciledGeneration(
+    input: ReleaseReconciledGenerationInvocationDto["input"],
+  ): Promise<ReleaseReconciledGenerationInvocationResultDto["result"]>;
 }
 
 export interface ContextFunctionOptions {
@@ -64,6 +76,8 @@ export function createContextFunctionHandler({
   | PrepareReviewerGenerationInvocationResultDto
   | ActivateGenerationInvocationResultDto
   | SettleGenerationInvocationResultDto
+  | ListReconciliationCandidatesInvocationResultDto
+  | ReleaseReconciledGenerationInvocationResultDto
 > {
   return async (event) => {
     const invocation: ContextFunctionInvocationDto =
@@ -104,6 +118,20 @@ export function createContextFunctionHandler({
         return SettleGenerationInvocationResultDtoSchema.parse({
           operation: invocation.operation,
           result: await entryService.settleGeneration(invocation.input),
+        });
+      case "list-reconciliation-candidates":
+        return ListReconciliationCandidatesInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.listReconciliationCandidates(
+            invocation.input,
+          ),
+        });
+      case "release-reconciled-generation":
+        return ReleaseReconciledGenerationInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.releaseReconciledGeneration(
+            invocation.input,
+          ),
         });
     }
   };
