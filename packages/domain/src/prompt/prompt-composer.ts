@@ -1,7 +1,7 @@
 import type {
   CommandKind,
+  EffectiveSettings,
   PromptVersion,
-  ResolvedConfigSnapshot,
 } from "../configuration/index.js";
 import type { ReviewFormatManifest } from "../review-format/index.js";
 
@@ -23,7 +23,12 @@ export interface PromptComposerSourceGeneration {
 }
 
 export interface ComposePromptInput {
-  readonly snapshot: ResolvedConfigSnapshot;
+  readonly snapshot: {
+    readonly settings: Pick<
+      EffectiveSettings,
+      "locale" | "toneGuidelines" | "bannedTerms"
+    >;
+  };
   readonly style: ReviewFormatManifest;
   readonly promptVersion: PromptVersion;
   readonly action: CommandKind;
