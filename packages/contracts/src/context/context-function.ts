@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { IdentifierDtoSchema } from "../shared/primitives.js";
 import { PublicSurveyContextDtoSchema } from "./public-survey-context.js";
+import { ReviewSessionProjectionDtoSchema } from "./review-session.js";
 
 const BrowserCapabilityDtoSchema = z.string().regex(/^[A-Za-z0-9_-]{20,128}$/);
 
@@ -40,12 +41,21 @@ export const AdvanceEntryInvocationDtoSchema = z.strictObject({
   }),
 });
 
+export const ReadReviewSessionInvocationDtoSchema = z.strictObject({
+  operation: z.literal("read-review-session"),
+  input: z.strictObject({
+    reviewSessionHandle: IdentifierDtoSchema,
+    browserCapability: BrowserCapabilityDtoSchema,
+  }),
+});
+
 export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
   "operation",
   [
     PrepareEntryInvocationDtoSchema,
     ReadEntryChallengeInvocationDtoSchema,
     AdvanceEntryInvocationDtoSchema,
+    ReadReviewSessionInvocationDtoSchema,
   ],
 );
 
@@ -82,6 +92,14 @@ export const AdvanceEntryInvocationResultDtoSchema = z.strictObject({
   ]),
 });
 
+export const ReadReviewSessionInvocationResultDtoSchema = z.strictObject({
+  operation: z.literal("read-review-session"),
+  result: z.union([
+    ReviewSessionProjectionDtoSchema,
+    z.strictObject({ status: z.literal("unavailable") }),
+  ]),
+});
+
 export type ContextFunctionInvocationDto = z.infer<
   typeof ContextFunctionInvocationDtoSchema
 >;
@@ -94,6 +112,9 @@ export type ReadEntryChallengeInvocationDto = z.infer<
 export type AdvanceEntryInvocationDto = z.infer<
   typeof AdvanceEntryInvocationDtoSchema
 >;
+export type ReadReviewSessionInvocationDto = z.infer<
+  typeof ReadReviewSessionInvocationDtoSchema
+>;
 export type PrepareEntryInvocationResultDto = z.infer<
   typeof PrepareEntryInvocationResultDtoSchema
 >;
@@ -102,4 +123,7 @@ export type ReadEntryChallengeInvocationResultDto = z.infer<
 >;
 export type AdvanceEntryInvocationResultDto = z.infer<
   typeof AdvanceEntryInvocationResultDtoSchema
+>;
+export type ReadReviewSessionInvocationResultDto = z.infer<
+  typeof ReadReviewSessionInvocationResultDtoSchema
 >;

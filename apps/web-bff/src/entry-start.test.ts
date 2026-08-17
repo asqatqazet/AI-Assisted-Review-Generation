@@ -16,6 +16,7 @@ describe("reviewer entry admission", () => {
           reviewSessionHandle: "review-session-demo",
         };
       },
+      readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
@@ -73,6 +74,7 @@ describe("reviewer entry admission", () => {
           reviewSessionHandle: "review-session-form",
         };
       },
+      readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
@@ -128,6 +130,7 @@ describe("reviewer entry admission", () => {
           reviewSessionHandle: "must-not-be-disclosed",
         };
       },
+      readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,
@@ -183,6 +186,7 @@ describe("reviewer entry admission", () => {
           reviewSessionHandle: "must-not-be-disclosed",
         };
       },
+      readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
       contextPort,

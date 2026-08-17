@@ -1,5 +1,6 @@
 import {
   EntryChallengeProjectionDtoSchema,
+  ReviewSessionProjectionDtoSchema,
   StartEntryRequestDtoSchema,
 } from "@review/contracts/context";
 import { Hono } from "hono";
@@ -23,6 +24,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     prepareEntry: async () => ({ status: "unavailable" }),
     readEntryChallenge: async () => ({ status: "unavailable" }),
     advanceEntry: async () => ({ status: "unavailable" }),
+    readReviewSession: async () => ({ status: "unavailable" }),
   };
   const newBrowserCapability =
     options.newBrowserCapability ?? (() => globalThis.crypto.randomUUID());
@@ -187,6 +189,33 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     }
 
     return c.redirect(`/review/${result.reviewSessionHandle}`, 303);
+  });
+
+  app.get("/api/v1/review-sessions/:reviewSessionHandle", async (c) => {
+    c.header("Cache-Control", "private, no-store");
+    const browserCapability = getCookie(c, "__Host-review_browser");
+    if (
+      browserCapability === undefined ||
+      !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
+    ) {
+      return c.json(
+        { code: "REVIEW_SESSION_UNAVAILABLE", message: "This review is unavailable." },
+        404,
+      );
+    }
+
+    const result = await contextPort.readReviewSession({
+      reviewSessionHandle: c.req.param("reviewSessionHandle"),
+      browserCapability,
+    });
+    if (result.status !== "ready") {
+      return c.json(
+        { code: "REVIEW_SESSION_UNAVAILABLE", message: "This review is unavailable." },
+        404,
+      );
+    }
+
+    return c.json(ReviewSessionProjectionDtoSchema.parse(result), 200);
   });
 
   return app;

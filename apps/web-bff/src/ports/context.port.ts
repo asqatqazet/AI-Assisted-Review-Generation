@@ -1,4 +1,7 @@
-import type { PublicSurveyContextDto } from "@review/contracts/context";
+import type {
+  PublicSurveyContextDto,
+  ReviewSessionProjectionDto,
+} from "@review/contracts/context";
 
 export interface PrepareEntryInput {
   readonly tenantSlug: string;
@@ -41,10 +44,22 @@ export type AdvanceEntryResult =
     }
   | { readonly status: "unavailable" };
 
+export interface ReadReviewSessionInput {
+  readonly reviewSessionHandle: string;
+  readonly browserCapability: string;
+}
+
+export type ReadReviewSessionResult =
+  | ReviewSessionProjectionDto
+  | { readonly status: "unavailable" };
+
 export interface ContextPort {
   prepareEntry(input: PrepareEntryInput): Promise<PrepareEntryResult>;
   readEntryChallenge(
     input: ReadEntryChallengeInput,
   ): Promise<ReadEntryChallengeResult>;
   advanceEntry(input: AdvanceEntryInput): Promise<AdvanceEntryResult>;
+  readReviewSession(
+    input: ReadReviewSessionInput,
+  ): Promise<ReadReviewSessionResult>;
 }

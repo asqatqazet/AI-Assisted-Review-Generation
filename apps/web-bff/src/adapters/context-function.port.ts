@@ -6,6 +6,8 @@ import {
   PrepareEntryInvocationResultDtoSchema,
   ReadEntryChallengeInvocationDtoSchema,
   ReadEntryChallengeInvocationResultDtoSchema,
+  ReadReviewSessionInvocationDtoSchema,
+  ReadReviewSessionInvocationResultDtoSchema,
 } from "@review/contracts/context";
 
 import type { ContextPort } from "../ports/context.port.js";
@@ -46,6 +48,17 @@ export function createInvokedContextPort(
         input,
       });
       const response = AdvanceEntryInvocationResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return response.result;
+    },
+
+    async readReviewSession(input) {
+      const request = ReadReviewSessionInvocationDtoSchema.parse({
+        operation: "read-review-session",
+        input,
+      });
+      const response = ReadReviewSessionInvocationResultDtoSchema.parse(
         await invoker.invoke(request),
       );
       return response.result;

@@ -16,6 +16,7 @@ describe("private Context Function", () => {
         },
         readEntryChallenge: async () => ({ status: "unavailable" }),
         advanceEntry: async () => ({ status: "unavailable" }),
+        readReviewSession: async () => ({ status: "unavailable" }),
       },
     });
 

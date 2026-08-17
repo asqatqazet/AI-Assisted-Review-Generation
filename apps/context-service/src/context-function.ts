@@ -3,6 +3,7 @@ import {
   ContextFunctionInvocationDtoSchema,
   PrepareEntryInvocationResultDtoSchema,
   ReadEntryChallengeInvocationResultDtoSchema,
+  ReadReviewSessionInvocationResultDtoSchema,
   type AdvanceEntryInvocationDto,
   type AdvanceEntryInvocationResultDto,
   type ContextFunctionInvocationDto,
@@ -10,6 +11,8 @@ import {
   type PrepareEntryInvocationResultDto,
   type ReadEntryChallengeInvocationDto,
   type ReadEntryChallengeInvocationResultDto,
+  type ReadReviewSessionInvocationDto,
+  type ReadReviewSessionInvocationResultDto,
 } from "@review/contracts/context";
 
 export interface ContextEntryService {
@@ -22,6 +25,9 @@ export interface ContextEntryService {
   advanceEntry(
     input: AdvanceEntryInvocationDto["input"],
   ): Promise<AdvanceEntryInvocationResultDto["result"]>;
+  readReviewSession(
+    input: ReadReviewSessionInvocationDto["input"],
+  ): Promise<ReadReviewSessionInvocationResultDto["result"]>;
 }
 
 export interface ContextFunctionOptions {
@@ -36,6 +42,7 @@ export function createContextFunctionHandler({
   | PrepareEntryInvocationResultDto
   | ReadEntryChallengeInvocationResultDto
   | AdvanceEntryInvocationResultDto
+  | ReadReviewSessionInvocationResultDto
 > {
   return async (event) => {
     const invocation: ContextFunctionInvocationDto =
@@ -56,6 +63,11 @@ export function createContextFunctionHandler({
         return AdvanceEntryInvocationResultDtoSchema.parse({
           operation: invocation.operation,
           result: await entryService.advanceEntry(invocation.input),
+        });
+      case "read-review-session":
+        return ReadReviewSessionInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.readReviewSession(invocation.input),
         });
     }
   };
