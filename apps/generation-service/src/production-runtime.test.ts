@@ -16,12 +16,15 @@ describe("US-01.3 Generation production composition", () => {
     ].map((match) => match[1]);
     expect(new Set(referencedEnvironmentKeys)).toEqual(
       new Set([
-        "DATABASE_URL",
-        "CONTEXT_WORK_PUBLIC_KEY_B64",
-        "GENERATION_WORK_PRIVATE_KEY_B64",
+        "DATABASE_URL_PARAMETER",
+        "CONTEXT_WORK_PUBLIC_KEY_PARAMETER",
+        "GENERATION_WORK_PRIVATE_KEY_PARAMETER",
         "REVIEW_FAKE_DELAY_MS",
       ]),
     );
+    expect(source).toContain("GetParameterCommand");
+    expect(source).toContain("WithDecryption: true");
+    expect(source).not.toMatch(/required\(["'](?:DATABASE_URL|.*KEY_B64)["']/);
     expect(source).not.toMatch(/PROVIDER|MODEL|PROMPT|FORMAT|PRICE|SNAPSHOT/);
   });
 

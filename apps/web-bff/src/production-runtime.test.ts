@@ -38,9 +38,12 @@ describe("US-01.3 BFF production composition", () => {
       new Set([
         "CONTEXT_FUNCTION_ALIAS_ARN",
         "GENERATION_FUNCTION_ALIAS_ARN",
-        "REVIEW_CSRF_SECRET",
-        "REVIEW_PUBLIC_ORIGIN",
+        "REVIEW_CSRF_SECRET_PARAMETER",
       ]),
     );
+    expect(source).toContain("GetParameterCommand");
+    expect(source).toContain("WithDecryption: true");
+    expect(source).toContain('trustedPublicOriginHeader: "x-review-public-origin"');
+    expect(source).not.toContain('required("REVIEW_PUBLIC_ORIGIN")');
   });
 });

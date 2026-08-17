@@ -87,6 +87,10 @@ describe("student AWS topology invariants", () => {
       path.join(__dirname, "main.tf"),
       "utf8",
     );
+    const variables = fs.readFileSync(
+      path.join(__dirname, "variables.tf"),
+      "utf8",
+    );
 
     expect(terraform).not.toContain("dummy-key-to-be-overridden");
     expect(terraform).not.toMatch(
@@ -94,6 +98,31 @@ describe("student AWS topology invariants", () => {
     );
     expect(terraform).not.toContain("parameter/review-gen/student/providers/*");
     expect(terraform).not.toMatch(/OPENAI|GEMINI|PROVIDER_API_KEY/);
+    expect(terraform).toContain("DATABASE_URL_PARAMETER");
+    expect(terraform).toContain("REVIEW_CSRF_SECRET_PARAMETER");
+    expect(terraform).toContain('actions = ["ssm:GetParameter"]');
+    expect(terraform).not.toMatch(/DATABASE_URL\s*=\s*var\./);
+    expect(terraform).not.toMatch(/PRIVATE_KEY_B64\s*=\s*var\./);
+    expect(terraform).not.toMatch(/REVIEW_CSRF_SECRET\s*=\s*var\./);
+    expect(variables).not.toMatch(/variable\s+"(?:database_url|review_csrf_secret|.*private_key_b64)"/);
+  });
+
+  it("derives the trusted public origin at the CloudFront viewer boundary without a bootstrap cycle", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+    const variables = fs.readFileSync(
+      path.join(__dirname, "variables.tf"),
+      "utf8",
+    );
+    const originFunction = fs.readFileSync(
+      path.join(__dirname, "api-origin.js"),
+      "utf8",
+    );
+
+    expect(variables).not.toMatch(/variable\s+"review_public_origin"/);
+    expect(terraform).not.toContain("REVIEW_PUBLIC_ORIGIN");
+    expect(terraform).toContain("aws_cloudfront_function.api_origin.arn");
+    expect(originFunction).toContain('request.headers["x-review-public-origin"]');
+    expect(originFunction).toContain('"https://" + request.headers.host.value');
   });
 
   it("allows the Generation Lambda to outlive the bounded 60-second provider call", () => {
