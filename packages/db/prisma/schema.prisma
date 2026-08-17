@@ -131,6 +131,7 @@ enum GenerationStatus {
 }
 
 enum ProviderAttemptStatus {
+  RUNNING
   SUCCEEDED
   FAILED
   TIMED_OUT
