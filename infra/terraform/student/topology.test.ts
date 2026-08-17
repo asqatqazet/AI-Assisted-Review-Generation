@@ -23,7 +23,7 @@ describe("student AWS topology invariants", () => {
     expect(terraform).not.toContain("dummy-context.zip");
     expect(terraform).not.toContain("dummy-gen.zip");
     expect(terraform).not.toContain('function_version = "$LATEST"');
-    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(5);
+    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(6);
     expect(terraform.match(/source_code_hash\s*=\s*filebase64sha256/g)).toHaveLength(5);
     expect(terraform).toContain(
       "function_version = aws_lambda_function.context_service.version",
@@ -39,17 +39,36 @@ describe("student AWS topology invariants", () => {
   it("never reports deployment or smoke evidence from placeholder commands", () => {
     const deployWorkflowPath = path.join(
       __dirname,
-      "../../../.github/workflows/deploy.yml",
+      "../../../.github/workflows/deploy-student.yml",
     );
-    if (!fs.existsSync(deployWorkflowPath)) {
-      return;
-    }
+    expect(fs.existsSync(deployWorkflowPath)).toBe(true);
 
     const workflow = fs.readFileSync(deployWorkflowPath, "utf8");
 
     expect(workflow).not.toMatch(/#\s*aws\s+lambda\s+update-function-code/);
     expect(workflow).not.toMatch(/echo\s+["']Smoke test passed/);
     expect(workflow).not.toMatch(/echo\s+["']Lambda alias shifted/);
+    expect(workflow).toContain("id-token: write");
+    expect(workflow).toContain("aws-actions/configure-aws-credentials");
+    expect(workflow).toContain("pnpm aws:preflight");
+    expect(workflow).toContain("terraform plan");
+    expect(workflow).toContain("terraform apply");
+    expect(workflow).toContain("aws s3 sync");
+    expect(workflow).toContain("curl --fail-with-body");
+    expect(workflow).toContain("shasum -a 256");
+    expect(workflow).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
+  });
+
+  it("ships an executable rollback workflow that moves only qualified aliases", () => {
+    const workflow = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/rollback-student.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toContain("id-token: write");
+    expect(workflow).toContain("aws lambda update-alias");
+    expect(workflow).not.toContain("$LATEST");
+    expect(workflow).toContain("curl --fail-with-body");
   });
 
   it("does not create Function URLs for private Context or Generation services", () => {
@@ -115,10 +134,12 @@ describe("student AWS topology invariants", () => {
       2,
     );
     expect(terraform).toContain('resource "aws_cloudfront_distribution" "student"');
-    expect(terraform).toContain('target_origin_id       = "web-bff-stream"');
-    expect(terraform).toContain('path_pattern           = "/api/v1/review-sessions/*/generations"');
+    expect(terraform).toMatch(/target_origin_id\s*=\s*"web-bff-stream"/);
+    expect(terraform).toMatch(
+      /path_pattern\s*=\s*"\/api\/v1\/review-sessions\/\*\/generations"/,
+    );
     expect(terraform).toContain("response_completion_timeout = 95");
-    expect(terraform).toContain("origin_read_timeout         = 30");
+    expect(terraform).toMatch(/origin_read_timeout\s*=\s*30/);
     expect(terraform).toContain("cloudfront_default_certificate = true");
     expect(terraform).not.toMatch(/aliases\s*=/);
     expect(terraform).not.toMatch(/aws_route53|aws_acm_certificate|aws_wafv2/);
