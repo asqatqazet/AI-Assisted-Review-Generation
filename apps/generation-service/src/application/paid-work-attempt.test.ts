@@ -180,4 +180,35 @@ describe("US-03.2 paid-work Attempt preparation", () => {
     expect(rejected).toMatchObject({ code: "GROUNDING_REJECTED" });
     expect(JSON.stringify(rejected)).not.toContain("free upgrade");
   });
+
+  it("rejects grounded wording that violates the resolved policy", async () => {
+    const gateway: ModelGatewayPort = {
+      generate: async () => ({
+        output: {
+          draft: "The treatment was guaranteed to be explained well.",
+          claims: [
+            {
+              id: "claim-a",
+              text: "The treatment was guaranteed to be explained well.",
+              assertionIds: ["assertion-a"],
+            },
+          ],
+        },
+        attempt: {
+          provider: "fake",
+          model: "fake-v1",
+          usage: { inputTokens: 20, outputTokens: 9 },
+          receipt: { requestId: "provider-request-b", finishReason: "stop" },
+        },
+      }),
+    };
+
+    const prepared = await createPaidWorkAttemptPreparer({ gateway })(workload);
+    const rejected = await prepared.execute("attempt-b").catch((error: unknown) =>
+      error,
+    );
+
+    expect(rejected).toMatchObject({ code: "POLICY_REJECTED" });
+    expect(JSON.stringify(rejected)).not.toContain("guaranteed");
+  });
 });
