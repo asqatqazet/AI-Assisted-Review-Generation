@@ -3,10 +3,17 @@ import {
   ReviewSessionProjectionDtoSchema,
   StartEntryRequestDtoSchema,
 } from "@review/contracts/context";
+import { ReviewerGenerationCommandDtoSchema } from "@review/contracts/generation";
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
+import { streamSSE } from "hono/streaming";
 
 import type { ContextPort } from "./ports/context.port.js";
+import type {
+  ReviewerGenerationContextPort,
+  ReviewerGenerationExecutionPort,
+} from "./ports/reviewer-generation.port.js";
+import { createReviewerGenerationCoordinator } from "./reviewer-generation.js";
 import {
   type CsrfProtector,
   unavailableCsrfProtector,
@@ -17,6 +24,24 @@ export interface WebBffOptions {
   readonly newBrowserCapability?: (() => string) | undefined;
   readonly csrfProtector?: CsrfProtector | undefined;
   readonly publicOrigin?: string | undefined;
+  readonly reviewerGenerationContextPort?:
+    | ReviewerGenerationContextPort
+    | undefined;
+  readonly reviewerGenerationExecutionPort?:
+    | ReviewerGenerationExecutionPort
+    | undefined;
+}
+
+const encoder = new TextEncoder();
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 export function createWebBffApp(options: WebBffOptions = {}): Hono {
@@ -33,6 +58,14 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     options.publicOrigin === undefined
       ? undefined
       : new URL(options.publicOrigin).origin;
+  const reviewerGeneration =
+    options.reviewerGenerationContextPort === undefined ||
+    options.reviewerGenerationExecutionPort === undefined
+      ? undefined
+      : createReviewerGenerationCoordinator(
+          options.reviewerGenerationContextPort,
+          options.reviewerGenerationExecutionPort,
+        );
   const app = new Hono();
 
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
@@ -217,6 +250,69 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
     return c.json(ReviewSessionProjectionDtoSchema.parse(result), 200);
   });
+
+  app.post(
+    "/api/v1/review-sessions/:reviewSessionHandle/generations",
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const browserCapability = getCookie(c, "__Host-review_browser");
+      const idempotencyKey = c.req.header("Idempotency-Key");
+      const claimedBodyHash = c.req.header("x-amz-content-sha256");
+      const origin = c.req.header("Origin");
+      const rawBody = await c.req.text();
+
+      if (
+        reviewerGeneration === undefined ||
+        publicOrigin === undefined ||
+        origin !== publicOrigin ||
+        browserCapability === undefined ||
+        !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+        idempotencyKey === undefined ||
+        idempotencyKey.length < 1 ||
+        idempotencyKey.length > 200 ||
+        claimedBodyHash === undefined ||
+        claimedBodyHash !== (await sha256Hex(rawBody))
+      ) {
+        return c.json(
+          { code: "GENERATION_UNAVAILABLE", message: "Assistance is unavailable." },
+          404,
+        );
+      }
+
+      let parsedBody: unknown;
+      try {
+        parsedBody = JSON.parse(rawBody) as unknown;
+      } catch {
+        parsedBody = undefined;
+      }
+      const command = ReviewerGenerationCommandDtoSchema.safeParse(parsedBody);
+      if (!command.success) {
+        return c.json(
+          { code: "GENERATION_UNAVAILABLE", message: "Assistance is unavailable." },
+          404,
+        );
+      }
+
+      const abortController = new AbortController();
+      const response = streamSSE(c, async (stream) => {
+        try {
+          for await (const event of reviewerGeneration.start({
+            reviewSessionHandle: c.req.param("reviewSessionHandle"),
+            browserCapability,
+            idempotencyKey,
+            command: command.data,
+            signal: abortController.signal,
+          })) {
+            await stream.writeSSE({ data: JSON.stringify(event) });
+          }
+        } finally {
+          abortController.abort();
+        }
+      });
+      response.headers.set("Cache-Control", "private, no-store");
+      return response;
+    },
+  );
 
   return app;
 }
