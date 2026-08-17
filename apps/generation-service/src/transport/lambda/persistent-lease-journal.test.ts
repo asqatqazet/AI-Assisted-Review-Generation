@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { createPersistentGenerationLeaseJournal } from "./persistent-lease-journal.js";
 import { createPersistentGenerationTerminalStore } from "./persistent-terminal-store.js";
+import { createPersistentTerminalTailer } from "./persistent-terminal-tailer.js";
 
 const workload = GenerationWorkloadDtoSchema.parse({
   bindings: {
@@ -184,6 +185,66 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
         providerReceipt: { requestId: "fake-request-a" },
       },
     });
+  });
+});
+
+describe("US-03.3 persistent terminal replay tailer", () => {
+  it("waits for the winning execution and returns only its safe terminal Draft", async () => {
+    let reads = 0;
+    const waits: number[] = [];
+    const tailExisting = createPersistentTerminalTailer({
+      databaseStore: {
+        read: async () => {
+          reads += 1;
+          return reads === 1
+            ? null
+            : {
+                draft: {
+                  id: "draft-a",
+                  generationId: "generation-a",
+                  revision: 1,
+                  text: "The treatment was explained well.",
+                },
+                actualCostMicros: 0,
+              };
+        },
+      },
+      receiptSigner: {
+        signTerminal: async (claims) => {
+          expect(claims).toMatchObject({
+            permitJti: "permit-a",
+            leaseId: "lease-a",
+            generationId: "generation-a",
+            actualCostMicros: 0,
+          });
+          return "signed-terminal-receipt";
+        },
+      },
+      wait: async (milliseconds) => {
+        waits.push(milliseconds);
+      },
+      maxPolls: 3,
+    });
+
+    await expect(
+      tailExisting({
+        attemptId: "attempt-a",
+        leaseId: "lease-a",
+        permitJti: "permit-a",
+        workload,
+      }),
+    ).resolves.toEqual({
+      type: "terminal",
+      status: "completed",
+      terminalReceipt: "signed-terminal-receipt",
+      draft: {
+        id: "draft-a",
+        generationId: "generation-a",
+        revision: 1,
+        text: "The treatment was explained well.",
+      },
+    });
+    expect(waits).toEqual([100]);
   });
 });
 
