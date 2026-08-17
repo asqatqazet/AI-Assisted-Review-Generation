@@ -12,7 +12,13 @@
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{workspaceRoot}/dist/apps/context-service"],
-      "options": { "command": "tsup apps/context-service/src/main.ts --format esm --out-dir dist/apps/context-service --clean" }
+      "options": {
+        "commands": [
+          "tsup apps/context-service/src/main.ts --format esm --config infra/aws/lambda-server.tsup.config.ts --out-dir dist/apps/context-service --clean",
+          "node --no-experimental-detect-module --input-type=module --eval \"await import('./dist/apps/context-service/main.js')\""
+        ],
+        "parallel": false
+      }
     }
   },
   "tags": ["type:deployable", "plane:control"]
