@@ -22,7 +22,10 @@ function streamResponse(chunks: readonly string[]): Response {
 
 describe("HTTP reviewer Generation client", () => {
   it("posts reviewer choices and yields progress before one terminal Draft", async () => {
-    const requests: { input: RequestInfo | URL; init?: RequestInit }[] = [];
+    const requests: {
+      input: RequestInfo | URL;
+      init: RequestInit | undefined;
+    }[] = [];
     const client = createHttpGenerationClient(async (input, init) => {
       requests.push({ input, init });
       return streamResponse([
@@ -89,7 +92,7 @@ describe("HTTP reviewer Generation client", () => {
     );
 
     await expect(async () => {
-      for await (const _event of client.start(
+      for await (const event of client.start(
         {
           reviewSessionHandle: "review-session-demo",
           idempotencyKey: "generation-request-a",
@@ -99,6 +102,7 @@ describe("HTTP reviewer Generation client", () => {
         new AbortController().signal,
       )) {
         // Consume the whole response so schema failures reach the caller.
+        void event;
       }
     }).rejects.toThrow();
   });
