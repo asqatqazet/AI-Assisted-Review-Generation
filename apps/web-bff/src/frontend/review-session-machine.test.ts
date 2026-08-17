@@ -81,4 +81,44 @@ describe("Review Session transition table", () => {
       selectedReviewFormatId: "format-concise-v1",
     });
   });
+
+  it("reveals a Draft only after terminal Generation success", () => {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      { type: "REVIEW_SESSION_LOADED", projection },
+    );
+    const selectedFact = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+    const format = transitionReviewSession(selectedFact, {
+      type: "CONTINUE_REQUESTED",
+    });
+    const selectedFormat = transitionReviewSession(format, {
+      type: "REVIEW_FORMAT_SELECTED",
+      reviewFormatId: "format-concise-v1",
+    });
+    const generating = transitionReviewSession(selectedFormat, {
+      type: "GENERATION_REQUESTED",
+    });
+
+    expect(
+      transitionReviewSession(generating, {
+        type: "GENERATION_SUCCEEDED",
+        draft: {
+          id: "draft-a",
+          generationId: "generation-a",
+          revision: 1,
+          text: "The team was attentive.",
+        },
+      }),
+    ).toMatchObject({
+      value: "results",
+      draft: {
+        id: "draft-a",
+        generationId: "generation-a",
+        text: "The team was attentive.",
+      },
+    });
+  });
 });
