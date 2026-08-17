@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
+import { createPostgresGenerationLeaseJournal } from "./execution-plane/index.js";
+
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
 const psql = process.env["PSQL_BIN"] ?? "psql";
@@ -153,6 +155,26 @@ async function prepareLease(
 }
 
 describeDatabase("US-03.2 PostgreSQL execution fence", () => {
+  it("exposes a sealed tenant-scoped execution journal", async () => {
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL is required for database integration tests");
+    }
+    const scope = await seedScope();
+    const journal = createPostgresGenerationLeaseJournal({ databaseUrl });
+
+    try {
+      const prepared = await journal.prepare({
+        ...scope,
+        permitExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      });
+
+      expect(prepared.status).toBe("leased");
+      await expect(journal.status(scope)).resolves.toEqual({ state: "leased" });
+    } finally {
+      await journal.disconnect();
+    }
+  });
+
   it("prepares one scoped lease idempotently and exposes its status", async () => {
     const scope = await seedScope();
     const prepareSql = tenantTransaction(
