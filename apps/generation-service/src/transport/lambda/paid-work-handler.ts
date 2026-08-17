@@ -35,6 +35,7 @@ export interface GenerationLeaseJournal {
   }): Promise<PreparedGenerationLease>;
   claimExecution(input: {
     readonly leaseId: string;
+    readonly permitJti: string;
     readonly activationExpiresAt: string;
     readonly attemptOrdinal: 1;
     readonly requestPayload: unknown;
@@ -56,6 +57,7 @@ export interface GenerationLeaseJournal {
 
 export interface VerifiedGenerationActivation {
   readonly expiresAt: string;
+  readonly permitJti: string;
 }
 
 export interface GenerationActivationVerifier {
@@ -164,6 +166,7 @@ export function createPaidWorkGenerationHandler({
       const preparedAttempt = await prepareAttempt(invocation.workload);
       const claim = await leaseJournal.claimExecution({
         leaseId: invocation.leaseId,
+        permitJti: verifiedActivation.permitJti,
         activationExpiresAt: verifiedActivation.expiresAt,
         attemptOrdinal: 1,
         requestPayload: preparedAttempt.requestPayload,

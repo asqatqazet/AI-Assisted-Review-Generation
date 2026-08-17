@@ -96,6 +96,7 @@ describe("US-03.2 persistent Generation lease journal adapter", () => {
     await expect(
       journal.claimExecution({
         leaseId: "lease-a",
+        permitJti: "permit-a",
         activationExpiresAt: "2026-08-17T12:00:40.000Z",
         attemptOrdinal: 1,
         requestPayload: { model: "fake-v1", messages: [] },

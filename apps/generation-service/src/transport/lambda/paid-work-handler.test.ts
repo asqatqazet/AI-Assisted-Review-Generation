@@ -167,7 +167,10 @@ describe("US-03.2 paid-work Generation handler", () => {
           expect(activation).toBe("signed-context-activation");
           expect(leaseId).toBe("lease-a");
           expect(receivedWorkload).toEqual(workload);
-          return { expiresAt: "2026-08-17T12:00:40.000Z" };
+          return {
+            expiresAt: "2026-08-17T12:00:40.000Z",
+            permitJti: "permit-jti-a",
+          };
         },
       },
       leaseJournal: {
@@ -178,6 +181,7 @@ describe("US-03.2 paid-work Generation handler", () => {
           events.push("attempt-claimed");
           expect(input).toMatchObject({
             leaseId: "lease-a",
+            permitJti: "permit-jti-a",
             attemptOrdinal: 1,
             activationExpiresAt: "2026-08-17T12:00:40.000Z",
             requestPayload: {
@@ -248,7 +252,10 @@ describe("US-03.2 paid-work Generation handler", () => {
         },
       },
       activationVerifier: {
-        verify: async () => ({ expiresAt: "2026-08-17T12:00:40.000Z" }),
+        verify: async () => ({
+          expiresAt: "2026-08-17T12:00:40.000Z",
+          permitJti: "permit-jti-a",
+        }),
       },
       leaseJournal: {
         prepare: async () => {
