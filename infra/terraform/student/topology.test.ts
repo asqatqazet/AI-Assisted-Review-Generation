@@ -53,7 +53,12 @@ describe("student AWS topology invariants", () => {
     expect(workflow).toContain("pnpm aws:preflight");
     expect(workflow).toContain("terraform plan");
     expect(workflow).toContain("terraform apply");
+    expect(workflow).toContain("terraform init -backend-config");
+    expect(workflow).toContain("prisma migrate deploy");
+    expect(workflow).toContain("aws ssm put-parameter");
     expect(workflow).toContain("aws s3 sync");
+    expect(workflow).toContain("actions/upload-artifact");
+    expect(workflow).toContain("aws cloudfront create-invalidation");
     expect(workflow).toContain("curl --fail-with-body");
     expect(workflow).toContain("shasum -a 256");
     expect(workflow).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
@@ -67,8 +72,19 @@ describe("student AWS topology invariants", () => {
 
     expect(workflow).toContain("id-token: write");
     expect(workflow).toContain("aws lambda update-alias");
+    expect(workflow).toContain("gh run download");
+    expect(workflow).toContain("aws s3 sync");
+    expect(workflow).toContain("aws cloudfront create-invalidation");
     expect(workflow).not.toContain("$LATEST");
     expect(workflow).toContain("curl --fail-with-body");
+  });
+
+  it("stores non-secret Terraform state remotely and routes the real health probe", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform).toMatch(/backend\s+"s3"\s*\{\s*\}/);
+    expect(terraform).toMatch(/path_pattern\s*=\s*"\/health"/);
+    expect(terraform).toContain('target_origin_id         = "web-bff-fast"');
   });
 
   it("does not create Function URLs for private Context or Generation services", () => {
