@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 test("the reviewer entry is rendered with the Maue mobile layout", async ({
   page,
@@ -149,6 +150,40 @@ test("the operator console keeps its 1024px working layout", async ({ page }) =>
     contentWidth: 1024,
     viewportWidth: 1024,
   });
+});
+
+test("the browser binds the exact Start payload to its SHA-256 header", async ({
+  page,
+}) => {
+  await page.goto("/s/demo-tenant/demo-location");
+  await page.getByRole("button", { name: "5, Very good" }).click();
+  await page.getByRole("button", { name: "Generate from my facts" }).click();
+
+  const startRequestPromise = page.waitForRequest((request) => {
+    const path = new URL(request.url()).pathname;
+    return (
+      request.method() === "POST" &&
+      /^\/api\/v1\/entry-challenges\/[A-Za-z0-9_-]+\/start$/.test(path)
+    );
+  });
+  await page.getByRole("button", { name: "Start" }).click();
+  const startRequest = await startRequestPromise;
+  const payload = startRequest.postData();
+
+  expect(payload).not.toBeNull();
+  const fields = new URLSearchParams(payload!);
+  expect(Object.fromEntries(fields.entries())).toMatchObject({
+    rating: "5",
+    action: "generate",
+  });
+  expect(fields.get("csrfToken")).toMatch(/^\S{32,}$/);
+  expect(startRequest.headers()["content-type"]).toBe(
+    "application/x-www-form-urlencoded;charset=UTF-8",
+  );
+  expect(startRequest.headers()["x-amz-content-sha256"]).toBe(
+    createHash("sha256").update(payload!).digest("hex"),
+  );
+  await expect(page).toHaveURL(/\/review\/[A-Za-z0-9_-]+$/);
 });
 
 test("a reviewer receives a grounded Draft from the local FakeProvider composition", async ({
