@@ -48,6 +48,31 @@ function SurveyHeader({ brand }: { readonly brand: string }): React.JSX.Element 
   );
 }
 
+function SurveyScreen({
+  brand,
+  location,
+  busy = false,
+  children,
+}: {
+  readonly brand: string;
+  readonly location: string;
+  readonly busy?: boolean | undefined;
+  readonly children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className={styles.page}>
+      <SurveyHeader brand={brand} />
+      <main
+        className={styles.surveyMain}
+        aria-busy={busy ? "true" : undefined}
+      >
+        <p className={styles.eyebrow}>{location}</p>
+        {children}
+      </main>
+    </div>
+  );
+}
+
 function StartRoute({
   entryChallengeClient,
   navigate,
@@ -328,16 +353,25 @@ function ReviewRoute({
 
   if (state.value === "facts") {
     return (
-      <main>
-        <p>{state.projection.locationDisplayName}</p>
-        <h1>What stood out?</h1>
-        <p>{state.projection.rating} out of 5</p>
-        <form>
-          <fieldset>
-            <legend>Choose the facts you want to include</legend>
+      <SurveyScreen
+        brand={state.projection.tenantDisplayName}
+        location={state.projection.locationDisplayName}
+      >
+        <h1 className={styles.title}>What stood out?</h1>
+        <p className={styles.lead}>
+          Choose only the details that were true for your visit.{" "}
+          <span>{state.projection.rating} out of 5</span>
+        </p>
+        <form className={styles.reviewForm}>
+          <fieldset className={styles.choiceFieldset}>
+            <legend className={styles.sectionTitle}>
+              Choose the facts you want to include
+            </legend>
+            <div className={styles.choiceList}>
             {state.projection.factOptions.map((factOption) => (
-              <label key={factOption.id}>
+              <label className={styles.choiceCard} key={factOption.id}>
                 <input
+                  className={styles.choiceControl}
                   type="checkbox"
                   name="factOptionIds"
                   value={factOption.id}
@@ -351,11 +385,13 @@ function ReviewRoute({
                     )
                   }
                 />
-                {factOption.label}
+                <span>{factOption.label}</span>
               </label>
             ))}
+            </div>
           </fieldset>
           <button
+            className={styles.primaryButton}
             type="button"
             disabled={state.selectedFactOptionIds.length === 0}
             onClick={() =>
@@ -369,7 +405,7 @@ function ReviewRoute({
             Continue
           </button>
         </form>
-      </main>
+      </SurveyScreen>
     );
   }
 
@@ -378,15 +414,25 @@ function ReviewRoute({
       format.availableCommands.includes(state.projection.action),
     );
     return (
-      <main>
-        <p>{state.projection.locationDisplayName}</p>
-        <h1>Choose a format</h1>
-        <form>
-          <fieldset>
-            <legend>How should your review read?</legend>
+      <SurveyScreen
+        brand={state.projection.tenantDisplayName}
+        location={state.projection.locationDisplayName}
+      >
+        <h1 className={styles.title}>Choose a format</h1>
+        <p className={styles.lead}>
+          Each option uses the same facts you selected. Only the shape and
+          length change.
+        </p>
+        <form className={styles.reviewForm}>
+          <fieldset className={styles.choiceFieldset}>
+            <legend className={styles.sectionTitle}>
+              How should your review read?
+            </legend>
+            <div className={styles.choiceList}>
             {compatibleFormats.map((format) => (
-              <label key={format.id}>
+              <label className={styles.formatCard} key={format.id}>
                 <input
+                  className={styles.choiceControl}
                   type="radio"
                   name="reviewFormatId"
                   value={format.id}
@@ -400,11 +446,13 @@ function ReviewRoute({
                     )
                   }
                 />
-                {format.displayName}
+                <span className={styles.formatName}>{format.displayName}</span>
               </label>
             ))}
+            </div>
           </fieldset>
           <button
+            className={styles.primaryButton}
             type="button"
             disabled={state.selectedReviewFormatId === null}
             onClick={() =>
@@ -419,30 +467,55 @@ function ReviewRoute({
             Create my draft
           </button>
         </form>
-      </main>
+      </SurveyScreen>
     );
   }
 
   if (state.value === "generating") {
     return (
-      <main aria-busy="true">
-        <p>{state.projection.locationDisplayName}</p>
-        <h1>Creating your review</h1>
-        <p role="status">Checking your draft…</p>
-      </main>
+      <SurveyScreen
+        brand={state.projection.tenantDisplayName}
+        location={state.projection.locationDisplayName}
+        busy
+      >
+        <h1 className={styles.title}>Creating your review</h1>
+        <section className={styles.progressCard} aria-live="polite">
+          <p className={styles.progressTitle}>Checking your draft…</p>
+          <div className={styles.progressTrack} aria-hidden="true">
+            <span className={styles.progressBar} />
+          </div>
+          <p className={styles.status} role="status">
+            Only supported wording will appear in the result.
+          </p>
+        </section>
+      </SurveyScreen>
     );
   }
 
   if (state.value === "results") {
     return (
-      <main>
-        <p>{state.projection.locationDisplayName}</p>
-        <h1>Your review</h1>
-        <label>
-          Review text
-          <textarea aria-label="Review text" readOnly value={state.draft.text} />
+      <SurveyScreen
+        brand={state.projection.tenantDisplayName}
+        location={state.projection.locationDisplayName}
+      >
+        <h1 className={styles.title}>Your review</h1>
+        <p className={styles.lead}>
+          This draft is built only from the facts you selected. Read it before
+          copying it—you remain in control of what you post.
+        </p>
+        <section className={styles.resultCard}>
+        <label className={styles.fieldLabel} htmlFor="review-text">
+          Your draft — edit it freely
         </label>
+        <textarea
+          className={styles.reviewTextarea}
+          id="review-text"
+          aria-label="Review text"
+          readOnly
+          value={state.draft.text}
+        />
         <button
+          className={styles.primaryButton}
           type="button"
           onClick={() => {
             void copyText(state.draft.text)
@@ -452,27 +525,31 @@ function ReviewRoute({
         >
           Copy review
         </button>
-        <p role="status" aria-live="polite">
+        <p className={styles.status} role="status" aria-live="polite">
           {copyStatus === "copied"
             ? "Copied"
             : copyStatus === "manual"
               ? "Select the review text and copy it manually."
               : "Ready to copy."}
         </p>
-      </main>
+        </section>
+      </SurveyScreen>
     );
   }
 
   if (state.value === "generation-failed") {
     return (
-      <main>
-        <p>{state.projection.locationDisplayName}</p>
-        <h1>We couldn't create a draft</h1>
-        <p role="alert">
+      <SurveyScreen
+        brand={state.projection.tenantDisplayName}
+        location={state.projection.locationDisplayName}
+      >
+        <h1 className={styles.title}>We couldn't create a draft</h1>
+        <p className={styles.lead} role="alert">
           No review text was saved. You can try again or write it yourself.
         </p>
         {state.retryable ? (
           <button
+            className={styles.primaryButton}
             type="button"
             onClick={() =>
               setState((current) =>
@@ -486,7 +563,7 @@ function ReviewRoute({
             Try again
           </button>
         ) : null}
-      </main>
+      </SurveyScreen>
     );
   }
 
