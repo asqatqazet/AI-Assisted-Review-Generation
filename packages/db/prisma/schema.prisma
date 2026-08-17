@@ -333,52 +333,53 @@ model PromptTemplateVersion {
 }
 
 model Tenant {
-  id                        String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  slug                      String                           @unique @db.VarChar(100)
-  name                      String                           @db.VarChar(200)
-  locale                    String                           @db.VarChar(35)
-  category                  String?                          @db.VarChar(100)
-  status                    TenantStatus                     @default(ACTIVE)
-  businessProfile           Json                             @default("{}") @map("business_profile")
-  toneGuidelines            String?                          @map("tone_guidelines")
-  bannedTerms               String[]                         @default([]) @map("banned_terms")
-  policy                    Json                             @default("{}")
-  monthlyBudgetMicros       BigInt                           @default(0) @map("monthly_budget_micros")
-  alertThresholdPercent     Int                              @default(80) @map("alert_threshold_percent")
-  configRevision            BigInt                           @default(1) @map("config_revision")
-  defaultEntryModeKey       String?                          @map("default_entry_mode_key") @db.VarChar(80)
-  createdAt                 DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                 DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  defaultEntryMode          EntryModeDefinition?             @relation(fields: [defaultEntryModeKey], references: [key], onDelete: Restrict)
-  accessGrants              TenantAccessGrant[]
-  actionEnablements         TenantActionEnablement[]
-  locations                 Location[]
-  factOptionCategories      FactOptionCategory[]
-  factOptionVersions        FactOptionVersion[]
-  reviewFormatEnablements   ReviewFormatEnablement[]
-  promptVersions            PromptVersion[]
-  experiments               Experiment[]
-  experimentVariants        ExperimentVariant[]
-  experimentAssignments     ExperimentAssignment[]
-  postingDestinations       PostingDestinationBinding[]
-  visits                    Visit[]
-  invitationTokens          InvitationToken[]
-  reviewSessions            ReviewSession[]
-  sourceTextRevisions       SourceTextRevision[]
-  assertions                Assertion[]
-  snapshots                 EffectiveConfigurationSnapshot[]
-  budgetReservations        BudgetReservation[]
-  generationBatches         GenerationBatch[]
-  generationBatchAssertions GenerationBatchAssertion[]
-  generations               Generation[]
-  executionLeases           ExecutionLease[]
-  providerAttempts          ProviderAttempt[]
-  claims                    Claim[]
-  claimGroundings           ClaimGrounding[]
-  unsupportedOutputs        UnsupportedOutput[]
-  drafts                    Draft[]
-  draftRevisions            DraftRevision[]
-  dispositions              Disposition[]
+  id                           String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                         String                           @unique @db.VarChar(100)
+  name                         String                           @db.VarChar(200)
+  locale                       String                           @db.VarChar(35)
+  category                     String?                          @db.VarChar(100)
+  status                       TenantStatus                     @default(ACTIVE)
+  businessProfile              Json                             @default("{}") @map("business_profile")
+  toneGuidelines               String?                          @map("tone_guidelines")
+  bannedTerms                  String[]                         @default([]) @map("banned_terms")
+  policy                       Json                             @default("{}")
+  monthlyBudgetMicros          BigInt                           @default(0) @map("monthly_budget_micros")
+  alertThresholdPercent        Int                              @default(80) @map("alert_threshold_percent")
+  configRevision               BigInt                           @default(1) @map("config_revision")
+  defaultEntryModeKey          String?                          @map("default_entry_mode_key") @db.VarChar(80)
+  createdAt                    DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                    DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  defaultEntryMode             EntryModeDefinition?             @relation(fields: [defaultEntryModeKey], references: [key], onDelete: Restrict)
+  accessGrants                 TenantAccessGrant[]
+  actionEnablements            TenantActionEnablement[]
+  locations                    Location[]
+  factOptionCategories         FactOptionCategory[]
+  factOptionVersions           FactOptionVersion[]
+  reviewFormatEnablements      ReviewFormatEnablement[]
+  promptVersions               PromptVersion[]
+  experiments                  Experiment[]
+  experimentVariants           ExperimentVariant[]
+  experimentAssignments        ExperimentAssignment[]
+  postingDestinations          PostingDestinationBinding[]
+  visits                       Visit[]
+  invitationTokens             InvitationToken[]
+  reviewSessions               ReviewSession[]
+  reviewSessionBrowserBindings ReviewSessionBrowserBinding[]
+  sourceTextRevisions          SourceTextRevision[]
+  assertions                   Assertion[]
+  snapshots                    EffectiveConfigurationSnapshot[]
+  budgetReservations           BudgetReservation[]
+  generationBatches            GenerationBatch[]
+  generationBatchAssertions    GenerationBatchAssertion[]
+  generations                  Generation[]
+  executionLeases              ExecutionLease[]
+  providerAttempts             ProviderAttempt[]
+  claims                       Claim[]
+  claimGroundings              ClaimGrounding[]
+  unsupportedOutputs           UnsupportedOutput[]
+  drafts                       Draft[]
+  draftRevisions               DraftRevision[]
+  dispositions                 Disposition[]
 
   @@map("tenants")
 }
@@ -430,38 +431,39 @@ model TenantActionEnablement {
 }
 
 model Location {
-  id                        String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId                  String                           @map("tenant_id") @db.Uuid
-  slug                      String                           @db.VarChar(100)
-  name                      String                           @db.VarChar(200)
-  address                   Json                             @default("{}")
-  overrides                 Json                             @default("{}")
-  status                    LocationStatus                   @default(ACTIVE)
-  configRevision            BigInt                           @default(1) @map("config_revision")
-  createdAt                 DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt                 DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(6)
-  tenant                    Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  postingDestinations       PostingDestinationBinding[]
-  factOptionVersions        FactOptionVersion[]
-  visits                    Visit[]
-  invitationTokens          InvitationToken[]
-  reviewSessions            ReviewSession[]
-  experimentAssignments     ExperimentAssignment[]
-  sourceTextRevisions       SourceTextRevision[]
-  assertions                Assertion[]
-  snapshots                 EffectiveConfigurationSnapshot[]
-  budgetReservations        BudgetReservation[]
-  generationBatches         GenerationBatch[]
-  generationBatchAssertions GenerationBatchAssertion[]
-  generations               Generation[]
-  executionLeases           ExecutionLease[]
-  providerAttempts          ProviderAttempt[]
-  claims                    Claim[]
-  claimGroundings           ClaimGrounding[]
-  unsupportedOutputs        UnsupportedOutput[]
-  drafts                    Draft[]
-  draftRevisions            DraftRevision[]
-  dispositions              Disposition[]
+  id                           String                           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                     String                           @map("tenant_id") @db.Uuid
+  slug                         String                           @db.VarChar(100)
+  name                         String                           @db.VarChar(200)
+  address                      Json                             @default("{}")
+  overrides                    Json                             @default("{}")
+  status                       LocationStatus                   @default(ACTIVE)
+  configRevision               BigInt                           @default(1) @map("config_revision")
+  createdAt                    DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                    DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant                       Tenant                           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  postingDestinations          PostingDestinationBinding[]
+  factOptionVersions           FactOptionVersion[]
+  visits                       Visit[]
+  invitationTokens             InvitationToken[]
+  reviewSessions               ReviewSession[]
+  reviewSessionBrowserBindings ReviewSessionBrowserBinding[]
+  experimentAssignments        ExperimentAssignment[]
+  sourceTextRevisions          SourceTextRevision[]
+  assertions                   Assertion[]
+  snapshots                    EffectiveConfigurationSnapshot[]
+  budgetReservations           BudgetReservation[]
+  generationBatches            GenerationBatch[]
+  generationBatchAssertions    GenerationBatchAssertion[]
+  generations                  Generation[]
+  executionLeases              ExecutionLease[]
+  providerAttempts             ProviderAttempt[]
+  claims                       Claim[]
+  claimGroundings              ClaimGrounding[]
+  unsupportedOutputs           UnsupportedOutput[]
+  drafts                       Draft[]
+  draftRevisions               DraftRevision[]
+  dispositions                 Disposition[]
 
   @@unique([tenantId, slug])
   @@unique([id, tenantId])
@@ -639,21 +641,22 @@ model InvitationToken {
 }
 
 model ReviewSession {
-  id                        String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId                  String                     @map("tenant_id") @db.Uuid
-  locationId                String                     @map("location_id") @db.Uuid
-  visitId                   String?                    @map("visit_id") @db.Uuid
-  invitationTokenId         String?                    @unique @map("invitation_token_id") @db.Uuid
-  status                    ReviewSessionStatus        @default(OPEN)
+  id                        String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                  String                        @map("tenant_id") @db.Uuid
+  locationId                String                        @map("location_id") @db.Uuid
+  visitId                   String?                       @map("visit_id") @db.Uuid
+  invitationTokenId         String?                       @unique @map("invitation_token_id") @db.Uuid
+  status                    ReviewSessionStatus           @default(OPEN)
   rating                    Int?
-  sessionVersion            Int                        @default(1) @map("session_version")
-  openedAt                  DateTime                   @default(now()) @map("opened_at") @db.Timestamptz(6)
-  expiresAt                 DateTime                   @map("expires_at") @db.Timestamptz(6)
-  closedAt                  DateTime?                  @map("closed_at") @db.Timestamptz(6)
-  tenant                    Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location                  Location                   @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  visit                     Visit?                     @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  invitationToken           InvitationToken?           @relation(fields: [invitationTokenId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  selectedAction            GenerationAction?             @map("selected_action")
+  sessionVersion            Int                           @default(1) @map("session_version")
+  openedAt                  DateTime                      @default(now()) @map("opened_at") @db.Timestamptz(6)
+  expiresAt                 DateTime                      @map("expires_at") @db.Timestamptz(6)
+  closedAt                  DateTime?                     @map("closed_at") @db.Timestamptz(6)
+  tenant                    Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location                  Location                      @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  visit                     Visit?                        @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  invitationToken           InvitationToken?              @relation(fields: [invitationTokenId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   experimentAssignments     ExperimentAssignment[]
   sourceTextRevisions       SourceTextRevision[]
   assertions                Assertion[]
@@ -669,11 +672,32 @@ model ReviewSession {
   drafts                    Draft[]
   draftRevisions            DraftRevision[]
   dispositions              Disposition[]
+  browserBindings           ReviewSessionBrowserBinding[]
 
   @@unique([id, tenantId, locationId])
   @@unique([invitationTokenId, tenantId, locationId])
   @@index([tenantId, locationId])
   @@map("review_sessions")
+}
+
+model ReviewSessionBrowserBinding {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String        @map("tenant_id") @db.Uuid
+  locationId            String        @map("location_id") @db.Uuid
+  reviewSessionId       String        @map("review_session_id") @db.Uuid
+  routeHandleHash       String        @unique @map("route_handle_hash") @db.VarChar(128)
+  browserCapabilityHash String        @map("browser_capability_hash") @db.VarChar(128)
+  expiresAt             DateTime      @map("expires_at") @db.Timestamptz(6)
+  revokedAt             DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant                Tenant        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location              Location      @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  reviewSession         ReviewSession @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+
+  @@unique([id, tenantId, locationId, reviewSessionId])
+  @@unique([tenantId, reviewSessionId, browserCapabilityHash])
+  @@index([browserCapabilityHash, routeHandleHash])
+  @@map("review_session_browser_bindings")
 }
 
 model ExperimentAssignment {
