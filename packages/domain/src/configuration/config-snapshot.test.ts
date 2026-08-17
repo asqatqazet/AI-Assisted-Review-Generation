@@ -424,6 +424,37 @@ describe("buildConfigSnapshot", () => {
     );
   });
 
+  it("embeds the resolved Provider Model identity needed by execution persistence", () => {
+    const input = makeInput();
+    input.priceRates = input.priceRates.map((rate) => ({
+      ...rate,
+      providerModelId:
+        rate.provider === "anthropic"
+          ? "provider-model-anthropic-sonnet"
+          : "provider-model-openai-mini",
+    }));
+    const routingWithIdentity = {
+      ...input.providerRouting,
+      providerModelId: "provider-model-anthropic-sonnet",
+    };
+    input.providerRouting = routingWithIdentity;
+
+    const snapshot = buildConfigSnapshot(input);
+    const routedModelId = (
+      snapshot.providerRouting as typeof snapshot.providerRouting & {
+        readonly providerModelId?: string;
+      }
+    ).providerModelId;
+    const selectedRate = snapshot.priceRates.find(
+      (rate) => rate.id === "rate-anthropic-sonnet-2026-08",
+    ) as (typeof snapshot.priceRates)[number] & {
+      readonly providerModelId?: string;
+    };
+
+    expect(routedModelId).toBe("provider-model-anthropic-sonnet");
+    expect(selectedRate.providerModelId).toBe(routedModelId);
+  });
+
   it("rejects duplicate Review Format ids", () => {
     const input = makeInput();
     input.reviewFormats = [
