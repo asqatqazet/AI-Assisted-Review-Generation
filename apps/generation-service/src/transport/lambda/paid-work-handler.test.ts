@@ -142,11 +142,20 @@ describe("US-03.2 paid-work Generation handler", () => {
         signStatus: async () => {
           throw new Error("status signing must not run during prepare");
         },
+        signTerminal: async () => {
+          throw new Error("terminal signing must not run during prepare");
+        },
+      },
+      terminalStore: {
+        complete: async () => {
+          throw new Error("terminal persistence must not run during prepare");
+        },
       },
       prepareAttempt: async () => ({
         requestPayload: {},
         execute: async () => {
           executionCalls += 1;
+          throw new Error("execution must not run during prepare");
         },
       }),
       tailExisting: async () => {
@@ -361,6 +370,14 @@ describe("US-03.2 paid-work Generation handler", () => {
         signStatus: async () => {
           throw new Error("status signing must not run during execute");
         },
+        signTerminal: async () => {
+          throw new Error("replayed execution must not sign another terminal");
+        },
+      },
+      terminalStore: {
+        complete: async () => {
+          throw new Error("replayed execution must not persist another terminal");
+        },
       },
       prepareAttempt: async () => ({
         requestPayload: {},
@@ -451,6 +468,14 @@ describe("US-03.2 paid-work Generation handler", () => {
         signStatus: async (claims) => {
           expect(claims).toEqual(unsigned);
           return "signed-generation-status-receipt";
+        },
+        signTerminal: async () => {
+          throw new Error("terminal signing must not run during reconciliation");
+        },
+      },
+      terminalStore: {
+        complete: async () => {
+          throw new Error("terminal persistence must not run during reconciliation");
         },
       },
       prepareAttempt: async () => {

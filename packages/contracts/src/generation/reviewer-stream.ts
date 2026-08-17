@@ -51,6 +51,25 @@ export const ReviewerGenerationEventDtoSchema = z.union([
   }),
 ]);
 
+export const PrivateGenerationTerminalEventDtoSchema = z.discriminatedUnion(
+  "status",
+  [
+    z.strictObject({
+      type: z.literal("terminal"),
+      status: z.literal("completed"),
+      terminalReceipt: z.string().min(1),
+      draft: ReviewerDraftDtoSchema,
+    }),
+    z.strictObject({
+      type: z.literal("terminal"),
+      status: z.literal("rejected"),
+      terminalReceipt: z.string().min(1),
+      code: ReviewerGenerationRejectionCodeDtoSchema,
+      retryable: z.boolean(),
+    }),
+  ],
+);
+
 export type ReviewerGenerationCommandDto = z.infer<
   typeof ReviewerGenerationCommandDtoSchema
 >;
@@ -60,4 +79,7 @@ export type ReviewerGenerationRejectionCodeDto = z.infer<
 >;
 export type ReviewerGenerationEventDto = z.infer<
   typeof ReviewerGenerationEventDtoSchema
+>;
+export type PrivateGenerationTerminalEventDto = z.infer<
+  typeof PrivateGenerationTerminalEventDtoSchema
 >;

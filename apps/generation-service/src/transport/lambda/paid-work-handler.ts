@@ -2,9 +2,11 @@ import {
   CancelExpiredLeaseResultDtoSchema,
   GenerationFunctionInvocationDtoSchema,
   GenerationStatusResultDtoSchema,
+  PrivateGenerationTerminalEventDtoSchema,
   PrepareGenerationResultDtoSchema,
   type GenerationStatusInvocationDto,
   type GenerationWorkloadDto,
+  type ReviewerDraftDto,
 } from "@review/contracts/generation";
 
 type GenerationExecutionScope = GenerationStatusInvocationDto["scope"];
@@ -104,6 +106,52 @@ export interface GenerationReceiptSigner {
           readonly state: "cancelled" | "running" | "terminal" | "no-lease";
         },
   ): Promise<string>;
+  signTerminal(claims: {
+    readonly leaseId: string;
+    readonly outcome: "completed";
+    readonly actualCostMicros: number;
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly reviewSessionId: string;
+    readonly generationBatchId: string;
+    readonly generationId: string;
+    readonly action: string;
+    readonly reviewFormatVersionId: string;
+    readonly assertionSetHash: string;
+    readonly requestHash: string;
+    readonly snapshotId: string;
+    readonly snapshotHash: string;
+    readonly providerModelId: string;
+    readonly priceRateId: string;
+    readonly idempotencyKey: string;
+  }): Promise<string>;
+}
+
+export interface CompletedPaidWorkAttemptResult {
+  readonly status: "completed";
+  readonly generationId: string;
+  readonly attemptId: string;
+  readonly draft: string;
+  readonly claims: readonly unknown[];
+  readonly attempt: {
+    readonly usage: {
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    };
+    readonly receipt: unknown;
+  };
+}
+
+export interface GenerationTerminalStore {
+  complete(input: {
+    readonly leaseId: string;
+    readonly attemptId: string;
+    readonly workload: GenerationWorkloadDto;
+    readonly result: CompletedPaidWorkAttemptResult;
+  }): Promise<{
+    readonly draft: ReviewerDraftDto;
+    readonly actualCostMicros: number;
+  }>;
 }
 
 export interface PaidWorkGenerationHandlerOptions {
@@ -111,9 +159,12 @@ export interface PaidWorkGenerationHandlerOptions {
   readonly activationVerifier: GenerationActivationVerifier;
   readonly leaseJournal: GenerationLeaseJournal;
   readonly receiptSigner: GenerationReceiptSigner;
+  readonly terminalStore: GenerationTerminalStore;
   readonly prepareAttempt: (workload: GenerationWorkloadDto) => Promise<{
     readonly requestPayload: unknown;
-    readonly execute: (attemptId: string) => Promise<unknown>;
+    readonly execute: (
+      attemptId: string,
+    ) => Promise<CompletedPaidWorkAttemptResult>;
   }>;
   readonly tailExisting: (input: {
     readonly attemptId: string;
@@ -126,6 +177,7 @@ export function createPaidWorkGenerationHandler({
   activationVerifier,
   leaseJournal,
   receiptSigner,
+  terminalStore,
   prepareAttempt,
   tailExisting,
 }: PaidWorkGenerationHandlerOptions): (event: unknown) => Promise<unknown> {
@@ -177,9 +229,29 @@ export function createPaidWorkGenerationHandler({
         workload: invocation.workload,
       };
 
-      return claim.status === "claimed"
-        ? await preparedAttempt.execute(claim.attemptId)
-        : await tailExisting(executionInput);
+      if (claim.status === "existing") {
+        return await tailExisting(executionInput);
+      }
+
+      const result = await preparedAttempt.execute(claim.attemptId);
+      const terminal = await terminalStore.complete({
+        leaseId: invocation.leaseId,
+        attemptId: claim.attemptId,
+        workload: invocation.workload,
+        result,
+      });
+      const terminalReceipt = await receiptSigner.signTerminal({
+        leaseId: invocation.leaseId,
+        outcome: "completed",
+        actualCostMicros: terminal.actualCostMicros,
+        ...invocation.workload.bindings,
+      });
+      return PrivateGenerationTerminalEventDtoSchema.parse({
+        type: "terminal",
+        status: "completed",
+        terminalReceipt,
+        draft: terminal.draft,
+      });
     }
 
     if (invocation.operation === "status") {
