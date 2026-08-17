@@ -115,6 +115,18 @@ describe("ADR-005 paid-work Generation contract", () => {
     ).toBe(false);
   });
 
+  it("rejects a Generate command whose Assertion ids are not the embedded set", () => {
+    expect(
+      GenerationWorkloadDtoSchema.safeParse({
+        ...workload,
+        command: {
+          ...workload.command,
+          assertionIds: ["assertion-not-embedded"],
+        },
+      }).success,
+    ).toBe(false);
+  });
+
   it("prepares one fully bound child Generation without calling a provider", () => {
     expect(
       PrepareGenerationInvocationDtoSchema.parse({
