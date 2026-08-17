@@ -101,6 +101,20 @@ describe("ADR-005 paid-work Generation contract", () => {
     );
   });
 
+  it("rejects an Assertion from a different Review Session", () => {
+    expect(
+      GenerationWorkloadDtoSchema.safeParse({
+        ...workload,
+        assertions: [
+          {
+            ...assertions[0],
+            reviewSessionId: "session-b",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("prepares one fully bound child Generation without calling a provider", () => {
     expect(
       PrepareGenerationInvocationDtoSchema.parse({
