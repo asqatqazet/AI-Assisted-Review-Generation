@@ -228,4 +228,41 @@ describe("reviewer application routes", () => {
       csrfToken: "csrf-token-with-at-least-thirty-two-characters",
     });
   });
+
+  it("resumes a Review Session with its confirmed rating and Fact Options", async () => {
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [],
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "What stood out?" }),
+    ).toBeVisible();
+    expect(screen.getByText("4 out of 5")).toBeVisible();
+    expect(
+      screen.getByRole("checkbox", { name: "The team was attentive" }),
+    ).toBeVisible();
+  });
 });
