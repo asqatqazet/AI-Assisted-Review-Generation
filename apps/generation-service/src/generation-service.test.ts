@@ -98,6 +98,7 @@ const snapshotInput: BuildConfigSnapshotInput = {
   reviewFormats: [sampleFormat],
   promptVersions: [
     {
+      id: "prompt-version-gen-v1",
       hash: "prompt-gen-v1",
       key: "review.generate",
       commandKind: "generate",

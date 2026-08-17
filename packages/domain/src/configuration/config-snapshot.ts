@@ -35,6 +35,7 @@ export interface ReviewFormatVersion {
 }
 
 export interface PromptVersion {
+  readonly id: string;
   readonly hash: string;
   readonly key: string;
   readonly commandKind: CommandKind;
@@ -172,6 +173,7 @@ const copyReviewFormat = (format: ReviewFormatVersion): ReviewFormatVersion => (
 });
 
 const copyPromptVersion = (prompt: PromptVersion): PromptVersion => ({
+  id: prompt.id,
   hash: prompt.hash,
   key: prompt.key,
   commandKind: prompt.commandKind,

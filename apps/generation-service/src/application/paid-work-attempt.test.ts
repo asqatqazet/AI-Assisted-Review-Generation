@@ -65,6 +65,7 @@ const workload = GenerationWorkloadDtoSchema.parse({
     ],
     promptVersions: [
       {
+        id: "prompt-version-generate-v1",
         hash: "prompt-generate-v1",
         key: "review.generate",
         commandKind: "generate",

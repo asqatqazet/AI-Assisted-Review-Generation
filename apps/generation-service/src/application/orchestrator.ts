@@ -138,6 +138,7 @@ export function createGenerationOrchestrator(
       // 3. Resolve Prompt Version
       const promptVersion =
         snapshot.promptVersions.find((pv) => pv.commandKind === action) ?? {
+          id: "prompt-version-fallback-v1",
           hash: "prompt-fallback-v1",
           key: `review.${action}`,
           commandKind: action,

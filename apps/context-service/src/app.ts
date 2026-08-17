@@ -123,6 +123,7 @@ export function createInMemoryContextStore(): ContextServiceStore {
 
   const promptVersions: PromptVersion[] = [
     {
+      id: "prompt-version-gen-v1",
       hash: "prompt-gen-v1",
       key: "review.generate",
       commandKind: "generate",

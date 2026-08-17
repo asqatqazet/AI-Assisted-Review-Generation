@@ -112,6 +112,7 @@ const makeSnapshotInput = (): BuildConfigSnapshotInput => ({
   reviewFormats: [conciseFormat],
   promptVersions: [
     {
+      id: "prompt-version-gen-v1",
       hash: "prompt-gen-v1",
       key: "review.generate",
       commandKind: "generate",
@@ -119,6 +120,7 @@ const makeSnapshotInput = (): BuildConfigSnapshotInput => ({
       variables: ["tone", "locale"],
     },
     {
+      id: "prompt-version-ref-v1",
       hash: "prompt-ref-v1",
       key: "review.reformat",
       commandKind: "reformat",
@@ -174,6 +176,7 @@ describe("TS-08 Prompt Composition", () => {
       snapshot: defaultSnapshot,
       style: defaultStyle,
       promptVersion: {
+        id: "prompt-version-para-v1",
         hash: "prompt-para-v1",
         key: "review.paraphrase",
         commandKind: "paraphrase",

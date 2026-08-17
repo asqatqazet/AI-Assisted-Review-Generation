@@ -97,6 +97,7 @@ export const ReviewFormatVersionDtoSchema = z.strictObject({
 });
 
 export const PromptVersionDtoSchema = z.strictObject({
+  id: IdentifierDtoSchema,
   hash: IdentifierDtoSchema,
   key: IdentifierDtoSchema,
   commandKind: z.enum([

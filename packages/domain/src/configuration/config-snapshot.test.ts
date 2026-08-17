@@ -144,6 +144,7 @@ const makeInput = (): BuildConfigSnapshotInput => ({
   reviewFormats: [germanFormat, socialFormat, conciseFormat],
   promptVersions: [
     {
+      id: "prompt-version-generate-v1",
       hash: "prompt-generate-v1",
       key: "review.generate",
       commandKind: "generate",
@@ -151,6 +152,7 @@ const makeInput = (): BuildConfigSnapshotInput => ({
       variables: ["tone", "locale"],
     },
     {
+      id: "prompt-version-reformat-v1",
       hash: "prompt-reformat-v1",
       key: "review.reformat",
       commandKind: "reformat",

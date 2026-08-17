@@ -132,8 +132,20 @@ export interface CompletedPaidWorkAttemptResult {
   readonly generationId: string;
   readonly attemptId: string;
   readonly draft: string;
-  readonly claims: readonly unknown[];
+  readonly claims: readonly {
+    readonly text: string;
+    readonly grounding: readonly (
+      | {
+          readonly kind: "assertion";
+          readonly assertionId: string;
+          readonly assertionVersion: string;
+        }
+      | { readonly kind: "verified-context"; readonly contextFactId: string }
+    )[];
+  }[];
   readonly attempt: {
+    readonly provider: string;
+    readonly model: string;
     readonly usage: {
       readonly inputTokens: number;
       readonly outputTokens: number;
@@ -146,6 +158,7 @@ export interface GenerationTerminalStore {
   complete(input: {
     readonly leaseId: string;
     readonly attemptId: string;
+    readonly permitJti: string;
     readonly workload: GenerationWorkloadDto;
     readonly result: CompletedPaidWorkAttemptResult;
   }): Promise<{
@@ -237,6 +250,7 @@ export function createPaidWorkGenerationHandler({
       const terminal = await terminalStore.complete({
         leaseId: invocation.leaseId,
         attemptId: claim.attemptId,
+        permitJti: verifiedActivation.permitJti,
         workload: invocation.workload,
         result,
       });

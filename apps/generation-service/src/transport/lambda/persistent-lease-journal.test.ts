@@ -113,6 +113,7 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
       terminalStore.complete({
         leaseId: "lease-a",
         attemptId: "attempt-a",
+        permitJti: "permit-a",
         workload: {
           ...workload,
           snapshot: {
@@ -120,11 +121,11 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
             promptVersions: [
               {
                 id: "prompt-a",
+                hash: "prompt-generate-v1",
                 key: "generate-v1",
-                version: 1,
                 commandKind: "generate",
-                template: "Generate grounded JSON.",
-                contentHash: "sha256:prompt",
+                body: "Generate grounded JSON.",
+                variables: [],
               },
             ],
           },
@@ -136,10 +137,6 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
           draft: "The treatment was explained well.",
           claims: [
             {
-              id: "claim-a",
-              semanticId: "service-explained-clearly",
-              semanticKind: "experience-fact",
-              polarity: "positive",
               text: "The treatment was explained well.",
               grounding: [
                 {
