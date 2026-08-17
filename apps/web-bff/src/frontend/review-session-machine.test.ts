@@ -52,4 +52,33 @@ describe("Review Session transition table", () => {
       selectedReviewFormatId: null,
     });
   });
+
+  it("freezes the selected facts and Review Format for Generation", () => {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      { type: "REVIEW_SESSION_LOADED", projection },
+    );
+    const selectedFact = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+    const format = transitionReviewSession(selectedFact, {
+      type: "CONTINUE_REQUESTED",
+    });
+    const selectedFormat = transitionReviewSession(format, {
+      type: "REVIEW_FORMAT_SELECTED",
+      reviewFormatId: "format-concise-v1",
+    });
+
+    expect(
+      transitionReviewSession(selectedFormat, {
+        type: "GENERATION_REQUESTED",
+      }),
+    ).toMatchObject({
+      value: "generating",
+      reviewSessionHandle: "review-session-demo",
+      selectedFactOptionIds: ["fact-attentive"],
+      selectedReviewFormatId: "format-concise-v1",
+    });
+  });
 });
