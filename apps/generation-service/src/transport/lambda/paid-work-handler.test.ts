@@ -387,7 +387,12 @@ describe("US-03.2 paid-work Generation handler", () => {
         },
       }),
       tailExisting: async (input) => {
-        expect(input).toEqual({ attemptId: "attempt-a", workload });
+        expect(input).toEqual({
+          attemptId: "attempt-a",
+          leaseId: "lease-a",
+          permitJti: "permit-jti-a",
+          workload,
+        });
         return { status: "completed", generationId: "generation-a" };
       },
     });

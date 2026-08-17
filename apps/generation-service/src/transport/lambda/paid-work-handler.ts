@@ -182,6 +182,8 @@ export interface PaidWorkGenerationHandlerOptions {
   }>;
   readonly tailExisting: (input: {
     readonly attemptId: string;
+    readonly leaseId: string;
+    readonly permitJti: string;
     readonly workload: GenerationWorkloadDto;
   }) => Promise<unknown>;
 }
@@ -240,6 +242,8 @@ export function createPaidWorkGenerationHandler({
       });
       const executionInput = {
         attemptId: claim.attemptId,
+        leaseId: invocation.leaseId,
+        permitJti: verifiedActivation.permitJti,
         workload: invocation.workload,
       };
 
