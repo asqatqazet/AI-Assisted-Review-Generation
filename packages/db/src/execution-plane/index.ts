@@ -85,6 +85,9 @@ export interface PersistedTerminalDraft {
 }
 
 export interface PostgresGenerationTerminalStore {
+  read(
+    scope: GenerationExecutionScope,
+  ): Promise<PersistedTerminalDraft | null>;
   complete(input: CompleteGenerationInput): Promise<PersistedTerminalDraft>;
   disconnect(): Promise<void>;
 }
@@ -281,6 +284,48 @@ export function createPostgresGenerationTerminalStore({
   };
 
   return {
+    async read(scope) {
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${scope.tenantId}, true)
+        `;
+        const rows = await transaction.$queryRaw<TerminalDraftRow[]>`
+          SELECT
+            draft.id AS draft_id,
+            generation.id AS generation_id,
+            revision.revision,
+            revision.text,
+            generation.total_cost_micros
+          FROM generations AS generation
+          JOIN drafts AS draft
+            ON draft.originating_generation_id = generation.id
+           AND draft.tenant_id = generation.tenant_id
+           AND draft.location_id = generation.location_id
+           AND draft.review_session_id = generation.review_session_id
+          JOIN draft_revisions AS revision
+            ON revision.draft_id = draft.id
+           AND revision.tenant_id = draft.tenant_id
+           AND revision.location_id = draft.location_id
+           AND revision.review_session_id = draft.review_session_id
+           AND revision.revision = 1
+          WHERE generation.id = ${scope.generationId}::uuid
+            AND generation.generation_batch_id = ${scope.generationBatchId}::uuid
+            AND generation.tenant_id = ${scope.tenantId}::uuid
+            AND generation.location_id = ${scope.locationId}::uuid
+            AND generation.review_session_id = ${scope.reviewSessionId}::uuid
+            AND EXISTS (
+              SELECT 1
+              FROM execution_leases AS lease
+              WHERE lease.id = generation.execution_lease_id
+                AND lease.permit_jti = ${scope.permitJti}
+                AND lease.state = 'TERMINAL'
+            )
+          LIMIT 1
+        `;
+        return rows[0] === undefined ? null : project(rows[0]);
+      });
+    },
+
     async complete(input) {
       return await client.$transaction(async (transaction) => {
         await transaction.$executeRaw`

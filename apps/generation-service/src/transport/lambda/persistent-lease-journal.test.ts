@@ -93,6 +93,7 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
   it("maps only grounded terminal evidence into the execution database", async () => {
     let received: unknown;
     const databaseStore = {
+      read: async () => null,
       complete: async (input: unknown) => {
         received = input;
         return {
