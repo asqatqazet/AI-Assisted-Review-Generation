@@ -1,13 +1,17 @@
 declare module "*.module.css" {
   const classes: {
     readonly brand: string;
+    readonly card: string;
     readonly cardCopy: string;
     readonly cardEyebrow: string;
+    readonly cardLabel: string;
+    readonly cardText: string;
     readonly cardTitle: string;
     readonly choiceCard: string;
     readonly choiceControl: string;
     readonly choiceFieldset: string;
     readonly choiceList: string;
+    readonly cards: string;
     readonly entryTitle: string;
     readonly eyebrow: string;
     readonly header: string;
@@ -16,6 +20,15 @@ declare module "*.module.css" {
     readonly formatCard: string;
     readonly formatName: string;
     readonly lead: string;
+    readonly layout: string;
+    readonly main: string;
+    readonly meta: string;
+    readonly navigation: string;
+    readonly navigationHeading: string;
+    readonly navigationItem: string;
+    readonly navigationList: string;
+    readonly navigationMeta: string;
+    readonly operator: string;
     readonly page: string;
     readonly pathButton: string;
     readonly pathCard: string;
@@ -32,11 +45,14 @@ declare module "*.module.css" {
     readonly reviewForm: string;
     readonly reviewTextarea: string;
     readonly sectionTitle: string;
+    readonly scopeBar: string;
+    readonly scopePath: string;
     readonly status: string;
     readonly surveyMain: string;
     readonly title: string;
     readonly trustCopy: string;
     readonly trustNote: string;
+    readonly viewHeader: string;
   };
   export default classes;
 }
