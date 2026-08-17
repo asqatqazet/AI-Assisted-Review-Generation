@@ -139,6 +139,10 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
           draft: "The treatment was explained well.",
           claims: [
             {
+              id: "claim-a",
+              semanticId: "service-explained-clearly",
+              semanticKind: "experience-fact",
+              polarity: "positive",
               text: "The treatment was explained well.",
               grounding: [
                 {
@@ -153,7 +157,10 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
             provider: "fake",
             model: "fake-v1",
             usage: { inputTokens: 12, outputTokens: 7 },
-            receipt: { requestId: "fake-request-a" },
+            receipt: {
+              requestId: "fake-request-a",
+              finishReason: "stop",
+            },
           },
         },
       }),

@@ -26,7 +26,16 @@ export interface PaidWorkAttemptPreparerOptions {
 
 export interface PreparedPaidWorkAttempt {
   readonly requestPayload: ModelGatewayRequest;
-  readonly execute: (attemptId: string) => Promise<unknown>;
+  readonly execute: (attemptId: string) => Promise<CompletedPaidWorkAttemptResult>;
+}
+
+export interface CompletedPaidWorkAttemptResult {
+  readonly status: "completed";
+  readonly generationId: string;
+  readonly attemptId: string;
+  readonly draft: string;
+  readonly claims: readonly GroundedCandidateClaim[];
+  readonly attempt: Awaited<ReturnType<ModelGatewayPort["generate"]>>["attempt"];
 }
 
 export class PaidWorkGroundingRejectedError extends Error {

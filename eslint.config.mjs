@@ -49,4 +49,13 @@ export default tseslint.config(
       ]
     }
   },
+  {
+    // The Lambda composition root may read only operational credentials and
+    // the synthetic smoke delay. Resolved Generation configuration remains a
+    // required GenerationWorkload value everywhere below this root.
+    files: ["apps/generation-service/src/main.ts"],
+    rules: {
+      "no-restricted-properties": "off"
+    }
+  },
 );

@@ -9,6 +9,8 @@ import {
   type ReviewerDraftDto,
 } from "@review/contracts/generation";
 
+import type { CompletedPaidWorkAttemptResult } from "../../application/paid-work-attempt.js";
+
 type GenerationExecutionScope = GenerationStatusInvocationDto["scope"];
 
 export interface VerifiedGenerationPermit {
@@ -126,33 +128,6 @@ export interface GenerationReceiptSigner {
     readonly priceRateId: string;
     readonly idempotencyKey: string;
   }): Promise<string>;
-}
-
-export interface CompletedPaidWorkAttemptResult {
-  readonly status: "completed";
-  readonly generationId: string;
-  readonly attemptId: string;
-  readonly draft: string;
-  readonly claims: readonly {
-    readonly text: string;
-    readonly grounding: readonly (
-      | {
-          readonly kind: "assertion";
-          readonly assertionId: string;
-          readonly assertionVersion: string;
-        }
-      | { readonly kind: "verified-context"; readonly contextFactId: string }
-    )[];
-  }[];
-  readonly attempt: {
-    readonly provider: string;
-    readonly model: string;
-    readonly usage: {
-      readonly inputTokens: number;
-      readonly outputTokens: number;
-    };
-    readonly receipt: unknown;
-  };
 }
 
 export interface GenerationTerminalStore {

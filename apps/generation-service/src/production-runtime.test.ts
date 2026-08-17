@@ -1,4 +1,5 @@
 import type { GenerationWorkloadDto } from "@review/contracts/generation";
+import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import { handler } from "./main.js";
@@ -7,11 +8,32 @@ import { createAssessmentFakeGateway } from "./runtime.js";
 describe("US-01.3 Generation production composition", () => {
   it("exports a Lambda handler instead of a development HTTP app", () => {
     expect(handler).toBeTypeOf("function");
+    const source = fs.readFileSync(new URL("./main.ts", import.meta.url), "utf8");
+    const referencedEnvironmentKeys = [
+      ...source.matchAll(
+        /(?:required\(|decodeKey\(|process\.env\[)["']([^"']+)["']/g,
+      ),
+    ].map((match) => match[1]);
+    expect(new Set(referencedEnvironmentKeys)).toEqual(
+      new Set([
+        "DATABASE_URL",
+        "CONTEXT_WORK_PUBLIC_KEY_B64",
+        "GENERATION_WORK_PRIVATE_KEY_B64",
+        "REVIEW_FAKE_DELAY_MS",
+      ]),
+    );
+    expect(source).not.toMatch(/PROVIDER|MODEL|PROMPT|FORMAT|PRICE|SNAPSHOT/);
   });
 
   it("creates deterministic grounded FakeProvider output from the supplied workload", async () => {
     const workload = {
       bindings: { generationId: "generation-a" },
+      snapshot: {
+        providerRouting: {
+          primaryProvider: "fake",
+          primaryModel: "fake-v1",
+        },
+      },
       assertions: [
         {
           id: "assertion-a",

@@ -295,7 +295,10 @@ describe("US-03.2 paid-work Generation handler", () => {
                 provider: "fake",
                 model: "fake-v1",
                 usage: { inputTokens: 12, outputTokens: 7 },
-                receipt: { requestId: "fake-request-a" },
+                receipt: {
+                  requestId: "fake-request-a",
+                  finishReason: "stop",
+                },
               },
             };
           },
