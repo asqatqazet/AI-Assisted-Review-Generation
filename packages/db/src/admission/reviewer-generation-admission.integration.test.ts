@@ -37,9 +37,17 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
     const bindingId = randomUUID();
     const snapshotId = randomUUID();
     const promptVersionId = randomUUID();
-    const providerId = randomUUID();
-    const providerModelId = randomUUID();
-    const priceRateId = randomUUID();
+    const providerId =
+      (await runSql("SELECT id FROM providers WHERE key = 'fake' LIMIT 1;")) ||
+      randomUUID();
+    const providerModelId =
+      (await runSql(
+        `SELECT id FROM provider_models WHERE provider_id = '${providerId}' AND model_key = 'fake-v1' LIMIT 1;`,
+      )) || randomUUID();
+    const priceRateId =
+      (await runSql(
+        `SELECT id FROM price_rates WHERE provider_model_id = '${providerModelId}' AND input_per_million_micros = 0 AND output_per_million_micros = 0 LIMIT 1;`,
+      )) || randomUUID();
     const routeHandleHash = `sha256:route-${randomUUID()}`;
     const browserCapabilityHash = `sha256:browser-${randomUUID()}`;
     const snapshot = {
@@ -185,16 +193,18 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         'prompt-generate-v1', 'Use only supplied Assertions.'
       );
       INSERT INTO providers (id, key, display_name, credential_reference)
-      VALUES ('${providerId}', 'fake', 'Fake Provider', 'fake://local');
+      VALUES ('${providerId}', 'fake', 'Fake Provider', 'fake://local')
+      ON CONFLICT (key) DO NOTHING;
       INSERT INTO provider_models (id, provider_id, model_key)
-      VALUES ('${providerModelId}', '${providerId}', 'fake-v1');
+      VALUES ('${providerModelId}', '${providerId}', 'fake-v1')
+      ON CONFLICT (provider_id, model_key) DO NOTHING;
       INSERT INTO price_rates (
         id, provider_model_id, currency, input_per_million_micros,
         output_per_million_micros, effective_from
       ) VALUES (
         '${priceRateId}', '${providerModelId}', 'EUR', 0, 0,
-        '2026-08-01T00:00:00.000Z'
-      );
+        clock_timestamp() - interval '1 day'
+      ) ON CONFLICT (id) DO NOTHING;
       INSERT INTO effective_configuration_snapshots (
         id, tenant_id, location_id, schema_version, content_hash, payload, provenance
       ) VALUES (
