@@ -7,6 +7,7 @@
   "include": [
     "apps/**/*.ts",
     "apps/**/*.tsx",
+    "acceptance/**/*.ts",
     "packages/**/*.ts",
     "packages/**/*.tsx",
     "infra/**/*.ts",
