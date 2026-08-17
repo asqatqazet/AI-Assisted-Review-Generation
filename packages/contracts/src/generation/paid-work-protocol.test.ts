@@ -107,6 +107,23 @@ describe("ADR-005 paid-work Generation contract", () => {
     );
   });
 
+  it("carries each Assertion's immutable proposition", () => {
+    const workloadWithProposition = {
+      ...workload,
+      assertions: [
+        {
+          ...assertions[0],
+          proposition: "The treatment was explained well.",
+        },
+      ],
+    };
+
+    expect(
+      GenerationWorkloadDtoSchema.parse(workloadWithProposition).assertions[0]
+        ?.proposition,
+    ).toBe("The treatment was explained well.");
+  });
+
   it("rejects an Assertion from a different Review Session", () => {
     expect(
       GenerationWorkloadDtoSchema.safeParse({
