@@ -186,13 +186,13 @@ describe("invoked reviewer Generation execution port", () => {
     });
 
     await expect(async () => {
-      for await (const _event of port.execute({
+      for await (const event of port.execute({
         leaseId: "lease-a",
         activation: "signed-activation",
         workload,
         signal: new AbortController().signal,
       })) {
-        // Consume the strict adapter result.
+        void event;
       }
     }).rejects.toThrow();
   });
