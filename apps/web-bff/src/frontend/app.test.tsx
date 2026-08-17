@@ -48,6 +48,7 @@ describe("reviewer application routes", () => {
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
+            start: async () => ({ redirectTo: "/review/review-session-demo" }),
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
@@ -81,6 +82,7 @@ describe("reviewer application routes", () => {
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
+            start: async () => ({ redirectTo: "/review/review-session-demo" }),
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
@@ -112,6 +114,7 @@ describe("reviewer application routes", () => {
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
+            start: async () => ({ redirectTo: "/review/review-session-demo" }),
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
@@ -147,6 +150,7 @@ describe("reviewer application routes", () => {
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
+            start: async () => ({ redirectTo: "/review/review-session-demo" }),
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
@@ -189,6 +193,7 @@ describe("reviewer application routes", () => {
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
+            start: async () => ({ redirectTo: "/review/review-session-demo" }),
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
