@@ -24,9 +24,32 @@ const validEvidence: AwsPreflightEvidence = {
 };
 
 describe("US-06.1 AWS deployment preflight", () => {
+  it("accepts the explicit student low-quota profile at the account's ten-concurrency floor", () => {
+    expect(
+      evaluateAwsPreflight(
+        {
+          ...validEvidence,
+          lambda: {
+            concurrentExecutions: 10,
+            unreservedConcurrentExecutions: 10,
+          },
+        },
+        "student-low-quota",
+      ),
+    ).toEqual({
+      ok: true,
+      deploymentProfile: "student-low-quota",
+      requiredAccountConcurrency: 10,
+      requiredReservedConcurrency: 0,
+      requiredUnreservedConcurrency: 10,
+    });
+  });
+
   it("accepts a temporary role on an active funded Free Plan with 13 allocatable units", () => {
     expect(evaluateAwsPreflight(validEvidence)).toEqual({
       ok: true,
+      deploymentProfile: "reserved-concurrency",
+      requiredAccountConcurrency: 113,
       requiredReservedConcurrency: 13,
       requiredUnreservedConcurrency: 100,
     });

@@ -28,6 +28,10 @@ export interface AwsPreflightEvidence {
   readonly lambda: AwsLambdaLimitEvidence;
 }
 
+export type AwsDeploymentProfile =
+  | "reserved-concurrency"
+  | "student-low-quota";
+
 export type AwsPreflightFailureCode =
   | "TEMPORARY_ROLE_REQUIRED"
   | "ACCOUNT_MISMATCH"
@@ -44,8 +48,10 @@ export type AwsPreflightFailureCode =
 export type AwsPreflightResult =
   | {
       readonly ok: true;
-      readonly requiredReservedConcurrency: 13;
-      readonly requiredUnreservedConcurrency: 100;
+      readonly deploymentProfile: AwsDeploymentProfile;
+      readonly requiredAccountConcurrency: 10 | 113;
+      readonly requiredReservedConcurrency: 0 | 13;
+      readonly requiredUnreservedConcurrency: 10 | 100;
     }
   | {
       readonly ok: false;
@@ -57,6 +63,7 @@ const REQUIRED_RESERVED_CONCURRENCY = 13;
 const REQUIRED_UNRESERVED_CONCURRENCY = 100;
 const REQUIRED_ACCOUNT_CONCURRENCY =
   REQUIRED_RESERVED_CONCURRENCY + REQUIRED_UNRESERVED_CONCURRENCY;
+const STUDENT_LOW_QUOTA_ACCOUNT_CONCURRENCY = 10;
 
 function failure(code: AwsPreflightFailureCode): AwsPreflightResult {
   return { ok: false, code };
@@ -69,6 +76,7 @@ function dateValue(value: string): number | undefined {
 
 export function evaluateAwsPreflight(
   evidence: AwsPreflightEvidence,
+  deploymentProfile: AwsDeploymentProfile = "reserved-concurrency",
 ): AwsPreflightResult {
   const assumedRolePattern = new RegExp(
     `^arn:aws:sts::${evidence.identity.account}:assumed-role/[^/]+/[^/]+$`,
@@ -118,17 +126,30 @@ export function evaluateAwsPreflight(
     return failure("REGION_MISMATCH");
   }
 
+  const requiredAccountConcurrency =
+    deploymentProfile === "student-low-quota"
+      ? STUDENT_LOW_QUOTA_ACCOUNT_CONCURRENCY
+      : REQUIRED_ACCOUNT_CONCURRENCY;
   if (
-    evidence.lambda.concurrentExecutions < REQUIRED_ACCOUNT_CONCURRENCY ||
-    evidence.lambda.unreservedConcurrentExecutions <
-      REQUIRED_ACCOUNT_CONCURRENCY
+    evidence.lambda.concurrentExecutions < requiredAccountConcurrency ||
+    evidence.lambda.unreservedConcurrentExecutions < requiredAccountConcurrency
   ) {
     return failure("LAMBDA_CONCURRENCY_INSUFFICIENT");
   }
 
-  return {
-    ok: true,
-    requiredReservedConcurrency: REQUIRED_RESERVED_CONCURRENCY,
-    requiredUnreservedConcurrency: REQUIRED_UNRESERVED_CONCURRENCY,
-  };
+  return deploymentProfile === "student-low-quota"
+    ? {
+        ok: true,
+        deploymentProfile,
+        requiredAccountConcurrency,
+        requiredReservedConcurrency: 0,
+        requiredUnreservedConcurrency: STUDENT_LOW_QUOTA_ACCOUNT_CONCURRENCY,
+      }
+    : {
+        ok: true,
+        deploymentProfile,
+        requiredAccountConcurrency,
+        requiredReservedConcurrency: REQUIRED_RESERVED_CONCURRENCY,
+        requiredUnreservedConcurrency: REQUIRED_UNRESERVED_CONCURRENCY,
+      };
 }

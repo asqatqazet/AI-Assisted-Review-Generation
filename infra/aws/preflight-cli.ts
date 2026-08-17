@@ -1,5 +1,6 @@
 import type {
   AwsAccountPlanEvidence,
+  AwsDeploymentProfile,
   AwsPreflightEvidence,
 } from "./preflight.js";
 
@@ -12,6 +13,22 @@ export interface CollectAwsPreflightOptions {
   readonly region: string;
   readonly teardownDate: string;
   readonly checkedAt: string;
+}
+
+export function deploymentProfileFromEnvironment(
+  environment: Readonly<Record<string, string | undefined>>,
+): AwsDeploymentProfile {
+  const deploymentProfile = environment["REVIEW_DEPLOYMENT_PROFILE"];
+  if (deploymentProfile === undefined) {
+    throw new Error("REVIEW_DEPLOYMENT_PROFILE_REQUIRED");
+  }
+  if (
+    deploymentProfile !== "reserved-concurrency" &&
+    deploymentProfile !== "student-low-quota"
+  ) {
+    throw new Error("REVIEW_DEPLOYMENT_PROFILE_UNSUPPORTED");
+  }
+  return deploymentProfile;
 }
 
 export function assertTemporaryCredentialSource(

@@ -3,9 +3,35 @@ import { describe, expect, it } from "vitest";
 import {
   assertTemporaryCredentialSource,
   collectAwsPreflightEvidence,
+  deploymentProfileFromEnvironment,
 } from "./preflight-cli.js";
 
 describe("US-06.1 AWS CLI preflight adapter", () => {
+  it("requires an explicit deployment profile before evaluating AWS evidence", () => {
+    expect(() => deploymentProfileFromEnvironment({})).toThrowError(
+      "REVIEW_DEPLOYMENT_PROFILE_REQUIRED",
+    );
+  });
+
+  it("rejects a deployment profile that has no reviewed capacity policy", () => {
+    expect(() =>
+      deploymentProfileFromEnvironment({
+        REVIEW_DEPLOYMENT_PROFILE: "skip-capacity-checks",
+      }),
+    ).toThrowError("REVIEW_DEPLOYMENT_PROFILE_UNSUPPORTED");
+  });
+
+  it.each(["student-low-quota", "reserved-concurrency"] as const)(
+    "accepts the reviewed %s deployment profile",
+    (deploymentProfile) => {
+      expect(
+        deploymentProfileFromEnvironment({
+          REVIEW_DEPLOYMENT_PROFILE: deploymentProfile,
+        }),
+      ).toBe(deploymentProfile);
+    },
+  );
+
   it("rejects static access keys before making any AWS request", () => {
     expect(() =>
       assertTemporaryCredentialSource({
