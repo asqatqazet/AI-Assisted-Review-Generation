@@ -149,4 +149,35 @@ describe("US-03.2 paid-work Attempt preparation", () => {
     });
     expect(providerCalls).toBe(0);
   });
+
+  it("rejects an ungrounded candidate without exposing its bytes", async () => {
+    const gateway: ModelGatewayPort = {
+      generate: async () => ({
+        output: {
+          draft: "The clinic gave me a free upgrade.",
+          claims: [
+            {
+              id: "claim-unsupported",
+              text: "The clinic gave me a free upgrade.",
+              assertionIds: ["assertion-not-supplied"],
+            },
+          ],
+        },
+        attempt: {
+          provider: "fake",
+          model: "fake-v1",
+          usage: { inputTokens: 20, outputTokens: 9 },
+          receipt: { requestId: "provider-request-a", finishReason: "stop" },
+        },
+      }),
+    };
+
+    const prepared = await createPaidWorkAttemptPreparer({ gateway })(workload);
+    const rejected = await prepared.execute("attempt-a").catch((error: unknown) =>
+      error,
+    );
+
+    expect(rejected).toMatchObject({ code: "GROUNDING_REJECTED" });
+    expect(JSON.stringify(rejected)).not.toContain("free upgrade");
+  });
 });
