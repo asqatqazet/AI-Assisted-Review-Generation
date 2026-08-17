@@ -16,7 +16,7 @@ describe("US-01.3 Generation production composition", () => {
     ].map((match) => match[1]);
     expect(new Set(referencedEnvironmentKeys)).toEqual(
       new Set([
-        "DATABASE_URL_PARAMETER",
+        "GENERATION_DATABASE_URL_PARAMETER",
         "CONTEXT_WORK_PUBLIC_KEY_PARAMETER",
         "GENERATION_WORK_PRIVATE_KEY_PARAMETER",
         "REVIEW_FAKE_DELAY_MS",

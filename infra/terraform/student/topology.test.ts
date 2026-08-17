@@ -114,7 +114,9 @@ describe("student AWS topology invariants", () => {
     );
     expect(terraform).not.toContain("parameter/review-gen/student/providers/*");
     expect(terraform).not.toMatch(/OPENAI|GEMINI|PROVIDER_API_KEY/);
-    expect(terraform).toContain("DATABASE_URL_PARAMETER");
+    expect(terraform).toContain("CONTEXT_DATABASE_URL_PARAMETER");
+    expect(terraform).toContain("GENERATION_DATABASE_URL_PARAMETER");
+    expect(terraform).not.toMatch(/\bDATABASE_URL_PARAMETER\s*=/);
     expect(terraform).toContain("REVIEW_CSRF_SECRET_PARAMETER");
     expect(terraform).toContain('actions = ["ssm:GetParameter"]');
     expect(terraform).not.toMatch(/DATABASE_URL\s*=\s*var\./);

@@ -14,7 +14,7 @@ describe("US-01.3 Context production composition", () => {
     ].map((match) => match[1]);
     expect(new Set(environmentKeys)).toEqual(
       new Set([
-        "DATABASE_URL_PARAMETER",
+        "CONTEXT_DATABASE_URL_PARAMETER",
         "CONTEXT_WORK_PRIVATE_KEY_PARAMETER",
         "GENERATION_WORK_PUBLIC_KEY_PARAMETER",
       ]),
