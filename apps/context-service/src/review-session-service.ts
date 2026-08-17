@@ -1,3 +1,4 @@
+import type { ReviewSessionProjectionDto } from "@review/contracts/context";
 import type { PostgresReviewSessionReader } from "@review/db/admission";
 
 type ReviewSessionReader = Pick<PostgresReviewSessionReader, "read">;
@@ -21,25 +22,7 @@ export function createReviewSessionService({ reader }: ReviewSessionServiceOptio
   readReviewSession(input: {
     readonly reviewSessionHandle: string;
     readonly browserCapability: string;
-  }): Promise<
-    | {
-        readonly status: "ready";
-        readonly reviewSessionHandle: string;
-        readonly tenantDisplayName: string;
-        readonly locationDisplayName: string;
-        readonly locale: "en-GB" | "de-DE";
-        readonly rating: 1 | 2 | 3 | 4 | 5;
-        readonly action: "generate" | "paraphrase";
-        readonly factOptions: readonly {
-          readonly id: string;
-          readonly label: string;
-          readonly categoryLabel: string;
-          readonly polarity: "positive" | "neutral" | "negative";
-        }[];
-        readonly reviewFormats: readonly [];
-      }
-    | { readonly status: "unavailable" }
-  >;
+  }): Promise<ReviewSessionProjectionDto | { readonly status: "unavailable" }>;
 } {
   return {
     async readReviewSession({ reviewSessionHandle, browserCapability }) {
@@ -59,8 +42,11 @@ export function createReviewSessionService({ reader }: ReviewSessionServiceOptio
         locale: stored.locale,
         rating: stored.rating,
         action: stored.action,
-        factOptions: stored.factOptions,
-        reviewFormats: stored.reviewFormats,
+        factOptions: [...stored.factOptions],
+        reviewFormats: stored.reviewFormats.map((format) => ({
+          ...format,
+          availableCommands: [...format.availableCommands],
+        })),
       };
     },
   };

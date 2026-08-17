@@ -13,6 +13,21 @@ export interface ReviewSessionFactProjection {
   readonly polarity: "positive" | "neutral" | "negative";
 }
 
+export interface ReviewSessionFormatProjection {
+  readonly id: string;
+  readonly displayName: string;
+  readonly description: string;
+  readonly sample: string;
+  readonly availableCommands: readonly (
+    | "generate"
+    | "paraphrase"
+    | "reformat"
+    | "condense"
+    | "expand"
+    | "revise-wording"
+  )[];
+}
+
 export interface StoredReviewSessionProjection {
   readonly reviewSessionId: string;
   readonly tenantId: string;
@@ -23,7 +38,7 @@ export interface StoredReviewSessionProjection {
   readonly rating: 1 | 2 | 3 | 4 | 5;
   readonly action: "generate" | "paraphrase";
   readonly factOptions: readonly ReviewSessionFactProjection[];
-  readonly reviewFormats: readonly [];
+  readonly reviewFormats: readonly ReviewSessionFormatProjection[];
 }
 
 export interface PostgresReviewSessionReader {
@@ -55,6 +70,14 @@ interface FactRow {
   readonly polarity: string;
 }
 
+interface ReviewFormatRow {
+  readonly id: string;
+  readonly display_name: string | null;
+  readonly description: string | null;
+  readonly sample: string | null;
+  readonly allowed_actions: string[];
+}
+
 const isLocale = (value: string): value is "en-GB" | "de-DE" =>
   value === "en-GB" || value === "de-DE";
 
@@ -78,6 +101,27 @@ const toPolarity = (
       : value === "NEGATIVE"
         ? "negative"
         : undefined;
+
+const toAvailableCommand = (
+  value: string,
+): ReviewSessionFormatProjection["availableCommands"][number] | undefined => {
+  switch (value) {
+    case "GENERATE":
+      return "generate";
+    case "PARAPHRASE":
+      return "paraphrase";
+    case "REFORMAT":
+      return "reformat";
+    case "CONDENSE":
+      return "condense";
+    case "EXPAND":
+      return "expand";
+    case "REVISE_WORDING":
+      return "revise-wording";
+    default:
+      return undefined;
+  }
+};
 
 export function createPostgresReviewSessionReader({
   databaseUrl,
@@ -179,6 +223,56 @@ export function createPostgresReviewSessionReader({
           });
         }
 
+        const formatRows = await transaction.$queryRaw<ReviewFormatRow[]>`
+          SELECT
+            format.id,
+            COALESCE(
+              format.localized_text -> 'displayName' ->> ${session.locale},
+              format.localized_text -> 'displayName' ->> 'en-GB'
+            ) AS display_name,
+            COALESCE(
+              format.localized_text -> 'description' ->> ${session.locale},
+              format.localized_text -> 'description' ->> 'en-GB'
+            ) AS description,
+            COALESCE(
+              format.localized_text -> 'sample' ->> ${session.locale},
+              format.localized_text -> 'sample' ->> 'en-GB'
+            ) AS sample,
+            enablement.allowed_actions::text[]
+          FROM review_format_enablements AS enablement
+          JOIN review_format_versions AS format
+            ON format.id = enablement.review_format_version_id
+          WHERE enablement.tenant_id = ${binding.tenant_id}::uuid
+            AND enablement.enabled = true
+            AND format.status = 'ACTIVE'
+            AND format.locale IN (${session.locale}, 'any')
+            AND enablement.allowed_actions @>
+              ARRAY[${session.selected_action}::generation_action]
+            AND format.supported_actions @>
+              ARRAY[${session.selected_action}::generation_action]
+          ORDER BY enablement.sort_order, format.id
+        `;
+        const reviewFormats: ReviewSessionFormatProjection[] = [];
+        for (const format of formatRows) {
+          if (
+            format.display_name === null ||
+            format.description === null ||
+            format.sample === null
+          ) {
+            continue;
+          }
+          reviewFormats.push({
+            id: format.id,
+            displayName: format.display_name,
+            description: format.description,
+            sample: format.sample,
+            availableCommands: format.allowed_actions.flatMap((action) => {
+              const command = toAvailableCommand(action);
+              return command === undefined ? [] : [command];
+            }),
+          });
+        }
+
         return {
           reviewSessionId: session.review_session_id,
           tenantId: binding.tenant_id,
@@ -189,7 +283,7 @@ export function createPostgresReviewSessionReader({
           rating: session.rating,
           action,
           factOptions,
-          reviewFormats: [],
+          reviewFormats,
         };
       });
     },

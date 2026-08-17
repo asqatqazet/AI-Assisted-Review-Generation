@@ -70,7 +70,8 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
         id, format_key, version, locale, target_platform, constraints,
         localized_text, supported_actions, content_hash, status
       ) VALUES (
-        '${reviewFormatVersionId}', 'concise', 1, 'en-GB', 'google',
+        '${reviewFormatVersionId}', 'concise-${reviewFormatVersionId}', 1,
+        'en-GB', 'google',
         '{"minChars":20,"maxChars":350,"paragraphs":1}'::jsonb,
         '{"displayName":{"en-GB":"Concise review"},"description":{"en-GB":"One short paragraph."},"sample":{"en-GB":"The team was attentive."}}'::jsonb,
         ARRAY['GENERATE']::generation_action[],
