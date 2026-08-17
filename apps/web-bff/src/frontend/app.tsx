@@ -18,6 +18,7 @@ import {
   transitionReviewSession,
 } from "./review-session-machine.js";
 import { createSurveyState, transition, type SurveyState } from "./survey-machine.js";
+import styles from "./app.module.css";
 
 const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
@@ -37,6 +38,15 @@ const ratings = [
   { value: 4, label: "Good" },
   { value: 5, label: "Very good" },
 ] as const;
+
+function SurveyHeader({ brand }: { readonly brand: string }): React.JSX.Element {
+  return (
+    <header className={styles.header}>
+      <span className={styles.brand}>{brand}</span>
+      <span className={styles.headerNote}>Review assistant</span>
+    </header>
+  );
+}
 
 function StartRoute({
   entryChallengeClient,
@@ -72,9 +82,17 @@ function StartRoute({
 
   if (state.value === "entry") {
     return (
-      <main>
-        <p>{state.context.locationDisplayName}</p>
-        <h1>Write your review of {state.context.tenantDisplayName}</h1>
+      <div className={styles.page}>
+        <SurveyHeader brand={state.context.tenantDisplayName} />
+        <main className={styles.surveyMain}>
+        <p className={styles.eyebrow}>{state.context.locationDisplayName}</p>
+        <h1 className={`${styles.title} ${styles.entryTitle}`}>
+          Write your review of {state.context.tenantDisplayName}
+        </h1>
+        <p className={styles.lead}>
+          A few details from you are enough to create a review you can edit and
+          post yourself.
+        </p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -99,11 +117,21 @@ function StartRoute({
             );
           }}
         >
-          <section aria-labelledby="rating-question">
-            <h2 id="rating-question">How was it?</h2>
-            <div role="group" aria-label="Rating, 1 to 5">
+          <section
+            className={styles.ratingSection}
+            aria-labelledby="rating-question"
+          >
+            <h2 className={styles.sectionTitle} id="rating-question">
+              How was it?
+            </h2>
+            <div
+              className={styles.ratingGroup}
+              role="group"
+              aria-label="Rating, 1 to 5"
+            >
               {ratings.map((rating) => (
                 <button
+                  className={styles.ratingButton}
                   key={rating.value}
                   type="button"
                   aria-label={`${rating.value}, ${rating.label}`}
@@ -121,15 +149,34 @@ function StartRoute({
                 </button>
               ))}
             </div>
-            <p aria-live="polite">
+            <p className={styles.status} aria-live="polite">
               {state.rating === null
                 ? "Choose a rating to continue."
                 : ratings[state.rating - 1]?.label}
             </p>
           </section>
-          <section aria-labelledby="drafting-path-question">
-            <h2 id="drafting-path-question">How would you like to write?</h2>
+          <aside className={styles.trustNote}>
+            <p className={styles.trustCopy}>
+              Only facts you select are sent to the writing assistant. It does
+              not invent details or post anything for you.
+            </p>
+          </aside>
+          <section
+            className={styles.pathSection}
+            aria-labelledby="drafting-path-question"
+          >
+            <h2 className={styles.sectionTitle} id="drafting-path-question">
+              How would you like to write?
+            </h2>
+            <div className={styles.pathCard}>
+              <p className={styles.cardEyebrow}>Guided</p>
+              <h3 className={styles.cardTitle}>Start from what happened</h3>
+              <p className={styles.cardCopy}>
+                Pick the facts that describe your experience and we will shape
+                them into a draft.
+              </p>
             <button
+              className={styles.pathButton}
               type="button"
               disabled={state.rating === null}
               aria-pressed={state.selectedAction === "generate"}
@@ -144,7 +191,15 @@ function StartRoute({
             >
               Generate from my facts
             </button>
+            </div>
+            <div className={styles.pathCard}>
+              <p className={styles.cardEyebrow}>Already written</p>
+              <h3 className={styles.cardTitle}>Improve your wording</h3>
+              <p className={styles.cardCopy}>
+                Keep every fact you wrote while making the review clearer.
+              </p>
             <button
+              className={styles.pathButton}
               type="button"
               disabled={state.rating === null}
               aria-pressed={state.selectedAction === "paraphrase"}
@@ -159,15 +214,18 @@ function StartRoute({
             >
               Improve my wording
             </button>
+            </div>
           </section>
           <button
+            className={styles.primaryButton}
             type="submit"
             disabled={state.rating === null || state.selectedAction === null}
           >
             Start
           </button>
         </form>
-      </main>
+        </main>
+      </div>
     );
   }
 

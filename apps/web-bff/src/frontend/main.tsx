@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 
 import { ReviewerApplication } from "./app.js";
+import "./global.css";
 
 const rootElement = document.querySelector<HTMLElement>("#root");
 
