@@ -4,7 +4,10 @@ import { createWebBffRuntime } from "./runtime.js";
 
 type BufferedHandler = ReturnType<typeof handle>;
 
-let runtime: BufferedHandler | undefined;
+let runtime: Promise<BufferedHandler> | undefined;
+
+const getRuntime = (): Promise<BufferedHandler> =>
+  (runtime ??= createWebBffRuntime().then((app) => handle(app)));
 
 export const handler: BufferedHandler = async (event, context) =>
-  await (runtime ??= handle(createWebBffRuntime()))(event, context);
+  await (await getRuntime())(event, context);

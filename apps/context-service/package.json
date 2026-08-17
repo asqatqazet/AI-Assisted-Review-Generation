@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@aws-sdk/client-ssm": "^3.1111.0",
     "@hono/node-server": "^2.1.0",
     "hono": "^4.13.1",
     "@review/contracts": "workspace:*",

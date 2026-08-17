@@ -9,7 +9,7 @@ describe("US-01.3 Context production composition", () => {
     const source = fs.readFileSync(new URL("./main.ts", import.meta.url), "utf8");
     const environmentKeys = [
       ...source.matchAll(
-        /(?:required\(|decodeKey\(|process\.env\[)["']([^"']+)["']/g,
+        /(?:required\(|requiredParameter\(|process\.env\[)["']([^"']+)["']/g,
       ),
     ].map((match) => match[1]);
     expect(new Set(environmentKeys)).toEqual(

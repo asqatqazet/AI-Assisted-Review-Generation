@@ -6,16 +6,20 @@ variable "aws_region" {
 
 variable "alert_email" {
   type        = string
-  description = "Recipient email for budget alerts"
-  default     = "alerts@example.com"
+  description = "Verified recipient for the student cost alerts"
+}
+
+variable "web_bff_artifact_path" {
+  type        = string
+  description = "Absolute path to the verified Web+BFF Lambda zip"
 }
 
 variable "context_artifact_path" {
   type        = string
-  description = "Absolute path to the verified Context Lambda zip artifact"
+  description = "Absolute path to the verified Context Lambda zip"
 }
 
 variable "generation_artifact_path" {
   type        = string
-  description = "Absolute path to the verified Generation Lambda zip artifact"
+  description = "Absolute path to the verified Generation Lambda zip"
 }

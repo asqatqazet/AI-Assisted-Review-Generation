@@ -20,19 +20,48 @@ provider "aws" {
 }
 
 data "aws_caller_identity" "current" {}
+data "aws_cloudfront_cache_policy" "caching_optimized" {
+  name = "Managed-CachingOptimized"
+}
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
+  name = "Managed-AllViewerExceptHostHeader"
+}
 
-# 1. AWS Budget Alarm ($10 Hard Limit)
+locals {
+  function_names = {
+    web_bff_fast       = "review-web-bff-fast-student"
+    web_bff_stream     = "review-web-bff-stream-student"
+    web_bff_reconcile  = "review-web-bff-reconcile-student"
+    context_service    = "review-context-service-student"
+    generation_service = "review-generation-service-student"
+  }
+  lambda_log_group_arns = [
+    for name in values(local.function_names) :
+    "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${name}:*"
+  ]
+  parameter_names = {
+    database_url                = "/review-gen/student/database-url"
+    review_csrf_secret          = "/review-gen/student/review-csrf-secret"
+    context_work_private_key    = "/review-gen/student/context-work-private-key"
+    context_work_public_key     = "/review-gen/student/context-work-public-key"
+    generation_work_private_key = "/review-gen/student/generation-work-private-key"
+    generation_work_public_key  = "/review-gen/student/generation-work-public-key"
+  }
+}
+
 resource "aws_budgets_budget" "student_cost_limit" {
-  name              = "student-monthly-budget"
-  budget_type       = "COST"
-  limit_amount      = "10"
-  limit_unit        = "USD"
-  time_unit         = "MONTHLY"
-  time_period_start = "2026-01-01_00:00"
+  name         = "student-monthly-budget-alert"
+  budget_type  = "COST"
+  limit_amount = "1"
+  limit_unit   = "USD"
+  time_unit    = "MONTHLY"
 
   notification {
     comparison_operator        = "GREATER_THAN"
-    threshold                  = 80
+    threshold                  = 50
     threshold_type             = "PERCENTAGE"
     notification_type          = "ACTUAL"
     subscriber_email_addresses = [var.alert_email]
@@ -42,141 +71,208 @@ resource "aws_budgets_budget" "student_cost_limit" {
     comparison_operator        = "GREATER_THAN"
     threshold                  = 100
     threshold_type             = "PERCENTAGE"
-    notification_type          = "ACTUAL"
+    notification_type          = "FORECASTED"
     subscriber_email_addresses = [var.alert_email]
   }
 }
 
-# 2. S3 Manifests Storage
-resource "aws_s3_bucket" "manifests" {
-  bucket_prefix = "review-manifests-student-"
+resource "aws_s3_bucket" "ui" {
+  bucket_prefix = "review-ui-student-"
   force_destroy = true
 }
 
-resource "aws_s3_bucket_public_access_block" "manifests_block" {
-  bucket                  = aws_s3_bucket.manifests.id
+resource "aws_s3_bucket_public_access_block" "ui" {
+  bucket                  = aws_s3_bucket.ui.id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
 
-# 3. IAM Roles (Disjoint least-privilege)
-resource "aws_iam_role" "context_service_role" {
-  name = "review-context-service-student-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
+resource "aws_s3_bucket_server_side_encryption_configuration" "ui" {
+  bucket = aws_s3_bucket.ui.id
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
 }
 
-resource "aws_iam_policy" "context_service_policy" {
-  name = "review-context-service-student-policy"
+resource "aws_cloudfront_origin_access_control" "ui" {
+  name                              = "review-ui-student"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
 
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket"
-        ]
-        Resource = [
-          aws_s3_bucket.manifests.arn,
-          "${aws_s3_bucket.manifests.arn}/*"
-        ]
-      }
+resource "aws_cloudfront_origin_access_control" "web_bff_fast" {
+  name                              = "review-web-bff-fast-student"
+  origin_access_control_origin_type = "lambda"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+resource "aws_cloudfront_origin_access_control" "web_bff_stream" {
+  name                              = "review-web-bff-stream-student"
+  origin_access_control_origin_type = "lambda"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+data "aws_iam_policy_document" "lambda_assume" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["lambda.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "web_bff" {
+  name               = "review-web-bff-student-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role" "context_service" {
+  name               = "review-context-service-student-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+resource "aws_iam_role" "generation_service" {
+  name               = "review-generation-service-student-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+}
+
+data "aws_iam_policy_document" "lambda_logs" {
+  statement {
+    actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+    resources = local.lambda_log_group_arns
+  }
+}
+
+resource "aws_iam_role_policy" "web_bff_logs" {
+  role   = aws_iam_role.web_bff.id
+  policy = data.aws_iam_policy_document.lambda_logs.json
+}
+
+resource "aws_iam_role_policy" "context_logs" {
+  role   = aws_iam_role.context_service.id
+  policy = data.aws_iam_policy_document.lambda_logs.json
+}
+
+resource "aws_iam_role_policy" "generation_logs" {
+  role   = aws_iam_role.generation_service.id
+  policy = data.aws_iam_policy_document.lambda_logs.json
+}
+
+data "aws_iam_policy_document" "web_bff_parameters" {
+  statement {
+    actions = ["ssm:GetParameter"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.review_csrf_secret}",
     ]
-  })
+  }
 }
 
-resource "aws_iam_role_policy_attachment" "context_service_attach" {
-  role       = aws_iam_role.context_service_role.name
-  policy_arn = aws_iam_policy.context_service_policy.arn
+resource "aws_iam_role_policy" "web_bff_parameters" {
+  role   = aws_iam_role.web_bff.id
+  policy = data.aws_iam_policy_document.web_bff_parameters.json
 }
 
-resource "aws_iam_role" "generation_service_role" {
-  name = "review-generation-service-student-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Action = "sts:AssumeRole"
-      Effect = "Allow"
-      Principal = {
-        Service = "lambda.amazonaws.com"
-      }
-    }]
-  })
-}
-
-resource "aws_iam_policy" "generation_service_policy" {
-  name = "review-generation-service-student-policy"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Effect = "Allow"
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ]
-        Resource = "arn:aws:logs:*:*:*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "ssm:GetParameter",
-          "ssm:GetParameters"
-        ]
-        Resource = "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter/review-gen/student/providers/*"
-      }
+data "aws_iam_policy_document" "context_parameters" {
+  statement {
+    actions = ["ssm:GetParameter"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_private_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_public_key}",
     ]
-  })
+  }
 }
 
-resource "aws_iam_role_policy_attachment" "generation_service_attach" {
-  role       = aws_iam_role.generation_service_role.name
-  policy_arn = aws_iam_policy.generation_service_policy.arn
+resource "aws_iam_role_policy" "context_parameters" {
+  role   = aws_iam_role.context_service.id
+  policy = data.aws_iam_policy_document.context_parameters.json
 }
 
-# 4. Lambda Functions & Aliases
+data "aws_iam_policy_document" "generation_parameters" {
+  statement {
+    actions = ["ssm:GetParameter"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_public_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_private_key}",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "generation_parameters" {
+  role   = aws_iam_role.generation_service.id
+  policy = data.aws_iam_policy_document.generation_parameters.json
+}
+
+data "aws_iam_policy_document" "web_bff_invoke" {
+  statement {
+    actions = ["lambda:InvokeFunction"]
+    resources = [
+      aws_lambda_alias.context_service_live.arn,
+      aws_lambda_alias.generation_service_live.arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "web_bff_invoke" {
+  role   = aws_iam_role.web_bff.id
+  policy = data.aws_iam_policy_document.web_bff_invoke.json
+}
+
+resource "aws_cloudwatch_log_group" "web_bff_fast" {
+  name              = "/aws/lambda/${local.function_names.web_bff_fast}"
+  retention_in_days = 3
+}
+
+resource "aws_cloudwatch_log_group" "web_bff_stream" {
+  name              = "/aws/lambda/${local.function_names.web_bff_stream}"
+  retention_in_days = 3
+}
+
+resource "aws_cloudwatch_log_group" "web_bff_reconcile" {
+  name              = "/aws/lambda/${local.function_names.web_bff_reconcile}"
+  retention_in_days = 3
+}
+
+resource "aws_cloudwatch_log_group" "context_service" {
+  name              = "/aws/lambda/${local.function_names.context_service}"
+  retention_in_days = 3
+}
+
+resource "aws_cloudwatch_log_group" "generation_service" {
+  name              = "/aws/lambda/${local.function_names.generation_service}"
+  retention_in_days = 3
+}
+
 resource "aws_lambda_function" "context_service" {
-  function_name    = "review-context-service-student"
-  role             = aws_iam_role.context_service_role.arn
-  handler          = "main.handler"
-  runtime          = "nodejs24.x"
-  memory_size      = 256
-  timeout          = 10
-  filename         = var.context_artifact_path
-  source_code_hash = filebase64sha256(var.context_artifact_path)
-  publish          = true
+  function_name                  = local.function_names.context_service
+  role                           = aws_iam_role.context_service.arn
+  handler                        = "main.handler"
+  runtime                        = "nodejs24.x"
+  memory_size                    = 256
+  reserved_concurrent_executions = 5
+  timeout                        = 7
+  filename                       = var.context_artifact_path
+  source_code_hash               = filebase64sha256(var.context_artifact_path)
+  publish                        = true
 
   environment {
     variables = {
-      NODE_ENV        = "production"
-      MANIFEST_BUCKET = aws_s3_bucket.manifests.bucket
+      DATABASE_URL_PARAMETER               = local.parameter_names.database_url
+      CONTEXT_WORK_PRIVATE_KEY_PARAMETER   = local.parameter_names.context_work_private_key
+      GENERATION_WORK_PUBLIC_KEY_PARAMETER = local.parameter_names.generation_work_public_key
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.context_service]
 }
 
 resource "aws_lambda_alias" "context_service_live" {
@@ -186,25 +282,322 @@ resource "aws_lambda_alias" "context_service_live" {
 }
 
 resource "aws_lambda_function" "generation_service" {
-  function_name    = "review-generation-service-student"
-  role             = aws_iam_role.generation_service_role.arn
-  handler          = "main.handler"
-  runtime          = "nodejs24.x"
-  memory_size      = 512
-  timeout          = 75
-  filename         = var.generation_artifact_path
-  source_code_hash = filebase64sha256(var.generation_artifact_path)
-  publish          = true
+  function_name                  = local.function_names.generation_service
+  role                           = aws_iam_role.generation_service.arn
+  handler                        = "main.handler"
+  runtime                        = "nodejs24.x"
+  memory_size                    = 512
+  reserved_concurrent_executions = 1
+  timeout                        = 75
+  filename                       = var.generation_artifact_path
+  source_code_hash               = filebase64sha256(var.generation_artifact_path)
+  publish                        = true
 
   environment {
     variables = {
-      NODE_ENV = "production"
+      DATABASE_URL_PARAMETER                = local.parameter_names.database_url
+      CONTEXT_WORK_PUBLIC_KEY_PARAMETER     = local.parameter_names.context_work_public_key
+      GENERATION_WORK_PRIVATE_KEY_PARAMETER = local.parameter_names.generation_work_private_key
+      REVIEW_FAKE_DELAY_MS                  = "0"
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.generation_service]
 }
 
 resource "aws_lambda_alias" "generation_service_live" {
   name             = "live"
   function_name    = aws_lambda_function.generation_service.function_name
   function_version = aws_lambda_function.generation_service.version
+}
+
+locals {
+  web_bff_environment = {
+    CONTEXT_FUNCTION_ALIAS_ARN    = aws_lambda_alias.context_service_live.arn
+    GENERATION_FUNCTION_ALIAS_ARN = aws_lambda_alias.generation_service_live.arn
+    REVIEW_CSRF_SECRET_PARAMETER  = local.parameter_names.review_csrf_secret
+  }
+}
+
+resource "aws_lambda_function" "web_bff_fast" {
+  function_name                  = local.function_names.web_bff_fast
+  role                           = aws_iam_role.web_bff.arn
+  handler                        = "main.handler"
+  runtime                        = "nodejs24.x"
+  memory_size                    = 256
+  reserved_concurrent_executions = 5
+  timeout                        = 10
+  filename                       = var.web_bff_artifact_path
+  source_code_hash               = filebase64sha256(var.web_bff_artifact_path)
+  publish                        = true
+
+  environment { variables = local.web_bff_environment }
+  depends_on = [aws_cloudwatch_log_group.web_bff_fast]
+}
+
+resource "aws_lambda_alias" "web_bff_fast_live" {
+  name             = "live"
+  function_name    = aws_lambda_function.web_bff_fast.function_name
+  function_version = aws_lambda_function.web_bff_fast.version
+}
+
+resource "aws_lambda_function" "web_bff_stream" {
+  function_name                  = local.function_names.web_bff_stream
+  role                           = aws_iam_role.web_bff.arn
+  handler                        = "stream-main.handler"
+  runtime                        = "nodejs24.x"
+  memory_size                    = 256
+  reserved_concurrent_executions = 2
+  timeout                        = 85
+  filename                       = var.web_bff_artifact_path
+  source_code_hash               = filebase64sha256(var.web_bff_artifact_path)
+  publish                        = true
+
+  environment { variables = local.web_bff_environment }
+  depends_on = [aws_cloudwatch_log_group.web_bff_stream]
+}
+
+resource "aws_lambda_alias" "web_bff_stream_live" {
+  name             = "live"
+  function_name    = aws_lambda_function.web_bff_stream.function_name
+  function_version = aws_lambda_function.web_bff_stream.version
+}
+
+resource "aws_lambda_function" "web_bff_reconcile" {
+  function_name    = local.function_names.web_bff_reconcile
+  role             = aws_iam_role.web_bff.arn
+  handler          = "reconcile-main.handler"
+  runtime          = "nodejs24.x"
+  memory_size      = 128
+  timeout          = 30
+  filename         = var.web_bff_artifact_path
+  source_code_hash = filebase64sha256(var.web_bff_artifact_path)
+  publish          = true
+
+  environment { variables = local.web_bff_environment }
+  depends_on = [aws_cloudwatch_log_group.web_bff_reconcile]
+}
+
+resource "aws_lambda_alias" "web_bff_reconcile_live" {
+  name             = "live"
+  function_name    = aws_lambda_function.web_bff_reconcile.function_name
+  function_version = aws_lambda_function.web_bff_reconcile.version
+}
+
+resource "aws_lambda_function_url" "web_bff_fast" {
+  function_name      = aws_lambda_function.web_bff_fast.function_name
+  qualifier          = aws_lambda_alias.web_bff_fast_live.name
+  authorization_type = "AWS_IAM"
+  invoke_mode        = "BUFFERED"
+}
+
+resource "aws_lambda_function_url" "web_bff_stream" {
+  function_name      = aws_lambda_function.web_bff_stream.function_name
+  qualifier          = aws_lambda_alias.web_bff_stream_live.name
+  authorization_type = "AWS_IAM"
+  invoke_mode        = "RESPONSE_STREAM"
+}
+
+resource "aws_cloudfront_function" "spa_rewrite" {
+  name    = "review-spa-rewrite-student"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+  code    = file("${path.module}/spa-rewrite.js")
+}
+
+resource "aws_cloudfront_function" "api_origin" {
+  name    = "review-api-origin-student"
+  runtime = "cloudfront-js-2.0"
+  publish = true
+  code    = file("${path.module}/api-origin.js")
+}
+
+resource "aws_cloudfront_distribution" "student" {
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+  price_class         = "PriceClass_100"
+  http_version        = "http2and3"
+
+  origin {
+    domain_name              = aws_s3_bucket.ui.bucket_regional_domain_name
+    origin_id                = "ui"
+    origin_access_control_id = aws_cloudfront_origin_access_control.ui.id
+  }
+
+  origin {
+    domain_name              = trimsuffix(trimprefix(aws_lambda_function_url.web_bff_fast.function_url, "https://"), "/")
+    origin_id                = "web-bff-fast"
+    origin_access_control_id = aws_cloudfront_origin_access_control.web_bff_fast.id
+    custom_origin_config {
+      http_port                = 80
+      https_port               = 443
+      origin_protocol_policy   = "https-only"
+      origin_ssl_protocols     = ["TLSv1.2"]
+      origin_read_timeout      = 30
+      origin_keepalive_timeout = 5
+    }
+  }
+
+  origin {
+    domain_name                 = trimsuffix(trimprefix(aws_lambda_function_url.web_bff_stream.function_url, "https://"), "/")
+    origin_id                   = "web-bff-stream"
+    origin_access_control_id    = aws_cloudfront_origin_access_control.web_bff_stream.id
+    response_completion_timeout = 95
+    custom_origin_config {
+      http_port                = 80
+      https_port               = 443
+      origin_protocol_policy   = "https-only"
+      origin_ssl_protocols     = ["TLSv1.2"]
+      origin_read_timeout      = 30
+      origin_keepalive_timeout = 5
+    }
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "ui"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
+    cached_methods         = ["GET", "HEAD"]
+    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
+    compress               = true
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.spa_rewrite.arn
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern             = "/api/v1/review-sessions/*/generations"
+    target_origin_id         = "web-bff-stream"
+    viewer_protocol_policy   = "https-only"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    compress                 = false
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_origin.arn
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern             = "/api/v1/*"
+    target_origin_id         = "web-bff-fast"
+    viewer_protocol_policy   = "https-only"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    compress                 = false
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_origin.arn
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern             = "/s/*"
+    target_origin_id         = "web-bff-fast"
+    viewer_protocol_policy   = "https-only"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS"]
+    cached_methods           = ["GET", "HEAD"]
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    compress                 = false
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_origin.arn
+    }
+  }
+
+  restrictions {
+    geo_restriction { restriction_type = "none" }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+    minimum_protocol_version       = "TLSv1.2_2021"
+  }
+}
+
+data "aws_iam_policy_document" "ui_bucket" {
+  statement {
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.ui.arn}/*"]
+    principals {
+      type        = "Service"
+      identifiers = ["cloudfront.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "AWS:SourceArn"
+      values   = [aws_cloudfront_distribution.student.arn]
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "ui" {
+  bucket = aws_s3_bucket.ui.id
+  policy = data.aws_iam_policy_document.ui_bucket.json
+}
+
+resource "aws_lambda_permission" "cloudfront_fast_url" {
+  statement_id           = "AllowCloudFrontFunctionUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.web_bff_fast.function_name
+  qualifier              = aws_lambda_alias.web_bff_fast_live.name
+  principal              = "cloudfront.amazonaws.com"
+  source_arn             = aws_cloudfront_distribution.student.arn
+  function_url_auth_type = "AWS_IAM"
+}
+
+resource "aws_lambda_permission" "cloudfront_fast_invoke" {
+  statement_id             = "AllowCloudFrontInvokeFunction"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.web_bff_fast.function_name
+  qualifier                = aws_lambda_alias.web_bff_fast_live.name
+  principal                = "cloudfront.amazonaws.com"
+  source_arn               = aws_cloudfront_distribution.student.arn
+  invoked_via_function_url = true
+}
+
+resource "aws_lambda_permission" "cloudfront_stream_url" {
+  statement_id           = "AllowCloudFrontFunctionUrl"
+  action                 = "lambda:InvokeFunctionUrl"
+  function_name          = aws_lambda_function.web_bff_stream.function_name
+  qualifier              = aws_lambda_alias.web_bff_stream_live.name
+  principal              = "cloudfront.amazonaws.com"
+  source_arn             = aws_cloudfront_distribution.student.arn
+  function_url_auth_type = "AWS_IAM"
+}
+
+resource "aws_lambda_permission" "cloudfront_stream_invoke" {
+  statement_id             = "AllowCloudFrontInvokeFunction"
+  action                   = "lambda:InvokeFunction"
+  function_name            = aws_lambda_function.web_bff_stream.function_name
+  qualifier                = aws_lambda_alias.web_bff_stream_live.name
+  principal                = "cloudfront.amazonaws.com"
+  source_arn               = aws_cloudfront_distribution.student.arn
+  invoked_via_function_url = true
+}
+
+resource "aws_cloudwatch_event_rule" "reconcile" {
+  name                = "review-reconcile-student"
+  schedule_expression = "rate(1 hour)"
+}
+
+resource "aws_cloudwatch_event_target" "reconcile" {
+  rule = aws_cloudwatch_event_rule.reconcile.name
+  arn  = aws_lambda_alias.web_bff_reconcile_live.arn
+}
+
+resource "aws_lambda_permission" "eventbridge_reconcile" {
+  statement_id  = "AllowEventBridgeReconciliation"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.web_bff_reconcile.function_name
+  qualifier     = aws_lambda_alias.web_bff_reconcile_live.name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.reconcile.arn
 }

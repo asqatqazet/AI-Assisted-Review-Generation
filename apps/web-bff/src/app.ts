@@ -24,6 +24,7 @@ export interface WebBffOptions {
   readonly newBrowserCapability?: (() => string) | undefined;
   readonly csrfProtector?: CsrfProtector | undefined;
   readonly publicOrigin?: string | undefined;
+  readonly trustedPublicOriginHeader?: string | undefined;
   readonly reviewerGenerationContextPort?:
     | ReviewerGenerationContextPort
     | undefined;
@@ -58,6 +59,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     options.publicOrigin === undefined
       ? undefined
       : new URL(options.publicOrigin).origin;
+  const trustedPublicOriginHeader = options.trustedPublicOriginHeader;
   const reviewerGeneration =
     options.reviewerGenerationContextPort === undefined ||
     options.reviewerGenerationExecutionPort === undefined
@@ -67,6 +69,23 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
           options.reviewerGenerationExecutionPort,
         );
   const app = new Hono();
+
+  const expectedPublicOrigin = (headers: Headers): string | undefined => {
+    if (publicOrigin !== undefined) {
+      return publicOrigin;
+    }
+    if (trustedPublicOriginHeader === undefined) {
+      return undefined;
+    }
+    const value = headers.get(trustedPublicOriginHeader);
+    if (
+      value === null ||
+      !/^https:\/\/[a-z0-9-]+\.cloudfront\.net$/.test(value)
+    ) {
+      return undefined;
+    }
+    return value;
+  };
 
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
 
@@ -153,10 +172,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     const browserCapability = getCookie(c, "__Host-review_browser");
     const entryChallengeHandle = c.req.param("entryChallengeHandle");
     const origin = c.req.header("Origin");
+    const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
 
     if (
-      publicOrigin === undefined ||
-      origin !== publicOrigin ||
+      expectedOrigin === undefined ||
+      origin !== expectedOrigin ||
       browserCapability === undefined ||
       !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
     ) {
@@ -259,12 +279,13 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       const idempotencyKey = c.req.header("Idempotency-Key");
       const claimedBodyHash = c.req.header("x-amz-content-sha256");
       const origin = c.req.header("Origin");
+      const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
       const rawBody = await c.req.text();
 
       if (
         reviewerGeneration === undefined ||
-        publicOrigin === undefined ||
-        origin !== publicOrigin ||
+        expectedOrigin === undefined ||
+        origin !== expectedOrigin ||
         browserCapability === undefined ||
         !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
         idempotencyKey === undefined ||

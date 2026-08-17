@@ -1,6 +1,9 @@
+import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
+
 import { createGenerationRuntime } from "./runtime.js";
 
-let runtime: ((event: unknown) => Promise<unknown>) | undefined;
+let runtime: Promise<(event: unknown) => Promise<unknown>> | undefined;
+const ssm = new SSMClient({});
 
 const required = (name: string): string => {
   const value = process.env[name];
@@ -10,18 +13,35 @@ const required = (name: string): string => {
   return value;
 };
 
-const decodeKey = (name: string): string =>
-  Buffer.from(required(name), "base64").toString("utf8");
+const requiredParameter = async (name: string): Promise<string> => {
+  const response = await ssm.send(
+    new GetParameterCommand({ Name: required(name), WithDecryption: true }),
+  );
+  const value = response.Parameter?.Value;
+  if (value === undefined || value.length === 0) {
+    throw new Error(`${name} did not resolve to a value`);
+  }
+  return value;
+};
 
-const getRuntime = (): ((event: unknown) => Promise<unknown>) => {
-  runtime ??= createGenerationRuntime({
-    databaseUrl: required("DATABASE_URL"),
-    contextPublicKeyPem: decodeKey("CONTEXT_WORK_PUBLIC_KEY_B64"),
-    generationPrivateKeyPem: decodeKey("GENERATION_WORK_PRIVATE_KEY_B64"),
-    fakeDelayMs: Number.parseInt(process.env["REVIEW_FAKE_DELAY_MS"] ?? "0", 10),
-  });
+const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
+  runtime ??= Promise.all([
+    requiredParameter("DATABASE_URL_PARAMETER"),
+    requiredParameter("CONTEXT_WORK_PUBLIC_KEY_PARAMETER"),
+    requiredParameter("GENERATION_WORK_PRIVATE_KEY_PARAMETER"),
+  ]).then(([databaseUrl, contextPublicKeyPem, generationPrivateKeyPem]) =>
+    createGenerationRuntime({
+      databaseUrl,
+      contextPublicKeyPem,
+      generationPrivateKeyPem,
+      fakeDelayMs: Number.parseInt(
+        process.env["REVIEW_FAKE_DELAY_MS"] ?? "0",
+        10,
+      ),
+    }),
+  );
   return runtime;
 };
 
 export const handler = async (event: unknown): Promise<unknown> =>
-  await getRuntime()(event);
+  await (await getRuntime())(event);

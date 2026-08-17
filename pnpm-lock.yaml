@@ -41,6 +41,9 @@ importers:
 
   apps/context-service:
     dependencies:
+      '@aws-sdk/client-ssm':
+        specifier: ^3.1111.0
+        version: 3.1111.0
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.1)
@@ -59,6 +62,9 @@ importers:
 
   apps/generation-service:
     dependencies:
+      '@aws-sdk/client-ssm':
+        specifier: ^3.1111.0
+        version: 3.1111.0
       '@hono/node-server':
         specifier: ^2.1.0
         version: 2.1.0(hono@4.13.1)
@@ -84,6 +90,9 @@ importers:
   apps/web-bff:
     dependencies:
       '@aws-sdk/client-lambda':
+        specifier: ^3.1111.0
+        version: 3.1111.0
+      '@aws-sdk/client-ssm':
         specifier: ^3.1111.0
         version: 3.1111.0
       '@hono/node-server':
@@ -170,6 +179,10 @@ packages:
 
   '@aws-sdk/client-lambda@3.1111.0':
     resolution: {integrity: sha512-jG2rB6LY2rx3XT55axgH3C0aIv1egvI0kqPYC6jfghVp82kWssU7R/1dJxXr0PnPLv4wq+WXRyLEmjyKURUjFQ==}
+    engines: {node: '>=20.0.0'}
+
+  '@aws-sdk/client-ssm@3.1111.0':
+    resolution: {integrity: sha512-NhVyZL203unBVPi/oFQ48m0f5z/0M8nKM6nVEoOnX9/hfWXfa81rh5J1Tj4YoDuDjb5aTKyQZAtsbD48Dwiujw==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.977.8':
@@ -2726,6 +2739,17 @@ snapshots:
       lru-cache: 11.5.2
 
   '@aws-sdk/client-lambda@3.1111.0':
+    dependencies:
+      '@aws-sdk/core': 3.977.8
+      '@aws-sdk/credential-provider-node': 3.972.80
+      '@aws-sdk/types': 3.974.4
+      '@smithy/core': 3.33.2
+      '@smithy/fetch-http-handler': 5.7.2
+      '@smithy/node-http-handler': 4.11.2
+      '@smithy/types': 4.17.2
+      tslib: 2.8.1
+
+  '@aws-sdk/client-ssm@3.1111.0':
     dependencies:
       '@aws-sdk/core': 3.977.8
       '@aws-sdk/credential-provider-node': 3.972.80

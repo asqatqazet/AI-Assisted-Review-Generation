@@ -1,4 +1,5 @@
 import { LambdaClient } from "@aws-sdk/client-lambda";
+import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 
 import { createAwsLambdaJsonInvoker } from "./adapters/lambda-json-invoker.js";
 import {
@@ -25,8 +26,19 @@ const qualifiedAliasArn = (name: string): string => {
   return value;
 };
 
-export function createWebBffRuntime() {
+export async function createWebBffRuntime() {
   const client = new LambdaClient({});
+  const ssm = new SSMClient({});
+  const csrfSecretResponse = await ssm.send(
+    new GetParameterCommand({
+      Name: required("REVIEW_CSRF_SECRET_PARAMETER"),
+      WithDecryption: true,
+    }),
+  );
+  const csrfSecret = csrfSecretResponse.Parameter?.Value;
+  if (csrfSecret === undefined || csrfSecret.length === 0) {
+    throw new Error("REVIEW_CSRF_SECRET_PARAMETER did not resolve to a value");
+  }
   const contextInvoker = createAwsLambdaJsonInvoker(
     client,
     qualifiedAliasArn("CONTEXT_FUNCTION_ALIAS_ARN"),
@@ -42,7 +54,7 @@ export function createWebBffRuntime() {
       createInvokedReviewerGenerationContextPort(contextInvoker),
     reviewerGenerationExecutionPort:
       createInvokedReviewerGenerationExecutionPort(generationInvoker),
-    csrfProtector: createHmacCsrfProtector(required("REVIEW_CSRF_SECRET")),
-    publicOrigin: required("REVIEW_PUBLIC_ORIGIN"),
+    csrfProtector: createHmacCsrfProtector(csrfSecret),
+    trustedPublicOriginHeader: "x-review-public-origin",
   });
 }

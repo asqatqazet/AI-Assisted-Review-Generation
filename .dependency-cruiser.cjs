@@ -181,11 +181,23 @@ module.exports = {
       },
     },
     {
-      name: "generation-no-direct-db-or-config-clients",
+      name: "generation-no-direct-db-clients",
       severity: "error",
       from: { path: GENERATION_SERVICE },
       to: {
-        path: [DB_DRIVERS, CONFIG_CLIENTS],
+        path: DB_DRIVERS,
+        reachable: true,
+      },
+    },
+    {
+      name: "generation-config-client-only-in-composition-root",
+      severity: "error",
+      from: {
+        path: GENERATION_SERVICE,
+        pathNot: "^apps/generation-service/src/main\\.ts$",
+      },
+      to: {
+        path: CONFIG_CLIENTS,
         reachable: true,
       },
     },

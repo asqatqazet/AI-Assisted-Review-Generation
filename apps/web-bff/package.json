@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@aws-sdk/client-lambda": "^3.1111.0",
+    "@aws-sdk/client-ssm": "^3.1111.0",
     "@hono/node-server": "^2.1.0",
     "@review/contracts": "workspace:*",
     "@review/observability": "workspace:*",

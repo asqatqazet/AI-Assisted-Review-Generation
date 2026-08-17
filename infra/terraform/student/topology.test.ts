@@ -23,7 +23,7 @@ describe("student AWS topology invariants", () => {
     expect(terraform).not.toContain("dummy-context.zip");
     expect(terraform).not.toContain("dummy-gen.zip");
     expect(terraform).not.toContain('function_version = "$LATEST"');
-    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(6);
+    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(7);
     expect(terraform.match(/source_code_hash\s*=\s*filebase64sha256/g)).toHaveLength(5);
     expect(terraform).toContain(
       "function_version = aws_lambda_function.context_service.version",
