@@ -177,6 +177,10 @@ describe("US-03.2 paid-work Generation handler", () => {
             leaseId: "lease-a",
             attemptOrdinal: 1,
             activationExpiresAt: "2026-08-17T12:00:40.000Z",
+            requestPayload: {
+              model: "fake-v1",
+              messages: [{ role: "user", content: "bound provider request" }],
+            },
             workload,
           });
           return { status: "claimed", attemptId: "attempt-a" };
@@ -195,6 +199,21 @@ describe("US-03.2 paid-work Generation handler", () => {
         signStatus: async () => {
           throw new Error("status signing must not run during execute");
         },
+      },
+      prepareAttempt: async (receivedWorkload) => {
+        events.push("attempt-prepared");
+        expect(receivedWorkload).toEqual(workload);
+        return {
+          requestPayload: {
+            model: "fake-v1",
+            messages: [{ role: "user", content: "bound provider request" }],
+          },
+          execute: async (attemptId: string) => {
+            events.push("provider-entered");
+            expect(attemptId).toBe("attempt-a");
+            return { status: "completed", generationId: "generation-a" };
+          },
+        };
       },
       execute: async (input) => {
         events.push("provider-entered");
@@ -216,6 +235,7 @@ describe("US-03.2 paid-work Generation handler", () => {
     ).resolves.toEqual({ status: "completed", generationId: "generation-a" });
     expect(events).toEqual([
       "activation-verified",
+      "attempt-prepared",
       "attempt-claimed",
       "provider-entered",
     ]);
