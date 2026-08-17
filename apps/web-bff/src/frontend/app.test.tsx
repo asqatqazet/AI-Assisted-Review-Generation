@@ -265,4 +265,54 @@ describe("reviewer application routes", () => {
       screen.getByRole("checkbox", { name: "The team was attentive" }),
     ).toBeVisible();
   });
+
+  it("moves confirmed facts into compatible Review Format choice", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  id: "format-concise-v1",
+                  displayName: "Concise blurb",
+                  description: "One concise paragraph.",
+                  sample: "The team was attentive.",
+                  availableCommands: ["generate"],
+                },
+              ],
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(
+      screen.getByRole("heading", { name: "Choose a format" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("radio", { name: "Concise blurb" }),
+    ).toBeVisible();
+  });
 });
