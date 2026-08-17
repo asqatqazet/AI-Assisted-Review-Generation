@@ -11,6 +11,7 @@ An assisted review-writing system that turns only reviewer-confirmed assertions 
 - [Accepted product Epics and prototype traceability](stories/EPICS.md)
 - [Canonical domain language and invariants](docs/agents/domain.md)
 - [Accepted package boundaries](docs/adr/ADR-004-package-boundaries.md)
+- [Student deployment execution guide](docs/STUDENT-DEPLOYMENT-GUIDE.md)
 
 ## Local development
 

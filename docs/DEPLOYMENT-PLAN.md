@@ -32,8 +32,8 @@ The four delivery gates now have executable evidence:
 2. Use a new AWS **Free account plan** in `eu-central-1`, record its expiry date, and do not join AWS
    Organizations. The preflight deliberately stops if the teardown date is unsafe or the account cannot
    allocate the required Lambda concurrency while leaving 100 unreserved.
-3. Create the GitHub OIDC provider and a deployment role whose trust policy is restricted to
-   `asqatqazet/AI-Assisted-Review-Generation`, the `main` branch and the deployment environment. Put only its
+3. Create the GitHub OIDC provider and a deployment role whose trust policy is restricted to the repository's
+   immutable owner/repository IDs and the `main` branch. Put only its
    ARN in the GitHub variable `AWS_DEPLOY_ROLE_ARN`; do not create GitHub AWS access-key secrets.
 
 ## One-time prerequisites
@@ -59,6 +59,10 @@ Configure these GitHub repository values:
 
 The workflow writes runtime material to distinct SSM Standard `SecureString` parameters. Terraform receives
 only parameter names and artifact paths, so secrets do not enter its plan or remote state.
+
+Follow the exact console paths, immutable OIDC subject and verification commands in
+[STUDENT-DEPLOYMENT-GUIDE.md](STUDENT-DEPLOYMENT-GUIDE.md), or run
+`./scripts/setup-student-deployment.sh` from the repository root.
 
 ## First deployment
 
