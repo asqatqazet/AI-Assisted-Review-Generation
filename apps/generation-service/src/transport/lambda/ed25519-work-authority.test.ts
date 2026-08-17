@@ -102,6 +102,7 @@ describe("US-03.2 Generation Ed25519 work authority", () => {
 
     const terminalReceipt = await authority.signTerminal({
       leaseId: "lease-a",
+      permitJti: "permit-a",
       outcome: "completed",
       actualCostMicros: 0,
       ...bindings,

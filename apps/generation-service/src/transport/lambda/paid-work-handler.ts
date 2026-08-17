@@ -108,6 +108,7 @@ export interface GenerationReceiptSigner {
   ): Promise<string>;
   signTerminal(claims: {
     readonly leaseId: string;
+    readonly permitJti: string;
     readonly outcome: "completed";
     readonly actualCostMicros: number;
     readonly tenantId: string;
@@ -256,6 +257,7 @@ export function createPaidWorkGenerationHandler({
       });
       const terminalReceipt = await receiptSigner.signTerminal({
         leaseId: invocation.leaseId,
+        permitJti: verifiedActivation.permitJti,
         outcome: "completed",
         actualCostMicros: terminal.actualCostMicros,
         ...invocation.workload.bindings,
