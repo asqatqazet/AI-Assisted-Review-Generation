@@ -17,6 +17,13 @@ export type ReviewSessionState =
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
       readonly selectedReviewFormatId: string | null;
+    }
+  | {
+      readonly value: "generating";
+      readonly reviewSessionHandle: string;
+      readonly projection: ReviewSessionProjectionDto;
+      readonly selectedFactOptionIds: readonly string[];
+      readonly selectedReviewFormatId: string;
     };
 
 export type ReviewSessionEvent =
@@ -28,7 +35,12 @@ export type ReviewSessionEvent =
       readonly type: "FACT_OPTION_TOGGLED";
       readonly factOptionId: string;
     }
-  | { readonly type: "CONTINUE_REQUESTED" };
+  | { readonly type: "CONTINUE_REQUESTED" }
+  | {
+      readonly type: "REVIEW_FORMAT_SELECTED";
+      readonly reviewFormatId: string;
+    }
+  | { readonly type: "GENERATION_REQUESTED" };
 
 export function createReviewSessionState(
   reviewSessionHandle: string,
@@ -85,6 +97,31 @@ export function transitionReviewSession(
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
       selectedReviewFormatId: null,
+    };
+  }
+
+  if (state.value === "format" && event.type === "REVIEW_FORMAT_SELECTED") {
+    const available = state.projection.reviewFormats.some(
+      (format) =>
+        format.id === event.reviewFormatId &&
+        format.availableCommands.includes(state.projection.action),
+    );
+    return available
+      ? { ...state, selectedReviewFormatId: event.reviewFormatId }
+      : state;
+  }
+
+  if (
+    state.value === "format" &&
+    event.type === "GENERATION_REQUESTED" &&
+    state.selectedReviewFormatId !== null
+  ) {
+    return {
+      value: "generating",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      selectedReviewFormatId: state.selectedReviewFormatId,
     };
   }
 
