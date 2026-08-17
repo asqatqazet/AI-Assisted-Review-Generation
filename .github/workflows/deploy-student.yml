@@ -92,9 +92,21 @@ jobs:
           test -f dist/apps/web-bff/main.js
           test -f dist/apps/web-bff/stream-main.js
           test -f dist/apps/web-bff/reconcile-main.js
+          pnpm exec tsx infra/aws/prepare-lambda-artifacts-command.ts \
+            dist/apps/web-bff \
+            dist/apps/context-service \
+            dist/apps/generation-service
+          node --no-experimental-detect-module --check dist/apps/web-bff/main.js
+          node --no-experimental-detect-module --check dist/apps/web-bff/stream-main.js
+          node --no-experimental-detect-module --check dist/apps/web-bff/reconcile-main.js
+          node --no-experimental-detect-module --check dist/apps/context-service/main.js
+          node --no-experimental-detect-module --check dist/apps/generation-service/main.js
           (cd dist/apps/web-bff && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/web-bff.zip" . -x 'ui/*')
           (cd dist/apps/context-service && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/context-service.zip" .)
           (cd dist/apps/generation-service && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/generation-service.zip" .)
+          for artifact in "$RELEASE_DIR"/*.zip; do
+            test "$(unzip -p "$artifact" package.json | jq -r .type)" = "module"
+          done
           shasum -a 256 "$RELEASE_DIR"/*.zip > "$RELEASE_DIR/checksums.sha256"
           jq -n \
             --arg releaseId "$GITHUB_SHA" \

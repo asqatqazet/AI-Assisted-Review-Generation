@@ -66,6 +66,23 @@ describe("student AWS topology invariants", () => {
     expect(workflow).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
   });
 
+  it("packages ESM metadata and validates Lambda handlers before deployment", () => {
+    const workflow = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/deploy-student.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toContain(
+      "pnpm exec tsx infra/aws/prepare-lambda-artifacts-command.ts",
+    );
+    expect(workflow).toContain(
+      "node --no-experimental-detect-module --check dist/apps/web-bff/main.js",
+    );
+    expect(workflow).toContain(
+      'unzip -p "$artifact" package.json',
+    );
+  });
+
   it("deploys the reviewed low-quota profile explicitly from preflight through Terraform", () => {
     const workflow = fs.readFileSync(
       path.join(__dirname, "../../../.github/workflows/deploy-student.yml"),
