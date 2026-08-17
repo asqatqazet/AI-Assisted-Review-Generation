@@ -27,7 +27,20 @@ const snapshot = {
   factOptions: [],
   reviewFormats: [],
   promptVersions: [],
-  priceRates: [],
+  priceRates: [
+    {
+      id: "price-rate-gemini-test",
+      providerModelId: "provider-model-gemini-test",
+      provider: "gemini",
+      model: "gemini-test",
+      inputPerMillionMicros: 0,
+      outputPerMillionMicros: 0,
+      currency: "EUR",
+      unit: "token",
+      effectiveFrom: "2026-08-01T00:00:00.000Z",
+      effectiveTo: null,
+    },
+  ],
   providerRouting: {
     version: "routing-v1",
     providerModelId: "provider-model-gemini-test",
@@ -49,6 +62,8 @@ const workload = {
     requestHash: "sha256:request",
     snapshotId: "snap-01",
     snapshotHash: "sha256:snapshot",
+    providerModelId: "provider-model-gemini-test",
+    priceRateId: "price-rate-gemini-test",
     idempotencyKey: "request-1",
   },
   snapshot,
@@ -122,6 +137,20 @@ describe("ADR-005 paid-work Generation contract", () => {
         workload: {
           ...workload,
           bindings: { ...workload.bindings, tenantId: "tenant-b" },
+        },
+      }).success,
+    ).toBe(false);
+
+    expect(
+      PrepareGenerationInvocationDtoSchema.safeParse({
+        operation: "prepare",
+        permit: "signed-context-permit",
+        workload: {
+          ...workload,
+          bindings: {
+            ...workload.bindings,
+            priceRateId: "price-rate-not-in-snapshot",
+          },
         },
       }).success,
     ).toBe(false);
