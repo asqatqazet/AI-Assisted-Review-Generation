@@ -801,6 +801,8 @@ model BudgetReservation {
   reservedAt       DateTime                       @default(now()) @map("reserved_at") @db.Timestamptz(6)
   expiresAt        DateTime                       @map("expires_at") @db.Timestamptz(6)
   redeemedAt       DateTime?                      @map("redeemed_at") @db.Timestamptz(6)
+  executionLeaseId String?                        @unique @map("execution_lease_id") @db.Uuid
+  activationExpiresAt DateTime?                   @map("activation_expires_at") @db.Timestamptz(6)
   settledAt        DateTime?                      @map("settled_at") @db.Timestamptz(6)
   tenant           Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   location         Location                       @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)

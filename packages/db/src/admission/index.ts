@@ -70,6 +70,35 @@ export interface PostgresReviewerGenerationAdmissionStore {
   prepare(
     input: ReviewerGenerationAdmissionInput,
   ): Promise<ReviewerGenerationAdmissionResult>;
+  activate(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly reviewSessionId: string;
+    readonly generationBatchId: string;
+    readonly generationId: string;
+    readonly requestHash: string;
+    readonly permitJti: string;
+    readonly leaseId: string;
+    readonly leaseExpiresAt: string;
+  }): Promise<
+    | {
+        readonly status: "activated";
+        readonly leaseId: string;
+        readonly activationExpiresAt: string;
+      }
+    | { readonly status: "rejected" }
+  >;
+  settle(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly reviewSessionId: string;
+    readonly generationBatchId: string;
+    readonly generationId: string;
+    readonly requestHash: string;
+    readonly permitJti: string;
+    readonly leaseId: string;
+    readonly actualCostMicros: number;
+  }): Promise<{ readonly status: "settled" } | { readonly status: "rejected" }>;
   disconnect(): Promise<void>;
 }
 
@@ -126,6 +155,11 @@ interface ExistingAdmissionRow {
   readonly permit_jti: string;
   readonly expires_at: Date;
   readonly normalized_input: unknown;
+}
+
+interface ActivationRow {
+  readonly execution_lease_id: string;
+  readonly activation_expires_at: Date;
 }
 
 const isLocale = (value: string): value is "en-GB" | "de-DE" =>
@@ -684,6 +718,130 @@ export function createPostgresReviewerGenerationAdmissionStore({
           permitExpiresAt: permitExpiresAt.toISOString(),
           workload,
         };
+      });
+    },
+
+    async activate(input) {
+      const leaseExpiresAt = new Date(input.leaseExpiresAt);
+      if (Number.isNaN(leaseExpiresAt.getTime())) {
+        return { status: "rejected" };
+      }
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${input.tenantId}, true)
+        `;
+        const activated = await transaction.$queryRaw<ActivationRow[]>`
+          UPDATE budget_reservations AS reservation
+          SET
+            status = 'REDEEMED',
+            redeemed_at = clock_timestamp(),
+            execution_lease_id = ${input.leaseId}::uuid,
+            activation_expires_at = LEAST(
+              ${leaseExpiresAt}::timestamptz,
+              clock_timestamp() + interval '30 seconds'
+            )
+          WHERE reservation.tenant_id = ${input.tenantId}::uuid
+            AND reservation.location_id = ${input.locationId}::uuid
+            AND reservation.review_session_id = ${input.reviewSessionId}::uuid
+            AND reservation.permit_jti = ${input.permitJti}
+            AND reservation.request_hash = ${input.requestHash}
+            AND reservation.status = 'RESERVED'
+            AND reservation.expires_at > clock_timestamp()
+            AND ${leaseExpiresAt}::timestamptz > clock_timestamp()
+            AND EXISTS (
+              SELECT 1
+              FROM generation_batches AS batch
+              WHERE batch.id = ${input.generationBatchId}::uuid
+                AND batch.budget_reservation_id = reservation.id
+                AND batch.tenant_id = reservation.tenant_id
+                AND batch.location_id = reservation.location_id
+                AND batch.review_session_id = reservation.review_session_id
+                AND batch.request_hash = reservation.request_hash
+                AND batch.normalized_input #>> '{workload,bindings,generationId}' = ${input.generationId}
+            )
+          RETURNING execution_lease_id, activation_expires_at
+        `;
+        const current =
+          activated[0] ??
+          (
+            await transaction.$queryRaw<ActivationRow[]>`
+              SELECT execution_lease_id, activation_expires_at
+              FROM budget_reservations
+              WHERE tenant_id = ${input.tenantId}::uuid
+                AND location_id = ${input.locationId}::uuid
+                AND review_session_id = ${input.reviewSessionId}::uuid
+                AND permit_jti = ${input.permitJti}
+                AND request_hash = ${input.requestHash}
+                AND status = 'REDEEMED'
+                AND execution_lease_id = ${input.leaseId}::uuid
+                AND activation_expires_at > clock_timestamp()
+            `
+          )[0];
+        return current === undefined
+          ? ({ status: "rejected" } as const)
+          : {
+              status: "activated" as const,
+              leaseId: current.execution_lease_id,
+              activationExpiresAt: current.activation_expires_at.toISOString(),
+            };
+      });
+    },
+
+    async settle(input) {
+      if (
+        !Number.isSafeInteger(input.actualCostMicros) ||
+        input.actualCostMicros < 0
+      ) {
+        return { status: "rejected" };
+      }
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${input.tenantId}, true)
+        `;
+        const settled = await transaction.$executeRaw`
+          UPDATE budget_reservations AS reservation
+          SET
+            status = 'SETTLED',
+            actual_cost_micros = ${input.actualCostMicros},
+            settled_at = clock_timestamp()
+          WHERE reservation.tenant_id = ${input.tenantId}::uuid
+            AND reservation.location_id = ${input.locationId}::uuid
+            AND reservation.review_session_id = ${input.reviewSessionId}::uuid
+            AND reservation.permit_jti = ${input.permitJti}
+            AND reservation.request_hash = ${input.requestHash}
+            AND reservation.status = 'REDEEMED'
+            AND reservation.execution_lease_id = ${input.leaseId}::uuid
+            AND reservation.reserved_micros >= ${input.actualCostMicros}
+            AND EXISTS (
+              SELECT 1
+              FROM generation_batches AS batch
+              WHERE batch.id = ${input.generationBatchId}::uuid
+                AND batch.budget_reservation_id = reservation.id
+                AND batch.tenant_id = reservation.tenant_id
+                AND batch.location_id = reservation.location_id
+                AND batch.review_session_id = reservation.review_session_id
+                AND batch.normalized_input #>> '{workload,bindings,generationId}' = ${input.generationId}
+            )
+        `;
+        if (settled === 1) {
+          return { status: "settled" } as const;
+        }
+        const existing = await transaction.$queryRaw<{ readonly found: boolean }[]>`
+          SELECT true AS found
+          FROM budget_reservations
+          WHERE tenant_id = ${input.tenantId}::uuid
+            AND location_id = ${input.locationId}::uuid
+            AND review_session_id = ${input.reviewSessionId}::uuid
+            AND permit_jti = ${input.permitJti}
+            AND request_hash = ${input.requestHash}
+            AND status = 'SETTLED'
+            AND execution_lease_id = ${input.leaseId}::uuid
+            AND actual_cost_micros = ${input.actualCostMicros}
+          LIMIT 1
+        `;
+        return existing[0]?.found === true
+          ? ({ status: "settled" } as const)
+          : ({ status: "rejected" } as const);
       });
     },
 
