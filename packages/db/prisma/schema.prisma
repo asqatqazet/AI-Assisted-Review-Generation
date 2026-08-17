@@ -139,6 +139,15 @@ enum ProviderAttemptStatus {
   @@map("provider_attempt_status")
 }
 
+enum ExecutionLeaseState {
+  LEASED
+  RUNNING
+  CANCELLED
+  TERMINAL
+
+  @@map("execution_lease_state")
+}
+
 enum GroundingVerdict {
   PASSED
   STRIPPED
@@ -358,6 +367,7 @@ model Tenant {
   generationBatches         GenerationBatch[]
   generationBatchAssertions GenerationBatchAssertion[]
   generations               Generation[]
+  executionLeases           ExecutionLease[]
   providerAttempts          ProviderAttempt[]
   claims                    Claim[]
   claimGroundings           ClaimGrounding[]
@@ -440,6 +450,7 @@ model Location {
   generationBatches         GenerationBatch[]
   generationBatchAssertions GenerationBatchAssertion[]
   generations               Generation[]
+  executionLeases           ExecutionLease[]
   providerAttempts          ProviderAttempt[]
   claims                    Claim[]
   claimGroundings           ClaimGrounding[]
@@ -646,6 +657,7 @@ model ReviewSession {
   generationBatches         GenerationBatch[]
   generationBatchAssertions GenerationBatchAssertion[]
   generations               Generation[]
+  executionLeases           ExecutionLease[]
   providerAttempts          ProviderAttempt[]
   claims                    Claim[]
   claimGroundings           ClaimGrounding[]
@@ -792,6 +804,7 @@ model GenerationBatch {
   budgetReservation   BudgetReservation              @relation(fields: [budgetReservationId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
   assertions          GenerationBatchAssertion[]
   generations         Generation[]
+  executionLeases     ExecutionLease[]
 
   @@unique([tenantId, reviewSessionId, idempotencyKey])
   @@unique([id, tenantId, locationId, reviewSessionId])
@@ -815,6 +828,33 @@ model GenerationBatchAssertion {
   @@id([generationBatchId, assertionId])
   @@index([tenantId, locationId])
   @@map("generation_batch_assertions")
+}
+
+model ExecutionLease {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId             String              @map("tenant_id") @db.Uuid
+  locationId           String              @map("location_id") @db.Uuid
+  reviewSessionId      String              @map("review_session_id") @db.Uuid
+  permitJti            String              @unique @map("permit_jti") @db.VarChar(128)
+  generationBatchId    String              @map("generation_batch_id") @db.Uuid
+  generationId         String              @unique @map("generation_id") @db.Uuid
+  permitExpiresAt      DateTime            @map("permit_expires_at") @db.Timestamptz(6)
+  leaseExpiresAt       DateTime            @map("lease_expires_at") @db.Timestamptz(6)
+  activationExpiresAt  DateTime?           @map("activation_expires_at") @db.Timestamptz(6)
+  state                ExecutionLeaseState @default(LEASED)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  runningAt            DateTime?           @map("running_at") @db.Timestamptz(6)
+  cancelledAt          DateTime?           @map("cancelled_at") @db.Timestamptz(6)
+  terminalAt           DateTime?           @map("terminal_at") @db.Timestamptz(6)
+  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location             Location            @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  reviewSession        ReviewSession       @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  generationBatch      GenerationBatch     @relation(fields: [generationBatchId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
+  providerAttempts     ProviderAttempt[]
+
+  @@unique([id, tenantId, locationId, reviewSessionId, generationId])
+  @@index([tenantId, locationId, reviewSessionId])
+  @@map("execution_leases")
 }
 
 model Generation {
@@ -865,9 +905,10 @@ model ProviderAttempt {
   locationId       String                @map("location_id") @db.Uuid
   reviewSessionId  String                @map("review_session_id") @db.Uuid
   generationId     String                @map("generation_id") @db.Uuid
+  executionLeaseId String                @map("execution_lease_id") @db.Uuid
   providerModelId  String                @map("provider_model_id") @db.Uuid
   priceRateId      String?               @map("price_rate_id") @db.Uuid
-  sequence         Int
+  attemptOrdinal   Int                   @map("attempt_ordinal")
   status           ProviderAttemptStatus
   requestPayload   Json                  @map("request_payload")
   providerResponse Json?                 @map("provider_response")
@@ -882,10 +923,11 @@ model ProviderAttempt {
   location         Location              @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
   reviewSession    ReviewSession         @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   generation       Generation            @relation(fields: [generationId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
+  executionLease   ExecutionLease        @relation(fields: [executionLeaseId, tenantId, locationId, reviewSessionId, generationId], references: [id, tenantId, locationId, reviewSessionId, generationId], onDelete: Restrict)
   providerModel    ProviderModel         @relation(fields: [providerModelId], references: [id], onDelete: Restrict)
   priceRate        PriceRate?            @relation(fields: [priceRateId, providerModelId], references: [id, providerModelId], onDelete: Restrict)
 
-  @@unique([generationId, sequence])
+  @@unique([executionLeaseId, attemptOrdinal])
   @@index([tenantId, locationId, reviewSessionId])
   @@map("provider_attempts")
 }
