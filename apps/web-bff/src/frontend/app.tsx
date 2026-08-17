@@ -5,10 +5,15 @@ import {
   createHttpEntryChallengeClient,
   type EntryChallengeClient,
 } from "./entry-challenge-client.js";
+import {
+  createHttpReviewSessionClient,
+  type ReviewSessionClient,
+} from "./review-session-client.js";
 import { createSurveyState, transition, type SurveyState } from "./survey-machine.js";
 
 const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
+const defaultReviewSessionClient = createHttpReviewSessionClient();
 const ratings = [
   { value: 1, label: "Poor" },
   { value: 2, label: "Not good" },
@@ -144,7 +149,50 @@ function StartRoute({
   );
 }
 
-function ReviewRoute(): React.JSX.Element {
+function ReviewRoute({
+  reviewSessionClient,
+}: {
+  readonly reviewSessionClient: ReviewSessionClient;
+}): React.JSX.Element {
+  const { reviewSessionHandle = "" } = useParams();
+  const [projection, setProjection] = useState<
+    Awaited<ReturnType<ReviewSessionClient["read"]>> | undefined
+  >();
+
+  useEffect(() => {
+    const abortController = new AbortController();
+    void reviewSessionClient
+      .read(reviewSessionHandle, abortController.signal)
+      .then(setProjection)
+      .catch(() => undefined);
+    return () => abortController.abort();
+  }, [reviewSessionClient, reviewSessionHandle]);
+
+  if (projection !== undefined) {
+    return (
+      <main>
+        <p>{projection.locationDisplayName}</p>
+        <h1>What stood out?</h1>
+        <p>{projection.rating} out of 5</p>
+        <form>
+          <fieldset>
+            <legend>Choose the facts you want to include</legend>
+            {projection.factOptions.map((factOption) => (
+              <label key={factOption.id}>
+                <input
+                  type="checkbox"
+                  name="factOptionIds"
+                  value={factOption.id}
+                />
+                {factOption.label}
+              </label>
+            ))}
+          </fieldset>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <main aria-busy="true">
       <p>Review assistant</p>
@@ -156,10 +204,12 @@ function ReviewRoute(): React.JSX.Element {
 
 export interface ReviewerApplicationProps {
   readonly entryChallengeClient?: EntryChallengeClient | undefined;
+  readonly reviewSessionClient?: ReviewSessionClient | undefined;
 }
 
 export function ReviewerApplication({
   entryChallengeClient = defaultEntryChallengeClient,
+  reviewSessionClient = defaultReviewSessionClient,
 }: ReviewerApplicationProps = {}): React.JSX.Element {
   return (
     <Routes>
@@ -167,7 +217,10 @@ export function ReviewerApplication({
         path="/start/:entryChallengeHandle"
         element={<StartRoute entryChallengeClient={entryChallengeClient} />}
       />
-      <Route path="/review/:reviewSessionHandle" element={<ReviewRoute />} />
+      <Route
+        path="/review/:reviewSessionHandle"
+        element={<ReviewRoute reviewSessionClient={reviewSessionClient} />}
+      />
       <Route
         path="/console/*"
         element={
