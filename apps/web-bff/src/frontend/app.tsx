@@ -6,6 +6,10 @@ import {
   type EntryChallengeClient,
 } from "./entry-challenge-client.js";
 import {
+  createHttpGenerationClient,
+  type GenerationClient,
+} from "./generation-client.js";
+import {
   createHttpReviewSessionClient,
   type ReviewSessionClient,
 } from "./review-session-client.js";
@@ -17,6 +21,7 @@ import { createSurveyState, transition, type SurveyState } from "./survey-machin
 
 const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
+const defaultGenerationClient = createHttpGenerationClient();
 const defaultReviewSessionClient = createHttpReviewSessionClient();
 const ratings = [
   { value: 1, label: "Poor" },
@@ -155,8 +160,12 @@ function StartRoute({
 
 function ReviewRoute({
   reviewSessionClient,
+  generationClient,
+  newIdempotencyKey,
 }: {
   readonly reviewSessionClient: ReviewSessionClient;
+  readonly generationClient: GenerationClient;
+  readonly newIdempotencyKey: () => string;
 }): React.JSX.Element {
   const { reviewSessionHandle = "" } = useParams();
   const [state, setState] = useState(() =>
@@ -178,6 +187,40 @@ function ReviewRoute({
       .catch(() => undefined);
     return () => abortController.abort();
   }, [reviewSessionClient, reviewSessionHandle]);
+
+  useEffect(() => {
+    if (state.value !== "generating") {
+      return undefined;
+    }
+
+    const abortController = new AbortController();
+    void (async () => {
+      try {
+        for await (const event of generationClient.start(
+          {
+            reviewSessionHandle: state.reviewSessionHandle,
+            idempotencyKey: state.idempotencyKey,
+            factOptionIds: state.selectedFactOptionIds,
+            reviewFormatId: state.selectedReviewFormatId,
+          },
+          abortController.signal,
+        )) {
+          if (event.type === "terminal" && event.status === "completed") {
+            setState((current) =>
+              transitionReviewSession(current, {
+                type: "GENERATION_SUCCEEDED",
+                draft: event.draft,
+              }),
+            );
+          }
+        }
+      } catch {
+        // A failure projection and retry transition belong to the next slice.
+      }
+    })();
+
+    return () => abortController.abort();
+  }, [generationClient, state]);
 
   if (state.value === "facts") {
     return (
@@ -243,12 +286,55 @@ function ReviewRoute({
                   type="radio"
                   name="reviewFormatId"
                   value={format.id}
+                  checked={state.selectedReviewFormatId === format.id}
+                  onChange={() =>
+                    setState((current) =>
+                      transitionReviewSession(current, {
+                        type: "REVIEW_FORMAT_SELECTED",
+                        reviewFormatId: format.id,
+                      }),
+                    )
+                  }
                 />
                 {format.displayName}
               </label>
             ))}
           </fieldset>
+          <button
+            type="button"
+            disabled={state.selectedReviewFormatId === null}
+            onClick={() =>
+              setState((current) =>
+                transitionReviewSession(current, {
+                  type: "GENERATION_REQUESTED",
+                  idempotencyKey: newIdempotencyKey(),
+                }),
+              )
+            }
+          >
+            Create my draft
+          </button>
         </form>
+      </main>
+    );
+  }
+
+  if (state.value === "generating") {
+    return (
+      <main aria-busy="true">
+        <p>{state.projection.locationDisplayName}</p>
+        <h1>Creating your review</h1>
+        <p role="status">Checking your draft…</p>
+      </main>
+    );
+  }
+
+  if (state.value === "results") {
+    return (
+      <main>
+        <p>{state.projection.locationDisplayName}</p>
+        <h1>Your review</h1>
+        <p>{state.draft.text}</p>
       </main>
     );
   }
@@ -265,11 +351,15 @@ function ReviewRoute({
 export interface ReviewerApplicationProps {
   readonly entryChallengeClient?: EntryChallengeClient | undefined;
   readonly reviewSessionClient?: ReviewSessionClient | undefined;
+  readonly generationClient?: GenerationClient | undefined;
+  readonly newIdempotencyKey?: (() => string) | undefined;
 }
 
 export function ReviewerApplication({
   entryChallengeClient = defaultEntryChallengeClient,
   reviewSessionClient = defaultReviewSessionClient,
+  generationClient = defaultGenerationClient,
+  newIdempotencyKey = () => globalThis.crypto.randomUUID(),
 }: ReviewerApplicationProps = {}): React.JSX.Element {
   return (
     <Routes>
@@ -279,7 +369,13 @@ export function ReviewerApplication({
       />
       <Route
         path="/review/:reviewSessionHandle"
-        element={<ReviewRoute reviewSessionClient={reviewSessionClient} />}
+        element={
+          <ReviewRoute
+            reviewSessionClient={reviewSessionClient}
+            generationClient={generationClient}
+            newIdempotencyKey={newIdempotencyKey}
+          />
+        }
       />
       <Route
         path="/console/*"

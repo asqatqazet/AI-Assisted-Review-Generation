@@ -73,6 +73,7 @@ describe("Review Session transition table", () => {
     expect(
       transitionReviewSession(selectedFormat, {
         type: "GENERATION_REQUESTED",
+        idempotencyKey: "generation-request-a",
       }),
     ).toMatchObject({
       value: "generating",
@@ -100,6 +101,7 @@ describe("Review Session transition table", () => {
     });
     const generating = transitionReviewSession(selectedFormat, {
       type: "GENERATION_REQUESTED",
+      idempotencyKey: "generation-request-a",
     });
 
     expect(

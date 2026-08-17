@@ -31,6 +31,7 @@ export type ReviewSessionState =
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
       readonly selectedReviewFormatId: string;
+      readonly idempotencyKey: string;
     }
   | {
       readonly value: "results";
@@ -55,7 +56,10 @@ export type ReviewSessionEvent =
       readonly type: "REVIEW_FORMAT_SELECTED";
       readonly reviewFormatId: string;
     }
-  | { readonly type: "GENERATION_REQUESTED" }
+  | {
+      readonly type: "GENERATION_REQUESTED";
+      readonly idempotencyKey: string;
+    }
   | {
       readonly type: "GENERATION_SUCCEEDED";
       readonly draft: ReviewerDraft;
@@ -141,6 +145,7 @@ export function transitionReviewSession(
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
       selectedReviewFormatId: state.selectedReviewFormatId,
+      idempotencyKey: event.idempotencyKey,
     };
   }
 
