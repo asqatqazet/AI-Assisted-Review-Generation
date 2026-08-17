@@ -55,13 +55,27 @@ describe("student AWS topology invariants", () => {
     expect(workflow).toContain("terraform apply");
     expect(workflow).toContain("terraform init -backend-config");
     expect(workflow).toContain("prisma migrate deploy");
+    expect(workflow).toContain("seed-student.sql");
     expect(workflow).toContain("aws ssm put-parameter");
     expect(workflow).toContain("aws s3 sync");
     expect(workflow).toContain("actions/upload-artifact");
     expect(workflow).toContain("aws cloudfront create-invalidation");
     expect(workflow).toContain("curl --fail-with-body");
+    expect(workflow).toContain("/s/demo-tenant/demo-location");
     expect(workflow).toContain("shasum -a 256");
     expect(workflow).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
+  });
+
+  it("ships only a synthetic FakeProvider assessment fixture", () => {
+    const seed = fs.readFileSync(
+      path.join(__dirname, "../../aws/seed-student.sql"),
+      "utf8",
+    );
+
+    expect(seed).toContain("demo-tenant");
+    expect(seed).toContain("demo-location");
+    expect(seed).toContain("fake-v1");
+    expect(seed).not.toMatch(/openai|gemini/i);
   });
 
   it("ships an executable rollback workflow that moves only qualified aliases", () => {
