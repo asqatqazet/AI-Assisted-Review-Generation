@@ -35,6 +35,22 @@ export function createPersistentTerminalTailer({
         permitJti,
       });
       if (terminal !== null) {
+        if ("rejection" in terminal) {
+          const terminalReceipt = await receiptSigner.signTerminal({
+            leaseId,
+            permitJti,
+            outcome: "rejected",
+            actualCostMicros: terminal.actualCostMicros,
+            ...workload.bindings,
+          });
+          return PrivateGenerationTerminalEventDtoSchema.parse({
+            type: "terminal",
+            status: "rejected",
+            terminalReceipt,
+            code: terminal.rejection.code,
+            retryable: terminal.rejection.retryable,
+          });
+        }
         const terminalReceipt = await receiptSigner.signTerminal({
           leaseId,
           permitJti,

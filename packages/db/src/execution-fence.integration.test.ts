@@ -487,6 +487,10 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
           retryable: true,
         }),
       ).resolves.toEqual({ actualCostMicros: 0 });
+      await expect(terminalStore.read(scope)).resolves.toEqual({
+        rejection: { code: "PROVIDER_UNAVAILABLE", retryable: true },
+        actualCostMicros: 0,
+      });
       expect(
         await runSql(
           `SELECT status::text || '|' || grounding_verdict::text FROM generations WHERE id = '${scope.generationId}';`,

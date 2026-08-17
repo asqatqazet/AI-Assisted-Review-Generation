@@ -99,10 +99,26 @@ export interface PersistedTerminalDraft {
   readonly actualCostMicros: number;
 }
 
+export interface PersistedTerminalRejection {
+  readonly rejection: {
+    readonly code:
+      | "GROUNDING_REJECTED"
+      | "POLICY_REJECTED"
+      | "FORMAT_REJECTED"
+      | "PROVIDER_UNAVAILABLE";
+    readonly retryable: boolean;
+  };
+  readonly actualCostMicros: number;
+}
+
+export type PersistedGenerationTerminal =
+  | PersistedTerminalDraft
+  | PersistedTerminalRejection;
+
 export interface PostgresGenerationTerminalStore {
   read(
     scope: GenerationExecutionScope,
-  ): Promise<PersistedTerminalDraft | null>;
+  ): Promise<PersistedGenerationTerminal | null>;
   complete(input: CompleteGenerationInput): Promise<PersistedTerminalDraft>;
   reject(input: RejectGenerationInput): Promise<{
     readonly actualCostMicros: number;
@@ -126,6 +142,16 @@ interface TerminalDraftRow {
   readonly generation_id: string;
   readonly revision: number;
   readonly text: string;
+  readonly total_cost_micros: bigint;
+}
+
+interface TerminalProjectionRow {
+  readonly generation_status: string;
+  readonly policy_result: unknown;
+  readonly draft_id: string | null;
+  readonly generation_id: string;
+  readonly revision: number | null;
+  readonly text: string | null;
   readonly total_cost_micros: bigint;
 }
 
@@ -301,26 +327,78 @@ export function createPostgresGenerationTerminalStore({
     };
   };
 
+  const projectRead = (
+    row: TerminalProjectionRow,
+  ): PersistedGenerationTerminal => {
+    const actualCostMicros = Number(row.total_cost_micros);
+    if (!Number.isSafeInteger(actualCostMicros)) {
+      throw new Error("Terminal Generation cost is invalid");
+    }
+    if (
+      row.generation_status === "SUCCEEDED" &&
+      row.draft_id !== null &&
+      row.revision === 1 &&
+      row.text !== null
+    ) {
+      return {
+        draft: {
+          id: row.draft_id,
+          generationId: row.generation_id,
+          revision: 1,
+          text: row.text,
+        },
+        actualCostMicros,
+      };
+    }
+    const policy =
+      typeof row.policy_result === "object" && row.policy_result !== null
+        ? (row.policy_result as Readonly<Record<string, unknown>>)
+        : {};
+    const code = policy["code"];
+    const retryable = policy["retryable"];
+    if (
+      ![
+        "GROUNDING_REJECTED",
+        "POLICY_REJECTED",
+        "FORMAT_REJECTED",
+        "PROVIDER_UNAVAILABLE",
+      ].includes(code as string) ||
+      typeof retryable !== "boolean" ||
+      row.draft_id !== null
+    ) {
+      throw new Error("Rejected terminal Generation projection is invalid");
+    }
+    return {
+      rejection: {
+        code: code as PersistedTerminalRejection["rejection"]["code"],
+        retryable,
+      },
+      actualCostMicros,
+    };
+  };
+
   return {
     async read(scope) {
       return await client.$transaction(async (transaction) => {
         await transaction.$executeRaw`
           SELECT set_config('app.tenant_id', ${scope.tenantId}, true)
         `;
-        const rows = await transaction.$queryRaw<TerminalDraftRow[]>`
+        const rows = await transaction.$queryRaw<TerminalProjectionRow[]>`
           SELECT
+            generation.status::text AS generation_status,
+            generation.policy_result,
             draft.id AS draft_id,
             generation.id AS generation_id,
             revision.revision,
             revision.text,
             generation.total_cost_micros
           FROM generations AS generation
-          JOIN drafts AS draft
+          LEFT JOIN drafts AS draft
             ON draft.originating_generation_id = generation.id
            AND draft.tenant_id = generation.tenant_id
            AND draft.location_id = generation.location_id
            AND draft.review_session_id = generation.review_session_id
-          JOIN draft_revisions AS revision
+          LEFT JOIN draft_revisions AS revision
             ON revision.draft_id = draft.id
            AND revision.tenant_id = draft.tenant_id
            AND revision.location_id = draft.location_id
@@ -340,7 +418,7 @@ export function createPostgresGenerationTerminalStore({
             )
           LIMIT 1
         `;
-        return rows[0] === undefined ? null : project(rows[0]);
+        return rows[0] === undefined ? null : projectRead(rows[0]);
       });
     },
 
