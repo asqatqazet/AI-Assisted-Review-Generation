@@ -213,4 +213,45 @@ describe("US-03.2 Context reviewer Generation service", () => {
       "store-settle",
     ]);
   });
+
+  it("settles a signed rejected terminal so admission capacity is not stranded", async () => {
+    let settled = false;
+    const service = createReviewerGenerationService({
+      hashCapability: async (value) => value,
+      store: {
+        prepare: async () => ({ status: "rejected" }),
+        activate: async () => ({ status: "rejected" }),
+        settle: async (input) => {
+          settled = true;
+          expect(input).toMatchObject({
+            permitJti: "permit-a",
+            leaseId: "lease-a",
+            actualCostMicros: 0,
+          });
+          return { status: "settled" };
+        },
+      },
+      authority: {
+        signPermit: async () => "unused",
+        verifyLease: async () => {
+          throw new Error("unused");
+        },
+        signActivation: async () => "unused",
+        verifyTerminal: async () => ({
+          permitJti: "permit-a",
+          leaseId: "lease-a",
+          actualCostMicros: 0,
+          outcome: "rejected",
+        }),
+      },
+    });
+
+    await expect(
+      service.settleGeneration({
+        terminalReceipt: "signed-rejected-terminal",
+        workload,
+      }),
+    ).resolves.toEqual({ status: "settled" });
+    expect(settled).toBe(true);
+  });
 });

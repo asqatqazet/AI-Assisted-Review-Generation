@@ -411,6 +411,95 @@ describe("US-03.2 paid-work Generation handler", () => {
     expect(providerCalls).toBe(0);
   });
 
+  it("persists and signs a rejected terminal without releasing a Draft", async () => {
+    const operations: string[] = [];
+    const handler = createPaidWorkGenerationHandler({
+      permitVerifier: {
+        verify: async () => {
+          throw new Error("permit verification is prepare-only");
+        },
+      },
+      activationVerifier: {
+        verify: async () => ({
+          expiresAt: "2026-08-17T12:00:40.000Z",
+          permitJti: "permit-jti-a",
+        }),
+      },
+      leaseJournal: {
+        prepare: async () => {
+          throw new Error("prepare must not run during execute");
+        },
+        claimExecution: async () => ({
+          status: "claimed",
+          attemptId: "attempt-a",
+        }),
+        status: async () => {
+          throw new Error("status must not run during execute");
+        },
+        cancelExpired: async () => {
+          throw new Error("cancellation must not run during execute");
+        },
+      },
+      receiptSigner: {
+        signLease: async () => {
+          throw new Error("lease signing must not run during execute");
+        },
+        signStatus: async () => {
+          throw new Error("status signing must not run during execute");
+        },
+        signTerminal: async (claims) => {
+          operations.push("rejection-signed");
+          expect(claims).toMatchObject({
+            outcome: "rejected",
+            actualCostMicros: 0,
+            leaseId: "lease-a",
+          });
+          return "signed-rejected-terminal";
+        },
+      },
+      terminalStore: {
+        complete: async () => {
+          throw new Error("a rejected Generation must not persist a Draft");
+        },
+        reject: async (input) => {
+          operations.push("rejection-persisted");
+          expect(input).toMatchObject({
+            leaseId: "lease-a",
+            attemptId: "attempt-a",
+            code: "PROVIDER_UNAVAILABLE",
+            retryable: true,
+          });
+          return { actualCostMicros: 0 };
+        },
+      },
+      prepareAttempt: async () => ({
+        requestPayload: { model: "fake-v1" },
+        execute: async () => {
+          throw new Error("provider unavailable");
+        },
+      }),
+      tailExisting: async () => {
+        throw new Error("a winning rejection must not tail");
+      },
+    });
+
+    await expect(
+      handler({
+        operation: "execute",
+        leaseId: "lease-a",
+        activation: "signed-context-activation",
+        workload,
+      }),
+    ).resolves.toEqual({
+      type: "terminal",
+      status: "rejected",
+      terminalReceipt: "signed-rejected-terminal",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+    });
+    expect(operations).toEqual(["rejection-persisted", "rejection-signed"]);
+  });
+
   it.each([
     [
       {
