@@ -123,4 +123,48 @@ describe("Review Session transition table", () => {
       },
     });
   });
+
+  it("retains frozen choices on failure and retries with a fresh request", () => {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      { type: "REVIEW_SESSION_LOADED", projection },
+    );
+    const selectedFact = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+    const format = transitionReviewSession(selectedFact, {
+      type: "CONTINUE_REQUESTED",
+    });
+    const selectedFormat = transitionReviewSession(format, {
+      type: "REVIEW_FORMAT_SELECTED",
+      reviewFormatId: "format-concise-v1",
+    });
+    const generating = transitionReviewSession(selectedFormat, {
+      type: "GENERATION_REQUESTED",
+      idempotencyKey: "generation-request-a",
+    });
+    const failed = transitionReviewSession(generating, {
+      type: "GENERATION_FAILED",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+    });
+
+    expect(failed).toMatchObject({
+      value: "generation-failed",
+      selectedFactOptionIds: ["fact-attentive"],
+      selectedReviewFormatId: "format-concise-v1",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+    });
+    expect(
+      transitionReviewSession(failed, {
+        type: "RETRY_REQUESTED",
+        idempotencyKey: "generation-request-b",
+      }),
+    ).toMatchObject({
+      value: "generating",
+      idempotencyKey: "generation-request-b",
+    });
+  });
 });

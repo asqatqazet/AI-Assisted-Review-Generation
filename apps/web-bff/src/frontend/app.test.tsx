@@ -396,4 +396,137 @@ describe("reviewer application routes", () => {
       },
     ]);
   });
+
+  it("offers a recoverable failure state when Generation is rejected", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  id: "format-concise-v1",
+                  displayName: "Concise blurb",
+                  description: "One concise paragraph.",
+                  sample: "The team was attentive.",
+                  availableCommands: ["generate"],
+                },
+              ],
+            }),
+          }}
+          generationClient={{
+            async *start() {
+              yield {
+                type: "terminal",
+                status: "rejected",
+                code: "PROVIDER_UNAVAILABLE",
+                retryable: true,
+              } as const;
+            },
+          }}
+          newIdempotencyKey={() => "generation-request-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Create my draft" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "We couldn't create a draft" }),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+    expect(screen.getByText(/write it yourself/i)).toBeVisible();
+  });
+
+  it("copies only the terminal Draft and keeps a manual selection fallback", async () => {
+    const user = userEvent.setup();
+    const copied: string[] = [];
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  id: "format-concise-v1",
+                  displayName: "Concise blurb",
+                  description: "One concise paragraph.",
+                  sample: "The team was attentive.",
+                  availableCommands: ["generate"],
+                },
+              ],
+            }),
+          }}
+          generationClient={{
+            async *start() {
+              yield {
+                type: "terminal",
+                status: "completed",
+                draft: {
+                  id: "draft-a",
+                  generationId: "generation-a",
+                  revision: 1,
+                  text: "The team was attentive.",
+                },
+              } as const;
+            },
+          }}
+          copyText={async (text) => {
+            copied.push(text);
+          }}
+          newIdempotencyKey={() => "generation-request-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Create my draft" }));
+    await user.click(await screen.findByRole("button", { name: "Copy review" }));
+
+    expect(copied).toEqual(["The team was attentive."]);
+    expect(screen.getByRole("textbox", { name: "Review text" })).toHaveValue(
+      "The team was attentive.",
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("Copied");
+  });
 });
