@@ -407,6 +407,14 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
         },
         actualCostMicros: 0,
       });
+      await expect(terminalStore.read(scope)).resolves.toMatchObject({
+        draft: {
+          generationId: scope.generationId,
+          revision: 1,
+          text: "The team was attentive.",
+        },
+        actualCostMicros: 0,
+      });
 
       expect(
         await runSql(
