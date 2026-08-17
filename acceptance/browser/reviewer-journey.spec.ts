@@ -118,6 +118,39 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
   expect(resultRendering.width).toBeGreaterThanOrEqual(470);
 });
 
+test("the operator console keeps its 1024px working layout", async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await page.goto("/console");
+
+  await expect(
+    page.getByRole("heading", { name: "Operator console" }),
+  ).toBeVisible();
+  await expect(page.getByRole("banner")).toContainText(
+    "Platform › Tenant › Location",
+  );
+  await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
+
+  const rendering = await page.evaluate(() => {
+    const navigation = document
+      .querySelector('nav[aria-label="Console"]')!
+      .getBoundingClientRect();
+    const main = getComputedStyle(document.querySelector("main")!);
+    return {
+      navigationWidth: navigation.width,
+      mainPaddingLeft: main.paddingLeft,
+      contentWidth: document.documentElement.scrollWidth,
+      viewportWidth: document.documentElement.clientWidth,
+    };
+  });
+
+  expect(rendering).toEqual({
+    navigationWidth: 224,
+    mainPaddingLeft: "32px",
+    contentWidth: 1024,
+    viewportWidth: 1024,
+  });
+});
+
 test("a reviewer receives a grounded Draft from the local FakeProvider composition", async ({
   page,
 }) => {
