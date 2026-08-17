@@ -211,4 +211,35 @@ describe("US-03.2 paid-work Attempt preparation", () => {
     expect(rejected).toMatchObject({ code: "POLICY_REJECTED" });
     expect(JSON.stringify(rejected)).not.toContain("guaranteed");
   });
+
+  it("does not let a real Assertion id launder an unsupported proposition", async () => {
+    const gateway: ModelGatewayPort = {
+      generate: async () => ({
+        output: {
+          draft: "The clinic gave me a free upgrade.",
+          claims: [
+            {
+              id: "claim-laundered",
+              text: "The clinic gave me a free upgrade.",
+              assertionIds: ["assertion-a"],
+            },
+          ],
+        },
+        attempt: {
+          provider: "fake",
+          model: "fake-v1",
+          usage: { inputTokens: 20, outputTokens: 9 },
+          receipt: { requestId: "provider-request-c", finishReason: "stop" },
+        },
+      }),
+    };
+
+    const prepared = await createPaidWorkAttemptPreparer({ gateway })(workload);
+    const rejected = await prepared.execute("attempt-c").catch((error: unknown) =>
+      error,
+    );
+
+    expect(rejected).toMatchObject({ code: "GROUNDING_REJECTED" });
+    expect(JSON.stringify(rejected)).not.toContain("free upgrade");
+  });
 });
