@@ -1,0 +1,62 @@
+import { InvokeCommand } from "@aws-sdk/client-lambda";
+import { describe, expect, it } from "vitest";
+
+import { createAwsLambdaJsonInvoker } from "./lambda-json-invoker.js";
+
+describe("AWS private Lambda JSON invoker", () => {
+  it("invokes only the configured qualified Function and parses its JSON result", async () => {
+    let received: InvokeCommand | undefined;
+    const invoker = createAwsLambdaJsonInvoker(
+      {
+        send: async (command) => {
+          received = command;
+          return {
+            StatusCode: 200,
+            Payload: new TextEncoder().encode(
+              JSON.stringify({ operation: "prepare", status: "leased" }),
+            ),
+          };
+        },
+      },
+      "arn:aws:lambda:eu-central-1:123:function:review-generation:live",
+    );
+
+    await expect(
+      invoker.invoke({ operation: "private-operation" } as never),
+    ).resolves.toEqual({ operation: "prepare", status: "leased" });
+    expect(received).toBeInstanceOf(InvokeCommand);
+    expect(received?.input).toMatchObject({
+      FunctionName:
+        "arn:aws:lambda:eu-central-1:123:function:review-generation:live",
+      InvocationType: "RequestResponse",
+      LogType: "None",
+    });
+    expect(JSON.parse(new TextDecoder().decode(received?.input.Payload))).toEqual({
+      operation: "private-operation",
+    });
+  });
+
+  it("fails closed on FunctionError or a missing payload", async () => {
+    const failed = createAwsLambdaJsonInvoker(
+      {
+        send: async () => ({
+          StatusCode: 200,
+          FunctionError: "Unhandled",
+          Payload: new TextEncoder().encode('{"errorMessage":"secret"}'),
+        }),
+      },
+      "qualified-function",
+    );
+    const empty = createAwsLambdaJsonInvoker(
+      { send: async () => ({ StatusCode: 200 }) },
+      "qualified-function",
+    );
+
+    await expect(failed.invoke({ operation: "x" } as never)).rejects.toThrow(
+      "PRIVATE_FUNCTION_FAILED",
+    );
+    await expect(empty.invoke({ operation: "x" } as never)).rejects.toThrow(
+      "PRIVATE_FUNCTION_EMPTY_RESPONSE",
+    );
+  });
+});
