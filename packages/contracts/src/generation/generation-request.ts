@@ -43,6 +43,7 @@ export const GenerationAssertionDtoSchema = z.strictObject({
   version: IdentifierDtoSchema,
   reviewSessionId: IdentifierDtoSchema,
   semanticId: IdentifierDtoSchema,
+  proposition: z.string().min(1),
   semanticKind: z.enum(["experience-fact", "rating-sentiment"]),
   polarity: z.enum(["positive", "neutral", "negative"]),
   source: GenerationAssertionSourceDtoSchema,

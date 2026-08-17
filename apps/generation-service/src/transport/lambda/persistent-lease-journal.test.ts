@@ -73,6 +73,7 @@ const workload = GenerationWorkloadDtoSchema.parse({
       version: "assertion-a@1",
       reviewSessionId: "session-a",
       semanticId: "service-explained-clearly",
+      proposition: "The treatment was explained well.",
       semanticKind: "experience-fact",
       polarity: "positive",
       source: {

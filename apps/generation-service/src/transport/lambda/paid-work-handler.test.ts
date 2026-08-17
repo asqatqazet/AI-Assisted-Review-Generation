@@ -77,6 +77,7 @@ const workload = {
       version: "assertion-a@1",
       reviewSessionId: "session-a",
       semanticId: "service-explained-clearly",
+      proposition: "The treatment was explained well.",
       semanticKind: "experience-fact" as const,
       polarity: "positive" as const,
       source: {
