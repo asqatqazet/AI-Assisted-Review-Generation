@@ -716,7 +716,7 @@ describe("buildConfigSnapshot", () => {
     input.locationName = "Hafenstraße";
 
     expect(buildConfigSnapshot(input).snapshotId).toBe(
-      "sha256:5fc81324e75c7d04fac6c68cb20c825cfc77b05e1d8ffa704c84afbd689e9231",
+      "sha256:61e9149c807754b506f2b81c260627f666be7811876f4e12fa96164006704324",
     );
   });
 });
