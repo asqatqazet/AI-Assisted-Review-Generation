@@ -254,6 +254,47 @@ describe("US-03.3 persistent terminal replay tailer", () => {
     });
     expect(waits).toEqual([100]);
   });
+
+  it("replays a persisted rejection without calling the provider again", async () => {
+    const tailExisting = createPersistentTerminalTailer({
+      databaseStore: {
+        read: async () => ({
+          rejection: {
+            code: "PROVIDER_UNAVAILABLE" as const,
+            retryable: true,
+          },
+          actualCostMicros: 0,
+        }),
+      },
+      receiptSigner: {
+        signTerminal: async (claims) => {
+          expect(claims).toMatchObject({
+            outcome: "rejected",
+            actualCostMicros: 0,
+          });
+          return "signed-rejected-terminal";
+        },
+      },
+      wait: async () => {
+        throw new Error("a persisted rejection must return immediately");
+      },
+    });
+
+    await expect(
+      tailExisting({
+        attemptId: "attempt-a",
+        leaseId: "lease-a",
+        permitJti: "permit-a",
+        workload,
+      }),
+    ).resolves.toEqual({
+      type: "terminal",
+      status: "rejected",
+      terminalReceipt: "signed-rejected-terminal",
+      code: "PROVIDER_UNAVAILABLE",
+      retryable: true,
+    });
+  });
 });
 
 describe("US-03.2 persistent Generation lease journal adapter", () => {
