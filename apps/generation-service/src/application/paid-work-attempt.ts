@@ -47,6 +47,15 @@ export class PaidWorkPolicyRejectedError extends Error {
   }
 }
 
+export class PaidWorkFormatRejectedError extends Error {
+  public readonly code = "FORMAT_REJECTED";
+
+  public constructor() {
+    super("The grounded candidate failed the selected Review Format.");
+    this.name = "PaidWorkFormatRejectedError";
+  }
+}
+
 export interface PaidWorkAttemptInput {
   readonly bindings: {
     readonly generationId: string;
@@ -247,6 +256,12 @@ export function createPaidWorkAttemptPreparer({
         });
         if (policy.violations.length > 0) {
           throw new PaidWorkPolicyRejectedError();
+        }
+        if (
+          policy.draft.length < format.constraints.minChars ||
+          policy.draft.length > format.constraints.maxChars
+        ) {
+          throw new PaidWorkFormatRejectedError();
         }
 
         return {
