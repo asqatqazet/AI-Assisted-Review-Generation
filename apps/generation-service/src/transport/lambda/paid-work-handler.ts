@@ -37,6 +37,7 @@ export interface GenerationLeaseJournal {
     readonly leaseId: string;
     readonly activationExpiresAt: string;
     readonly attemptOrdinal: 1;
+    readonly requestPayload: unknown;
     readonly workload: GenerationWorkloadDto;
   }): Promise<
     | { readonly status: "claimed"; readonly attemptId: string }
@@ -108,10 +109,10 @@ export interface PaidWorkGenerationHandlerOptions {
   readonly activationVerifier: GenerationActivationVerifier;
   readonly leaseJournal: GenerationLeaseJournal;
   readonly receiptSigner: GenerationReceiptSigner;
-  readonly execute: (input: {
-    readonly attemptId: string;
-    readonly workload: GenerationWorkloadDto;
-  }) => Promise<unknown>;
+  readonly prepareAttempt: (workload: GenerationWorkloadDto) => Promise<{
+    readonly requestPayload: unknown;
+    readonly execute: (attemptId: string) => Promise<unknown>;
+  }>;
   readonly tailExisting: (input: {
     readonly attemptId: string;
     readonly workload: GenerationWorkloadDto;
@@ -123,7 +124,7 @@ export function createPaidWorkGenerationHandler({
   activationVerifier,
   leaseJournal,
   receiptSigner,
-  execute,
+  prepareAttempt,
   tailExisting,
 }: PaidWorkGenerationHandlerOptions): (event: unknown) => Promise<unknown> {
   return async (event) => {
@@ -160,10 +161,12 @@ export function createPaidWorkGenerationHandler({
         invocation.leaseId,
         invocation.workload,
       );
+      const preparedAttempt = await prepareAttempt(invocation.workload);
       const claim = await leaseJournal.claimExecution({
         leaseId: invocation.leaseId,
         activationExpiresAt: verifiedActivation.expiresAt,
         attemptOrdinal: 1,
+        requestPayload: preparedAttempt.requestPayload,
         workload: invocation.workload,
       });
       const executionInput = {
@@ -172,7 +175,7 @@ export function createPaidWorkGenerationHandler({
       };
 
       return claim.status === "claimed"
-        ? await execute(executionInput)
+        ? await preparedAttempt.execute(claim.attemptId)
         : await tailExisting(executionInput);
     }
 

@@ -119,9 +119,12 @@ describe("US-03.2 paid-work Generation handler", () => {
           throw new Error("status signing must not run during prepare");
         },
       },
-      execute: async () => {
-        executionCalls += 1;
-      },
+      prepareAttempt: async () => ({
+        requestPayload: {},
+        execute: async () => {
+          executionCalls += 1;
+        },
+      }),
       tailExisting: async () => {
         throw new Error("tailing must not run during prepare");
       },
@@ -215,11 +218,6 @@ describe("US-03.2 paid-work Generation handler", () => {
           },
         };
       },
-      execute: async (input) => {
-        events.push("provider-entered");
-        expect(input).toEqual({ attemptId: "attempt-a", workload });
-        return { status: "completed", generationId: "generation-a" };
-      },
       tailExisting: async () => {
         throw new Error("a winning execution must not tail");
       },
@@ -275,10 +273,13 @@ describe("US-03.2 paid-work Generation handler", () => {
           throw new Error("status signing must not run during execute");
         },
       },
-      execute: async () => {
-        providerCalls += 1;
-        throw new Error("replay must not enter provider execution");
-      },
+      prepareAttempt: async () => ({
+        requestPayload: {},
+        execute: async () => {
+          providerCalls += 1;
+          throw new Error("replay must not enter provider execution");
+        },
+      }),
       tailExisting: async (input) => {
         expect(input).toEqual({ attemptId: "attempt-a", workload });
         return { status: "completed", generationId: "generation-a" };
@@ -363,8 +364,8 @@ describe("US-03.2 paid-work Generation handler", () => {
           return "signed-generation-status-receipt";
         },
       },
-      execute: async () => {
-        throw new Error("provider must not run during reconciliation");
+      prepareAttempt: async () => {
+        throw new Error("provider request must not prepare during reconciliation");
       },
       tailExisting: async () => {
         throw new Error("tail must not run during reconciliation");
