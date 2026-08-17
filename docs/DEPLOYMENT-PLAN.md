@@ -67,8 +67,9 @@ Follow the exact console paths, immutable OIDC subject and verification commands
 ## First deployment
 
 1. Push the verified commits to `main` and require the `verify` workflow to pass.
-2. Run `deploy-student` manually with a teardown date before the AWS Free-plan expiry and acknowledge the
-   FakeProvider-only release.
+2. Run `deploy-student` manually with capacity profile `student-low-quota`, a teardown date before the AWS
+   Free-plan expiry, and acknowledgement of the FakeProvider-only release. Use `reserved-concurrency` only
+   after the regional account/unreserved quota is at least 113.
 3. The workflow verifies against disposable PostgreSQL, builds once, hashes the three deployment artifacts,
    migrates Neon, installs the idempotent `demo-tenant/demo-location` fixture, runs the AWS/free-tier
    preflight, plans and applies Terraform, then publishes that exact UI build.

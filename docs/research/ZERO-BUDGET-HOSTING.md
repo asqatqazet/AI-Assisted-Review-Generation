@@ -133,10 +133,12 @@ Without edge WAF, protection moves inward and must fail closed:
 1. Require a valid opaque invitation before creating a Review Session or invoking Generation.
 2. Enforce atomic Review Session, Tenant and Provider-attempt limits in Context/PostgreSQL; in-memory
    counters are only an optimization.
-3. Set reserved concurrency (initially fast Web+BFF 5, stream Web+BFF 2, Context 5, Generation 1), while
-   leaving provisioned concurrency at zero. Preflight must prove the regional account has all 13 units
-   allocatable while leaving AWS's required 100 unreserved; otherwise stop and request a quota increase.
-   Reserved concurrency is an upper bound, not a monthly spend cap.
+3. Select a reviewed capacity profile while leaving provisioned concurrency at zero. The assessment-default
+   `student-low-quota` profile requires at least 10 account/unreserved concurrency and omits function
+   reservations; it is FakeProvider-only and has no per-function starvation isolation. The
+   `reserved-concurrency` profile sets fast Web+BFF 5, stream Web+BFF 2, Context 5 and Generation 1, and
+   therefore requires all 13 units allocatable while leaving AWS's required 100 unreserved. Either profile
+   is an execution ceiling, not a monthly spend cap.
 4. Allow one Provider Attempt per Generation, cap response tokens, use a bounded provider timeout,
    and do not retry/fallback automatically after an ambiguous provider result.
 5. In unpaid Gemini mode, leave billing unlinked. A quota `429` produces a retry-later result, never

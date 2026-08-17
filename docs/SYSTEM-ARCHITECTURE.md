@@ -410,15 +410,17 @@ OpenAI/Gemini credentials never enter the snapshot or browser.
 | CloudFront origin read / response completion | 30 s / 95 s |
 | Browser | 100 s |
 | Progress heartbeat | every 10 s |
-| Fast / streaming BFF reserved concurrency | 5 / 2 |
-| Context reserved concurrency | 5 |
-| Generation reserved concurrency | 1 |
+| Student low-quota capacity | Account concurrency 10; no function reservations |
+| Reserved-concurrency capacity | Fast/stream BFF 5/2; Context 5; Generation 1 |
 
-These reservations total 13. AWS requires 100 executions to remain unreserved and may give new accounts a
-reduced regional quota. Before Terraform, preflight reads Lambda account settings and existing reservations;
-deployment stops unless `ConcurrentExecutions >= 113` with all 13 units allocatable. Requesting a quota
-increase is free, but approval is external. Never silently remove the reservations and still claim the AWS
-slice deployed. See [Lambda concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html).
+Preflight and Terraform require one matching explicit capacity profile. `student-low-quota` is the
+assessment default: it accepts exactly the new-account floor of at least 10 unreserved executions and omits
+function reservations, so the regional account limit is the coarse hard ceiling. It is allowed only for the
+access-restricted synthetic/FakeProvider release and has no per-function starvation isolation.
+`reserved-concurrency` retains reservations totalling 13. Because AWS requires 100 executions to remain
+unreserved, that profile stops unless at least 113 units are allocatable. The selected profile is written to
+release evidence. Requesting a quota increase is free, but approval is external. See
+[Lambda concurrency](https://docs.aws.amazon.com/lambda/latest/dg/configuration-concurrency.html).
 
 Provider clients are created outside the Lambda handler so warm environments reuse connections; this is
 supported by [AWS Lambda best practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html).
@@ -440,11 +442,11 @@ for a scheduled submission window.
 | Layer | Initial proposed limit | Enforcement/result |
 |---|---|---|
 | AWS account | New-account Free plan; pre-deploy check refuses a Paid plan unless an explicit owner override is present | The only AWS financial hard stop: AWS says no charges, but the account closes at six months/credit exhaustion. A Budget notification is only an alarm. |
-| BFF capacity | Fast concurrency 5; stream concurrency 2 | Coarse request-work ceiling. Lambda rejects excess work before the handler with an AWS 429; the frontend transport normalizes it to `EDGE_THROTTLED`. It is not a Tenant quota. |
+| BFF capacity | Low-quota: shared account ceiling 10; reserved profile: fast 5/stream 2 | Coarse request-work ceiling. Low-quota can starve one function behind another and is assessment-only. Lambda rejects excess work before the handler with an AWS 429; the frontend transport normalizes it to `EDGE_THROTTLED`. It is not a Tenant quota. |
 | Entry source | 60 link GETs / 5 min; 10 Start POSTs / 5 min; 10 Generation POSTs / hour | Context stores only a rotating daily-HMAC source bucket for at most 24 hours. Never use IP/source as Tenant identity; shared networks can receive a generic retry path. |
 | Review Session | 3 admitted batches / rolling 30 min; 1 active batch | Hard PostgreSQL transaction. Same idempotency key returns the existing batch without new work. |
 | Tenant | 10 admitted batches / hour; 1 active batch | Hard PostgreSQL transaction; the synthetic assessment Tenant cannot create unbounded work. |
-| Platform | 5 admissions / min; 1 active Generation; 30 funded Generations / day | Hard PostgreSQL transaction plus Generation reserved concurrency 1. FakeProvider smoke tests may use a separate non-public test policy. |
+| Platform | 5 admissions / min; 1 active Generation; 30 funded Generations / day | Hard PostgreSQL transaction; the reserved profile adds Generation concurrency 1. The low-quota public release remains FakeProvider-only until this shared admission path is deployment-proven. |
 | Request | One Review Format, <=1,500 input tokens, <=350 output tokens, one Attempt | Server-owned bounds; the browser cannot raise them. No retry or automatic provider failover in the assessment profile. |
 | Provider budget | OpenAI/Gemini allowance defaults to zero; positive secret + provider budget + exact Price Rate are all required | Strict-$0 public mode cannot reach a live adapter. Funded mode atomically requires settled cost + live reservations + worst-case new cost <= its explicit cap. |
 

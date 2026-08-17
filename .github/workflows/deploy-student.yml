@@ -7,6 +7,14 @@ on:
         description: YYYY-MM-DD; must precede AWS Free-plan expiry
         required: true
         type: string
+      deployment_profile:
+        description: Reviewed Lambda capacity policy
+        required: true
+        type: choice
+        default: student-low-quota
+        options:
+          - student-low-quota
+          - reserved-concurrency
       acknowledge_fake_provider_only:
         description: Public assessment deploy uses FakeProvider only
         required: true
@@ -100,6 +108,7 @@ jobs:
         run: pnpm aws:preflight
         env:
           REVIEW_TEARDOWN_DATE: ${{ inputs.teardown_date }}
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
 
       - name: Store operational secrets outside Terraform state
         shell: bash
@@ -166,6 +175,7 @@ jobs:
           terraform validate
           terraform plan -out=student.tfplan \
             -var="alert_email=${{ vars.COST_ALERT_EMAIL }}" \
+            -var="deployment_profile=${{ inputs.deployment_profile }}" \
             -var="web_bff_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/web-bff.zip" \
             -var="context_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/context-service.zip" \
             -var="generation_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/generation-service.zip"

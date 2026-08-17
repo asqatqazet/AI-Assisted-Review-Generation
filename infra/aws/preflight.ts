@@ -49,9 +49,9 @@ export type AwsPreflightResult =
   | {
       readonly ok: true;
       readonly deploymentProfile: AwsDeploymentProfile;
-      readonly requiredAccountConcurrency: 10 | 113;
-      readonly requiredReservedConcurrency: 0 | 13;
-      readonly requiredUnreservedConcurrency: 10 | 100;
+      readonly requiredAccountConcurrency: number;
+      readonly requiredReservedConcurrency: number;
+      readonly requiredUnreservedConcurrency: number;
     }
   | {
       readonly ok: false;

@@ -152,12 +152,15 @@ gh run list --workflow verify.yml --branch main --limit 3
 
 1. 选择 **Run workflow**，branch 必须是 `main`；
 2. `teardown_date` 填 AWS Free plan 到期日前的日期；
-3. 勾选 `acknowledge_fake_provider_only`；
-4. 开始运行。
+3. `deployment_profile` 保持默认的 `student-low-quota`；
+4. 勾选 `acknowledge_fake_provider_only`；
+5. 开始运行。
 
 workflow 会主动拒绝以下情况：不是 OIDC assumed role、不是 Active Free plan、credits 已耗尽、日期不安全、
-Region 不是 `eu-central-1`，或 Lambda 无法在保留 100 unreserved 的同时分配本项目所需的 13 concurrency。
-AWS 对 reserved concurrency 的 100 unreserved 约束见
+Region 不是 `eu-central-1`，或所选 capacity profile 与实际 Lambda quota 不匹配。`student-low-quota`
+要求 account/unreserved concurrency 均至少为 10，并且 Terraform 不设置 function reservations；它只允许受控的
+synthetic/FakeProvider assessment。`reserved-concurrency` 仍要求在保留 100 unreserved 的同时分配本项目所需的
+13 concurrency。AWS 对 reserved concurrency 的 100 unreserved 约束见
 [Lambda API 文档](https://docs.aws.amazon.com/lambda/latest/api/API_PutFunctionConcurrency.html)。
 
 命令行观察运行：

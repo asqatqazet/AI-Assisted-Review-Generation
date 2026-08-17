@@ -260,7 +260,7 @@ resource "aws_lambda_function" "context_service" {
   handler                        = "main.handler"
   runtime                        = "nodejs24.x"
   memory_size                    = 256
-  reserved_concurrent_executions = 5
+  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 5 : null
   timeout                        = 7
   filename                       = var.context_artifact_path
   source_code_hash               = filebase64sha256(var.context_artifact_path)
@@ -289,7 +289,7 @@ resource "aws_lambda_function" "generation_service" {
   handler                        = "main.handler"
   runtime                        = "nodejs24.x"
   memory_size                    = 512
-  reserved_concurrent_executions = 1
+  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 1 : null
   timeout                        = 75
   filename                       = var.generation_artifact_path
   source_code_hash               = filebase64sha256(var.generation_artifact_path)
@@ -327,7 +327,7 @@ resource "aws_lambda_function" "web_bff_fast" {
   handler                        = "main.handler"
   runtime                        = "nodejs24.x"
   memory_size                    = 256
-  reserved_concurrent_executions = 5
+  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 5 : null
   timeout                        = 10
   filename                       = var.web_bff_artifact_path
   source_code_hash               = filebase64sha256(var.web_bff_artifact_path)
@@ -349,7 +349,7 @@ resource "aws_lambda_function" "web_bff_stream" {
   handler                        = "stream-main.handler"
   runtime                        = "nodejs24.x"
   memory_size                    = 256
-  reserved_concurrent_executions = 2
+  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 2 : null
   timeout                        = 85
   filename                       = var.web_bff_artifact_path
   source_code_hash               = filebase64sha256(var.web_bff_artifact_path)

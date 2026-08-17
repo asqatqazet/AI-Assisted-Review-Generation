@@ -18,6 +18,21 @@ export interface GenerationClient {
   ): AsyncIterable<ReviewerGenerationEventDto>;
 }
 
+export class GenerationTransportError extends Error {
+  readonly code: "EDGE_THROTTLED" | "GENERATION_UNAVAILABLE";
+  readonly retryable: boolean;
+
+  constructor(
+    code: "EDGE_THROTTLED" | "GENERATION_UNAVAILABLE",
+    retryable: boolean,
+  ) {
+    super(code);
+    this.name = "GenerationTransportError";
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
+
 const encoder = new TextEncoder();
 
 async function sha256Hex(value: string): Promise<string> {
@@ -106,8 +121,11 @@ export function createHttpGenerationClient(
         },
       );
 
+      if (response.status === 429) {
+        throw new GenerationTransportError("EDGE_THROTTLED", true);
+      }
       if (!response.ok || response.body === null) {
-        throw new Error("GENERATION_UNAVAILABLE");
+        throw new GenerationTransportError("GENERATION_UNAVAILABLE", true);
       }
 
       yield* parseEventStream(response.body);

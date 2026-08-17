@@ -66,6 +66,31 @@ describe("student AWS topology invariants", () => {
     expect(workflow).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
   });
 
+  it("deploys the reviewed low-quota profile explicitly from preflight through Terraform", () => {
+    const workflow = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/deploy-student.yml"),
+      "utf8",
+    );
+
+    expect(workflow).toMatch(
+      /deployment_profile:[\s\S]*?type:\s*choice[\s\S]*?default:\s*student-low-quota/,
+    );
+    expect(workflow).toContain(
+      "REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}",
+    );
+    expect(workflow).toContain(
+      '-var="deployment_profile=${{ inputs.deployment_profile }}"',
+    );
+
+    const outputs = fs.readFileSync(
+      path.join(__dirname, "outputs.tf"),
+      "utf8",
+    );
+    expect(outputs).toMatch(
+      /output\s+"deployment_profile"\s*\{[\s\S]*?value\s*=\s*var\.deployment_profile/,
+    );
+  });
+
   it("ships only a synthetic FakeProvider assessment fixture", () => {
     const seed = fs.readFileSync(
       path.join(__dirname, "../../aws/seed-student.sql"),
@@ -206,20 +231,27 @@ describe("student AWS topology invariants", () => {
     expect(terraform).not.toMatch(/aws_route53|aws_acm_certificate|aws_wafv2/);
   });
 
-  it("keeps the capacity and timeout budget explicit without provisioned concurrency", () => {
+  it("omits function reservations only for the explicit low-quota profile", () => {
     const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+    const variables = fs.readFileSync(
+      path.join(__dirname, "variables.tf"),
+      "utf8",
+    );
 
+    expect(variables).toMatch(/variable\s+"deployment_profile"/);
+    expect(variables).toContain('"student-low-quota"');
+    expect(variables).toContain('"reserved-concurrency"');
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"web_bff_fast"[\s\S]*?reserved_concurrent_executions\s*=\s*5[\s\S]*?timeout\s*=\s*10/,
+      /resource\s+"aws_lambda_function"\s+"web_bff_fast"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*5\s*:\s*null[\s\S]*?timeout\s*=\s*10/,
     );
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"web_bff_stream"[\s\S]*?reserved_concurrent_executions\s*=\s*2[\s\S]*?timeout\s*=\s*85/,
+      /resource\s+"aws_lambda_function"\s+"web_bff_stream"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*2\s*:\s*null[\s\S]*?timeout\s*=\s*85/,
     );
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"context_service"[\s\S]*?reserved_concurrent_executions\s*=\s*5[\s\S]*?timeout\s*=\s*7/,
+      /resource\s+"aws_lambda_function"\s+"context_service"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*5\s*:\s*null[\s\S]*?timeout\s*=\s*7/,
     );
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"generation_service"[\s\S]*?reserved_concurrent_executions\s*=\s*1[\s\S]*?timeout\s*=\s*75/,
+      /resource\s+"aws_lambda_function"\s+"generation_service"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*1\s*:\s*null[\s\S]*?timeout\s*=\s*75/,
     );
     expect(terraform).not.toContain("provisioned_concurrent_executions");
   });

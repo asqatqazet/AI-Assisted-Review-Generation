@@ -1,3 +1,8 @@
+output "deployment_profile" {
+  value       = var.deployment_profile
+  description = "Reviewed Lambda capacity policy applied to this release"
+}
+
 output "cloudfront_domain_name" {
   value       = aws_cloudfront_distribution.student.domain_name
   description = "Assessment URL host; use https:// plus this value"

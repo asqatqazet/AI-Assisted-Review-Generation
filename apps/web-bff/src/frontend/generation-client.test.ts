@@ -21,6 +21,29 @@ function streamResponse(chunks: readonly string[]): Response {
 }
 
 describe("HTTP reviewer Generation client", () => {
+  it("normalizes an origin Lambda 429 before any BFF event exists", async () => {
+    const client = createHttpGenerationClient(
+      async () => new Response(null, { status: 429 }),
+    );
+
+    await expect(async () => {
+      for await (const event of client.start(
+        {
+          reviewSessionHandle: "review-session-demo",
+          idempotencyKey: "generation-request-a",
+          factOptionIds: ["fact-attentive"],
+          reviewFormatId: "format-concise-v1",
+        },
+        new AbortController().signal,
+      )) {
+        void event;
+      }
+    }).rejects.toMatchObject({
+      code: "EDGE_THROTTLED",
+      retryable: true,
+    });
+  });
+
   it("posts reviewer choices and yields progress before one terminal Draft", async () => {
     const requests: {
       input: RequestInfo | URL;
