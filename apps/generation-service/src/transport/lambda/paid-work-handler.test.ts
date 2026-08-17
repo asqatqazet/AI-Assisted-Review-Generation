@@ -230,6 +230,40 @@ describe("US-03.2 paid-work Generation handler", () => {
         signStatus: async () => {
           throw new Error("status signing must not run during execute");
         },
+        signTerminal: async (claims) => {
+          events.push("terminal-signed");
+          expect(claims).toMatchObject({
+            leaseId: "lease-a",
+            generationId: "generation-a",
+            outcome: "completed",
+            actualCostMicros: 0,
+          });
+          return "signed-terminal-receipt";
+        },
+      },
+      terminalStore: {
+        complete: async (input) => {
+          events.push("terminal-persisted");
+          expect(input).toMatchObject({
+            leaseId: "lease-a",
+            attemptId: "attempt-a",
+            workload,
+            result: {
+              status: "completed",
+              generationId: "generation-a",
+              draft: "The treatment was explained well.",
+            },
+          });
+          return {
+            draft: {
+              id: "draft-a",
+              generationId: "generation-a",
+              revision: 1,
+              text: "The treatment was explained well.",
+            },
+            actualCostMicros: 0,
+          };
+        },
       },
       prepareAttempt: async (receivedWorkload) => {
         events.push("attempt-prepared");
@@ -242,7 +276,19 @@ describe("US-03.2 paid-work Generation handler", () => {
           execute: async (attemptId: string) => {
             events.push("provider-entered");
             expect(attemptId).toBe("attempt-a");
-            return { status: "completed", generationId: "generation-a" };
+            return {
+              status: "completed",
+              generationId: "generation-a",
+              attemptId,
+              draft: "The treatment was explained well.",
+              claims: [],
+              attempt: {
+                provider: "fake",
+                model: "fake-v1",
+                usage: { inputTokens: 12, outputTokens: 7 },
+                receipt: { requestId: "fake-request-a" },
+              },
+            };
           },
         };
       },
@@ -258,12 +304,24 @@ describe("US-03.2 paid-work Generation handler", () => {
         activation: "signed-context-activation",
         workload,
       }),
-    ).resolves.toEqual({ status: "completed", generationId: "generation-a" });
+    ).resolves.toEqual({
+      type: "terminal",
+      status: "completed",
+      terminalReceipt: "signed-terminal-receipt",
+      draft: {
+        id: "draft-a",
+        generationId: "generation-a",
+        revision: 1,
+        text: "The treatment was explained well.",
+      },
+    });
     expect(events).toEqual([
       "activation-verified",
       "attempt-prepared",
       "attempt-claimed",
       "provider-entered",
+      "terminal-persisted",
+      "terminal-signed",
     ]);
   });
 
