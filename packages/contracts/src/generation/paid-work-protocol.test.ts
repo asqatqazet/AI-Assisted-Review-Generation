@@ -28,7 +28,12 @@ const snapshot = {
   reviewFormats: [],
   promptVersions: [],
   priceRates: [],
-  providerRouting: { primaryProvider: "gemini", primaryModel: "gemini-test" },
+  providerRouting: {
+    version: "routing-v1",
+    providerModelId: "provider-model-gemini-test",
+    primaryProvider: "gemini",
+    primaryModel: "gemini-test",
+  },
 };
 
 const workload = {

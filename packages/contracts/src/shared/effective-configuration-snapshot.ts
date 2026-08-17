@@ -85,6 +85,7 @@ export const PromptVersionDtoSchema = z.strictObject({
 
 export const PriceRateDtoSchema = z.strictObject({
   id: IdentifierDtoSchema,
+  providerModelId: IdentifierDtoSchema,
   provider: IdentifierDtoSchema,
   model: IdentifierDtoSchema,
   inputPerMillionMicros: z.number().int().nonnegative(),
@@ -96,6 +97,8 @@ export const PriceRateDtoSchema = z.strictObject({
 });
 
 export const ProviderRoutingDtoSchema = z.strictObject({
+  version: IdentifierDtoSchema,
+  providerModelId: IdentifierDtoSchema,
   primaryProvider: IdentifierDtoSchema,
   primaryModel: IdentifierDtoSchema,
 });

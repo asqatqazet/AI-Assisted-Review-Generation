@@ -9,7 +9,7 @@ import {
   type TenantConfiguration,
 } from "./effective-config.js";
 
-export const CONFIG_SNAPSHOT_SCHEMA_VERSION = 1;
+export const CONFIG_SNAPSHOT_SCHEMA_VERSION = 2;
 
 export type ReviewFormatLocale = EffectiveSettings["locale"] | "any";
 
@@ -44,6 +44,7 @@ export interface PromptVersion {
 
 export interface PriceRate {
   readonly id: string;
+  readonly providerModelId: string;
   readonly provider: string;
   readonly model: string;
   readonly inputPerMillionMicros: number;
@@ -56,6 +57,7 @@ export interface PriceRate {
 
 export interface ProviderRouting {
   readonly version?: string;
+  readonly providerModelId: string;
   readonly primaryProvider: string;
   readonly primaryModel: string;
 }
@@ -178,6 +180,7 @@ const copyPromptVersion = (prompt: PromptVersion): PromptVersion => ({
 
 const copyPriceRate = (rate: PriceRate): PriceRate => ({
   id: rate.id,
+  providerModelId: rate.providerModelId,
   provider: rate.provider,
   model: rate.model,
   inputPerMillionMicros: rate.inputPerMillionMicros,
@@ -382,6 +385,7 @@ function buildPayload(input: BuildConfigSnapshotInput): ConfigSnapshotPayload {
       ...(input.providerRouting.version !== undefined
         ? { version: input.providerRouting.version }
         : {}),
+      providerModelId: input.providerRouting.providerModelId,
       primaryProvider: input.providerRouting.primaryProvider,
       primaryModel: input.providerRouting.primaryModel,
     },

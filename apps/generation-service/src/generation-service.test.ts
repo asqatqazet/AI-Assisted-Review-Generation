@@ -44,6 +44,7 @@ const sampleFormat: ReviewFormatVersion = {
 
 const sampleRate: PriceRate = {
   id: "rate-anthropic-sonnet-2026-08",
+  providerModelId: "provider-model-anthropic-sonnet",
   provider: "anthropic",
   model: "claude-sonnet",
   inputPerMillionMicros: 3_000_000,
@@ -107,6 +108,7 @@ const snapshotInput: BuildConfigSnapshotInput = {
   priceRates: [sampleRate],
   providerRouting: {
     version: "routing-v1",
+    providerModelId: "provider-model-anthropic-sonnet",
     primaryProvider: "anthropic",
     primaryModel: "claude-sonnet",
   },

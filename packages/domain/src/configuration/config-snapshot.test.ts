@@ -64,6 +64,7 @@ const socialFormat: ReviewFormatVersion = {
 
 const anthropicRate: PriceRate = {
   id: "rate-anthropic-sonnet-2026-08",
+  providerModelId: "provider-model-anthropic-sonnet",
   provider: "anthropic",
   model: "claude-sonnet",
   inputPerMillionMicros: 3_000_000,
@@ -76,6 +77,7 @@ const anthropicRate: PriceRate = {
 
 const openAiRate: PriceRate = {
   id: "rate-openai-mini-2026-08",
+  providerModelId: "provider-model-openai-mini",
   provider: "openai",
   model: "gpt-mini",
   inputPerMillionMicros: 400_000,
@@ -159,6 +161,7 @@ const makeInput = (): BuildConfigSnapshotInput => ({
   priceRates: [openAiRate, anthropicRate],
   providerRouting: {
     version: "routing-v3",
+    providerModelId: "provider-model-anthropic-sonnet",
     primaryProvider: "anthropic",
     primaryModel: "claude-sonnet",
   },
@@ -199,6 +202,7 @@ describe("buildConfigSnapshot", () => {
       ],
       providerRouting: {
         version: "routing-v3",
+        providerModelId: "provider-model-anthropic-sonnet",
         primaryProvider: "anthropic",
         primaryModel: "claude-sonnet",
       },
@@ -696,7 +700,7 @@ describe("buildConfigSnapshot", () => {
     input.locationName = "Hafenstraße";
 
     expect(buildConfigSnapshot(input).snapshotId).toBe(
-      "sha256:cb15430253c08d7c0d6115a8520082034c9a0d955c94b8bc6f921f821b38767e",
+      "sha256:5fc81324e75c7d04fac6c68cb20c825cfc77b05e1d8ffa704c84afbd689e9231",
     );
   });
 });

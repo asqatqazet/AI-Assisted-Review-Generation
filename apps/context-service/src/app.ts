@@ -134,6 +134,7 @@ export function createInMemoryContextStore(): ContextServiceStore {
   const priceRates: PriceRate[] = [
     {
       id: "rate-gemini-flash-lite-2026-08",
+      providerModelId: "provider-model-gemini-flash-lite",
       provider: "gemini",
       model: "gemini-3.5-flash-lite",
       inputPerMillionMicros: 3_000_000,
@@ -147,6 +148,7 @@ export function createInMemoryContextStore(): ContextServiceStore {
 
   const providerRouting: ProviderRouting = {
     version: "routing-v1",
+    providerModelId: "provider-model-gemini-flash-lite",
     primaryProvider: "gemini",
     primaryModel: "gemini-3.5-flash-lite",
   };

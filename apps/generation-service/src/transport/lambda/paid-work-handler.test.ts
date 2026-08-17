@@ -38,7 +38,12 @@ const workload = {
     reviewFormats: [],
     promptVersions: [],
     priceRates: [],
-    providerRouting: { primaryProvider: "fake", primaryModel: "fake-v1" },
+    providerRouting: {
+      version: "routing-v1",
+      providerModelId: "provider-model-fake-v1",
+      primaryProvider: "fake",
+      primaryModel: "fake-v1",
+    },
   },
   command: {
     kind: "generate" as const,
