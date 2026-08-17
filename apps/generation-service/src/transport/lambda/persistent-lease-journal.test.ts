@@ -61,6 +61,23 @@ const workload = GenerationWorkloadDtoSchema.parse({
     },
   },
   command: { kind: "generate", assertionIds: ["assertion-a"], rating: 5 },
+  assertions: [
+    {
+      id: "assertion-a",
+      version: "assertion-a@1",
+      reviewSessionId: "session-a",
+      semanticId: "service-explained-clearly",
+      semanticKind: "experience-fact",
+      polarity: "positive",
+      source: {
+        kind: "reviewer-text",
+        sourceRevisionId: "source-revision-a",
+        start: 0,
+        end: 30,
+        quotedText: "The treatment was explained well.",
+      },
+    },
+  ],
 });
 
 describe("US-03.2 persistent Generation lease journal adapter", () => {

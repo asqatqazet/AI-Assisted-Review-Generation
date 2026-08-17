@@ -15,6 +15,39 @@ export const GenerationActionDtoSchema = z.enum([
   "resample",
 ]);
 
+export const GenerationAssertionSourceDtoSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("fact-option"),
+    factOptionId: IdentifierDtoSchema,
+    factOptionVersion: IdentifierDtoSchema,
+  }),
+  z.strictObject({
+    kind: z.literal("reviewer-text"),
+    sourceRevisionId: IdentifierDtoSchema,
+    start: z.number().int().nonnegative(),
+    end: z.number().int().positive(),
+    quotedText: z.string().min(1),
+  }),
+  z.strictObject({
+    kind: z.literal("rating"),
+    rating: z.number().int().min(1).max(5),
+  }),
+  z.strictObject({
+    kind: z.literal("confirmed-fact"),
+    sourceRevisionId: IdentifierDtoSchema,
+  }),
+]);
+
+export const GenerationAssertionDtoSchema = z.strictObject({
+  id: IdentifierDtoSchema,
+  version: IdentifierDtoSchema,
+  reviewSessionId: IdentifierDtoSchema,
+  semanticId: IdentifierDtoSchema,
+  semanticKind: z.enum(["experience-fact", "rating-sentiment"]),
+  polarity: z.enum(["positive", "neutral", "negative"]),
+  source: GenerationAssertionSourceDtoSchema,
+});
+
 export const GenerateChildCommandDtoSchema = z.strictObject({
   kind: z.literal("generate"),
   assertionIds: z.array(IdentifierDtoSchema).min(1),
@@ -86,6 +119,7 @@ export const GenerationWorkloadDtoSchema = z
     bindings: GenerationWorkloadBindingsDtoSchema,
     snapshot: EffectiveConfigurationSnapshotDtoSchema,
     command: GenerationChildCommandDtoSchema,
+    assertions: z.array(GenerationAssertionDtoSchema).min(1),
   })
   .superRefine((workload, context) => {
     const checks: readonly [boolean, string, readonly (string | number)[]][] = [
@@ -204,6 +238,9 @@ export const CancelExpiredLeaseResultDtoSchema = z.strictObject({
 });
 
 export type GenerationActionDto = z.infer<typeof GenerationActionDtoSchema>;
+export type GenerationAssertionDto = z.infer<
+  typeof GenerationAssertionDtoSchema
+>;
 export type GenerationChildCommandDto = z.infer<
   typeof GenerationChildCommandDtoSchema
 >;

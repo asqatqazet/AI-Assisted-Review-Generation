@@ -65,6 +65,23 @@ const workload = {
     assertionIds: ["assertion-a"],
     rating: 5,
   },
+  assertions: [
+    {
+      id: "assertion-a",
+      version: "assertion-a@1",
+      reviewSessionId: "session-a",
+      semanticId: "service-explained-clearly",
+      semanticKind: "experience-fact" as const,
+      polarity: "positive" as const,
+      source: {
+        kind: "reviewer-text" as const,
+        sourceRevisionId: "source-revision-a",
+        start: 0,
+        end: 30,
+        quotedText: "The treatment was explained well.",
+      },
+    },
+  ],
 };
 
 describe("US-03.2 paid-work Generation handler", () => {
