@@ -107,7 +107,8 @@ export type ConfigSnapshotErrorCode =
   | "invalid-price-rate-interval"
   | "overlapping-price-rate-interval"
   | "missing-enabled-review-format"
-  | "unpriced-provider-route";
+  | "unpriced-provider-route"
+  | "provider-model-identity-mismatch";
 
 export class ConfigSnapshotError extends Error {
   readonly code: ConfigSnapshotErrorCode;
@@ -312,6 +313,18 @@ function validateInputs(
     throw new ConfigSnapshotError(
       "unpriced-provider-route",
       `No price rate for provider routing: ${primaryModelKey}`,
+    );
+  }
+
+  const routedRates = ratesByModel.get(primaryModelKey) ?? [];
+  if (
+    routedRates.some(
+      (rate) => rate.providerModelId !== input.providerRouting.providerModelId,
+    )
+  ) {
+    throw new ConfigSnapshotError(
+      "provider-model-identity-mismatch",
+      `Provider Model identity does not match routing for: ${primaryModelKey}`,
     );
   }
 }
