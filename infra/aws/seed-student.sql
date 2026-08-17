@@ -268,4 +268,39 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
+-- The provider catalogue is shared across tenants. When this idempotent seed is
+-- applied to a database that already contains the FakeProvider natural keys,
+-- retain those canonical catalogue identities in the demo snapshot instead of
+-- the preferred bootstrap UUIDs above.
+WITH fake_catalogue AS (
+  SELECT
+    model.id AS provider_model_id,
+    rate.id AS price_rate_id
+  FROM providers AS provider
+  JOIN provider_models AS model ON model.provider_id = provider.id
+  JOIN price_rates AS rate ON rate.provider_model_id = model.id
+  WHERE provider.key = 'fake'
+    AND model.model_key = 'fake-v1'
+    AND rate.effective_from = '2026-08-01T00:00:00.000Z'::timestamptz
+)
+UPDATE effective_configuration_snapshots AS snapshot
+SET payload = jsonb_set(
+  jsonb_set(
+    jsonb_set(
+      snapshot.payload,
+      '{providerRouting,providerModelId}',
+      to_jsonb(fake_catalogue.provider_model_id::text)
+    ),
+    '{priceRates,0,providerModelId}',
+    to_jsonb(fake_catalogue.provider_model_id::text)
+  ),
+  '{priceRates,0,id}',
+  to_jsonb(fake_catalogue.price_rate_id::text)
+)
+FROM fake_catalogue
+WHERE snapshot.id = '00000000-0000-4000-8000-000000000108'
+  AND (
+    snapshot.payload #>> '{providerRouting,providerModelId}'
+  ) IS DISTINCT FROM fake_catalogue.provider_model_id::text;
+
 COMMIT;
