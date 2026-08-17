@@ -167,6 +167,25 @@ export const GenerationWorkloadDtoSchema = z
       }
     });
 
+    if (workload.command.kind === "generate") {
+      const commandAssertionIds = [...workload.command.assertionIds].sort();
+      const embeddedAssertionIds = workload.assertions
+        .map((assertion) => assertion.id)
+        .sort();
+      if (
+        commandAssertionIds.length !== embeddedAssertionIds.length ||
+        commandAssertionIds.some(
+          (assertionId, index) => assertionId !== embeddedAssertionIds[index],
+        )
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Generate command does not bind the embedded Assertion set",
+          path: ["command", "assertionIds"],
+        });
+      }
+    }
+
     const boundRate = workload.snapshot.priceRates.find(
       (rate) => rate.id === workload.bindings.priceRateId,
     );
