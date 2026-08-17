@@ -850,6 +850,7 @@ model ExecutionLease {
   location             Location            @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
   reviewSession        ReviewSession       @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   generationBatch      GenerationBatch     @relation(fields: [generationBatchId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
+  generation           Generation?
   providerAttempts     ProviderAttempt[]
 
   @@unique([id, tenantId, locationId, reviewSessionId, generationId])
@@ -863,6 +864,7 @@ model Generation {
   locationId            String                         @map("location_id") @db.Uuid
   reviewSessionId       String                         @map("review_session_id") @db.Uuid
   generationBatchId     String                         @map("generation_batch_id") @db.Uuid
+  executionLeaseId      String                         @unique @map("execution_lease_id") @db.Uuid
   sourceGenerationId    String?                        @map("source_generation_id") @db.Uuid
   snapshotId            String                         @map("snapshot_id") @db.Uuid
   promptVersionId       String                         @map("prompt_version_id") @db.Uuid
@@ -881,18 +883,19 @@ model Generation {
   location              Location                       @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
   reviewSession         ReviewSession                  @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   generationBatch       GenerationBatch                @relation(fields: [generationBatchId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
+  executionLease        ExecutionLease                 @relation(fields: [executionLeaseId, tenantId, locationId, reviewSessionId, id], references: [id, tenantId, locationId, reviewSessionId, generationId], onDelete: Restrict)
   sourceGeneration      Generation?                    @relation("GenerationLineage", fields: [sourceGenerationId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
   derivedGenerations    Generation[]                   @relation("GenerationLineage")
   snapshot              EffectiveConfigurationSnapshot @relation(fields: [snapshotId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   promptVersion         PromptVersion                  @relation(fields: [promptVersionId, tenantId], references: [id, tenantId], onDelete: Restrict)
   reviewFormatVersion   ReviewFormatVersion            @relation(fields: [reviewFormatVersionId], references: [id], onDelete: Restrict)
-  providerAttempts      ProviderAttempt[]
   claims                Claim[]
   unsupportedOutputs    UnsupportedOutput[]
   draft                 Draft?
   draftRevisions        DraftRevision[]                @relation("RevisionSourceGeneration")
   dispositions          Disposition[]
 
+  @@unique([executionLeaseId, tenantId, locationId, reviewSessionId, id])
   @@unique([id, tenantId, locationId, reviewSessionId])
   @@index([tenantId, locationId, reviewSessionId])
   @@index([sourceGenerationId])
@@ -922,7 +925,6 @@ model ProviderAttempt {
   tenant           Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   location         Location              @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
   reviewSession    ReviewSession         @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  generation       Generation            @relation(fields: [generationId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
   executionLease   ExecutionLease        @relation(fields: [executionLeaseId, tenantId, locationId, reviewSessionId, generationId], references: [id, tenantId, locationId, reviewSessionId, generationId], onDelete: Restrict)
   providerModel    ProviderModel         @relation(fields: [providerModelId], references: [id], onDelete: Restrict)
   priceRate        PriceRate?            @relation(fields: [priceRateId, providerModelId], references: [id, providerModelId], onDelete: Restrict)
