@@ -29,6 +29,11 @@ interface SeededScope {
   readonly permitJti: string;
 }
 
+interface SeededPrice {
+  readonly providerModelId: string;
+  readonly priceRateId: string;
+}
+
 async function seedScope(): Promise<SeededScope> {
   const tenantId = randomUUID();
   const locationId = randomUUID();
@@ -84,6 +89,34 @@ async function seedScope(): Promise<SeededScope> {
   };
 }
 
+async function seedPrice(): Promise<SeededPrice> {
+  const providerId = randomUUID();
+  const providerModelId = randomUUID();
+  const priceRateId = randomUUID();
+
+  await runSql(`
+    INSERT INTO providers (
+      id, key, display_name, credential_reference
+    ) VALUES (
+      '${providerId}', 'provider-${providerId}', 'TDD Provider', 'fake://local'
+    );
+    INSERT INTO provider_models (
+      id, provider_id, model_key
+    ) VALUES (
+      '${providerModelId}', '${providerId}', 'model-${providerModelId}'
+    );
+    INSERT INTO price_rates (
+      id, provider_model_id, currency, input_per_million_micros,
+      output_per_million_micros, effective_from
+    ) VALUES (
+      '${priceRateId}', '${providerModelId}', 'EUR', 0, 0,
+      clock_timestamp() - interval '1 day'
+    );
+  `);
+
+  return { providerModelId, priceRateId };
+}
+
 function tenantTransaction(tenantId: string, sql: string): string {
   return `
     BEGIN;
@@ -92,6 +125,31 @@ function tenantTransaction(tenantId: string, sql: string): string {
     ${sql}
     COMMIT;
   `;
+}
+
+async function prepareLease(
+  scope: SeededScope,
+  permitLifetime: string = "1 minute",
+): Promise<string> {
+  const result = await runSql(
+    tenantTransaction(
+      scope.tenantId,
+      `SELECT outcome, lease_id FROM prepare_generation_lease(
+        '${scope.tenantId}',
+        '${scope.locationId}',
+        '${scope.reviewSessionId}',
+        '${scope.generationBatchId}',
+        '${scope.generationId}',
+        '${scope.permitJti}',
+        clock_timestamp() + interval '${permitLifetime}'
+      );`,
+    ),
+  );
+  const leaseId = result.split("|")[1];
+  if (!leaseId) {
+    throw new Error(`Lease preparation returned no lease id: ${result}`);
+  }
+  return leaseId;
 }
 
 describeDatabase("US-03.2 PostgreSQL execution fence", () => {
@@ -131,5 +189,101 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
       ),
     );
     expect(status).toBe("leased");
+  });
+
+  it("allows two concurrent executions to claim only one paid Attempt", async () => {
+    const scope = await seedScope();
+    const price = await seedPrice();
+    const leaseId = await prepareLease(scope);
+    const claim = tenantTransaction(
+      scope.tenantId,
+      `SELECT outcome, attempt_id FROM claim_generation_attempt(
+        '${leaseId}',
+        '${scope.tenantId}',
+        '${scope.locationId}',
+        '${scope.reviewSessionId}',
+        '${scope.generationBatchId}',
+        '${scope.generationId}',
+        '${scope.permitJti}',
+        clock_timestamp() + interval '30 seconds',
+        1,
+        '${price.providerModelId}',
+        '${price.priceRateId}',
+        '{}'::jsonb
+      );`,
+    );
+
+    const outcomes = await Promise.all([runSql(claim), runSql(claim)]);
+    const attemptIds = outcomes.map((outcome) => outcome.split("|")[1]);
+
+    expect(outcomes.map((outcome) => outcome.split("|")[0]).sort()).toEqual([
+      "claimed",
+      "existing",
+    ]);
+    expect(new Set(attemptIds).size).toBe(1);
+    expect(
+      await runSql(
+        `SELECT count(*) FROM provider_attempts WHERE execution_lease_id = '${leaseId}';`,
+      ),
+    ).toBe("1");
+  });
+
+  it("cancels an expired no-provider lease and fences delayed execution", async () => {
+    const scope = await seedScope();
+    const price = await seedPrice();
+    const leaseId = await prepareLease(scope, "400 milliseconds");
+    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    const cancellation = runSql(
+      tenantTransaction(
+        scope.tenantId,
+        `SELECT cancel_expired_generation_lease(
+          '${leaseId}',
+          '${scope.tenantId}',
+          '${scope.locationId}',
+          '${scope.reviewSessionId}',
+          '${scope.generationBatchId}',
+          '${scope.generationId}',
+          '${scope.permitJti}'
+        );`,
+      ),
+    );
+    const delayedClaim = runSql(
+      tenantTransaction(
+        scope.tenantId,
+        `SELECT outcome, attempt_id FROM claim_generation_attempt(
+          '${leaseId}',
+          '${scope.tenantId}',
+          '${scope.locationId}',
+          '${scope.reviewSessionId}',
+          '${scope.generationBatchId}',
+          '${scope.generationId}',
+          '${scope.permitJti}',
+          clock_timestamp() + interval '30 seconds',
+          1,
+          '${price.providerModelId}',
+          '${price.priceRateId}',
+          '{}'::jsonb
+        );`,
+      ),
+    );
+
+    const [cancelResult, claimResult] = await Promise.allSettled([
+      cancellation,
+      delayedClaim,
+    ]);
+
+    expect(cancelResult).toEqual({ status: "fulfilled", value: "cancelled" });
+    expect(claimResult.status).toBe("rejected");
+    expect(
+      await runSql(
+        `SELECT state FROM execution_leases WHERE id = '${leaseId}';`,
+      ),
+    ).toBe("CANCELLED");
+    expect(
+      await runSql(
+        `SELECT count(*) FROM provider_attempts WHERE execution_lease_id = '${leaseId}';`,
+      ),
+    ).toBe("0");
   });
 });
