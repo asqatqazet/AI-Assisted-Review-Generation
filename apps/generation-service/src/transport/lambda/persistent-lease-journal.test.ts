@@ -1,8 +1,10 @@
 import { GenerationWorkloadDtoSchema } from "@review/contracts/generation";
 import type { PostgresGenerationLeaseJournal } from "@review/db/execution-plane";
+import type { PostgresGenerationTerminalStore } from "@review/db/execution-plane";
 import { describe, expect, it } from "vitest";
 
 import { createPersistentGenerationLeaseJournal } from "./persistent-lease-journal.js";
+import { createPersistentGenerationTerminalStore } from "./persistent-terminal-store.js";
 
 const workload = GenerationWorkloadDtoSchema.parse({
   bindings: {
@@ -85,6 +87,106 @@ const workload = GenerationWorkloadDtoSchema.parse({
       },
     },
   ],
+});
+
+describe("US-01.3 persistent terminal Generation adapter", () => {
+  it("maps only grounded terminal evidence into the execution database", async () => {
+    let received: unknown;
+    const databaseStore = {
+      complete: async (input: unknown) => {
+        received = input;
+        return {
+          draft: {
+            id: "draft-a",
+            generationId: "generation-a",
+            revision: 1 as const,
+            text: "The treatment was explained well.",
+          },
+          actualCostMicros: 0,
+        };
+      },
+      disconnect: async () => undefined,
+    } satisfies PostgresGenerationTerminalStore;
+    const terminalStore = createPersistentGenerationTerminalStore(databaseStore);
+
+    await expect(
+      terminalStore.complete({
+        leaseId: "lease-a",
+        attemptId: "attempt-a",
+        workload: {
+          ...workload,
+          snapshot: {
+            ...workload.snapshot,
+            promptVersions: [
+              {
+                id: "prompt-a",
+                key: "generate-v1",
+                version: 1,
+                commandKind: "generate",
+                template: "Generate grounded JSON.",
+                contentHash: "sha256:prompt",
+              },
+            ],
+          },
+        },
+        result: {
+          status: "completed",
+          generationId: "generation-a",
+          attemptId: "attempt-a",
+          draft: "The treatment was explained well.",
+          claims: [
+            {
+              id: "claim-a",
+              semanticId: "service-explained-clearly",
+              semanticKind: "experience-fact",
+              polarity: "positive",
+              text: "The treatment was explained well.",
+              grounding: [
+                {
+                  kind: "assertion",
+                  assertionId: "assertion-a",
+                  assertionVersion: "assertion-a@1",
+                },
+              ],
+            },
+          ],
+          attempt: {
+            provider: "fake",
+            model: "fake-v1",
+            usage: { inputTokens: 12, outputTokens: 7 },
+            receipt: { requestId: "fake-request-a" },
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ draft: { id: "draft-a" } });
+
+    expect(received).toMatchObject({
+      tenantId: "tenant-a",
+      locationId: "location-a",
+      reviewSessionId: "session-a",
+      generationBatchId: "batch-a",
+      generationId: "generation-a",
+      permitJti: "permit-a",
+      snapshotId: "snapshot-a",
+      promptVersionId: "prompt-a",
+      reviewFormatVersionId: "format-a@1",
+      action: "GENERATE",
+      leaseId: "lease-a",
+      attemptId: "attempt-a",
+      result: {
+        draft: "The treatment was explained well.",
+        claims: [
+          {
+            proposition: "The treatment was explained well.",
+            assertionIds: ["assertion-a"],
+          },
+        ],
+        inputTokens: 12,
+        outputTokens: 7,
+        providerReceipt: { requestId: "fake-request-a" },
+      },
+    });
+  });
 });
 
 describe("US-03.2 persistent Generation lease journal adapter", () => {
