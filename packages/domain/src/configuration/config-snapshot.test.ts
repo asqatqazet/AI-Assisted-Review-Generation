@@ -459,6 +459,20 @@ describe("buildConfigSnapshot", () => {
     expect(selectedRate.providerModelId).toBe(routedModelId);
   });
 
+  it("rejects a routed Provider Model identity that disagrees with its Price Rate", () => {
+    const input = makeInput();
+    input.providerRouting = {
+      ...input.providerRouting,
+      providerModelId: "provider-model-wrong",
+    };
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "provider-model-identity-mismatch",
+      }),
+    );
+  });
+
   it("rejects duplicate Review Format ids", () => {
     const input = makeInput();
     input.reviewFormats = [
