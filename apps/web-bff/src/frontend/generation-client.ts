@@ -18,6 +18,18 @@ export interface GenerationClient {
   ): AsyncIterable<ReviewerGenerationEventDto>;
 }
 
+const encoder = new TextEncoder();
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 function dataPayload(eventBlock: string): string | null {
   const data = eventBlock
     .split("\n")
@@ -76,6 +88,7 @@ export function createHttpGenerationClient(
         factOptionIds: input.factOptionIds,
         reviewFormatId: input.reviewFormatId,
       });
+      const serializedCommand = JSON.stringify(command);
       const response = await fetchFn(
         `/api/v1/review-sessions/${encodeURIComponent(input.reviewSessionHandle)}/generations`,
         {
@@ -86,8 +99,9 @@ export function createHttpGenerationClient(
             Accept: "text/event-stream",
             "Content-Type": "application/json",
             "Idempotency-Key": input.idempotencyKey,
+            "x-amz-content-sha256": await sha256Hex(serializedCommand),
           },
-          body: JSON.stringify(command),
+          body: serializedCommand,
           signal,
         },
       );
