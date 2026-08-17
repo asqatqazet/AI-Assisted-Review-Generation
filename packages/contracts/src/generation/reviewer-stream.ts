@@ -14,6 +14,17 @@ export const ReviewerDraftDtoSchema = z.strictObject({
   text: z.string(),
 });
 
+export const ReviewerGenerationRejectionCodeDtoSchema = z.enum([
+  "GROUNDING_REJECTED",
+  "POLICY_REJECTED",
+  "FORMAT_REJECTED",
+  "PROVIDER_UNAVAILABLE",
+  "RATE_LIMITED",
+  "BUDGET_EXCEEDED",
+  "CANCELLED",
+  "GENERATION_FAILED",
+]);
+
 export const ReviewerGenerationEventDtoSchema = z.union([
   z.strictObject({
     type: z.literal("accepted"),
@@ -35,16 +46,7 @@ export const ReviewerGenerationEventDtoSchema = z.union([
   z.strictObject({
     type: z.literal("terminal"),
     status: z.literal("rejected"),
-    code: z.enum([
-      "GROUNDING_REJECTED",
-      "POLICY_REJECTED",
-      "FORMAT_REJECTED",
-      "PROVIDER_UNAVAILABLE",
-      "RATE_LIMITED",
-      "BUDGET_EXCEEDED",
-      "CANCELLED",
-      "GENERATION_FAILED",
-    ]),
+    code: ReviewerGenerationRejectionCodeDtoSchema,
     retryable: z.boolean(),
   }),
 ]);
@@ -53,6 +55,9 @@ export type ReviewerGenerationCommandDto = z.infer<
   typeof ReviewerGenerationCommandDtoSchema
 >;
 export type ReviewerDraftDto = z.infer<typeof ReviewerDraftDtoSchema>;
+export type ReviewerGenerationRejectionCodeDto = z.infer<
+  typeof ReviewerGenerationRejectionCodeDtoSchema
+>;
 export type ReviewerGenerationEventDto = z.infer<
   typeof ReviewerGenerationEventDtoSchema
 >;

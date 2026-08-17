@@ -1,18 +1,27 @@
 import {
+  ActivateGenerationInvocationResultDtoSchema,
   AdvanceEntryInvocationResultDtoSchema,
   ContextFunctionInvocationDtoSchema,
   PrepareEntryInvocationResultDtoSchema,
+  PrepareReviewerGenerationInvocationResultDtoSchema,
   ReadEntryChallengeInvocationResultDtoSchema,
   ReadReviewSessionInvocationResultDtoSchema,
+  SettleGenerationInvocationResultDtoSchema,
+  type ActivateGenerationInvocationDto,
+  type ActivateGenerationInvocationResultDto,
   type AdvanceEntryInvocationDto,
   type AdvanceEntryInvocationResultDto,
   type ContextFunctionInvocationDto,
   type PrepareEntryInvocationDto,
   type PrepareEntryInvocationResultDto,
+  type PrepareReviewerGenerationInvocationDto,
+  type PrepareReviewerGenerationInvocationResultDto,
   type ReadEntryChallengeInvocationDto,
   type ReadEntryChallengeInvocationResultDto,
   type ReadReviewSessionInvocationDto,
   type ReadReviewSessionInvocationResultDto,
+  type SettleGenerationInvocationDto,
+  type SettleGenerationInvocationResultDto,
 } from "@review/contracts/context";
 
 export interface ContextEntryService {
@@ -28,6 +37,15 @@ export interface ContextEntryService {
   readReviewSession(
     input: ReadReviewSessionInvocationDto["input"],
   ): Promise<ReadReviewSessionInvocationResultDto["result"]>;
+  prepareReviewerGeneration(
+    input: PrepareReviewerGenerationInvocationDto["input"],
+  ): Promise<PrepareReviewerGenerationInvocationResultDto["result"]>;
+  activateGeneration(
+    input: ActivateGenerationInvocationDto["input"],
+  ): Promise<ActivateGenerationInvocationResultDto["result"]>;
+  settleGeneration(
+    input: SettleGenerationInvocationDto["input"],
+  ): Promise<SettleGenerationInvocationResultDto["result"]>;
 }
 
 export interface ContextFunctionOptions {
@@ -43,6 +61,9 @@ export function createContextFunctionHandler({
   | ReadEntryChallengeInvocationResultDto
   | AdvanceEntryInvocationResultDto
   | ReadReviewSessionInvocationResultDto
+  | PrepareReviewerGenerationInvocationResultDto
+  | ActivateGenerationInvocationResultDto
+  | SettleGenerationInvocationResultDto
 > {
   return async (event) => {
     const invocation: ContextFunctionInvocationDto =
@@ -68,6 +89,21 @@ export function createContextFunctionHandler({
         return ReadReviewSessionInvocationResultDtoSchema.parse({
           operation: invocation.operation,
           result: await entryService.readReviewSession(invocation.input),
+        });
+      case "prepare-reviewer-generation":
+        return PrepareReviewerGenerationInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.prepareReviewerGeneration(invocation.input),
+        });
+      case "activate-generation":
+        return ActivateGenerationInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.activateGeneration(invocation.input),
+        });
+      case "settle-generation":
+        return SettleGenerationInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.settleGeneration(invocation.input),
         });
     }
   };

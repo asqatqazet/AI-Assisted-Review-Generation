@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+import { GenerationWorkloadDtoSchema } from "../generation/generation-request.js";
+import {
+  ReviewerGenerationCommandDtoSchema,
+  ReviewerGenerationRejectionCodeDtoSchema,
+} from "../generation/reviewer-stream.js";
 import { IdentifierDtoSchema } from "../shared/primitives.js";
 import { PublicSurveyContextDtoSchema } from "./public-survey-context.js";
 import { ReviewSessionProjectionDtoSchema } from "./review-session.js";
@@ -49,6 +54,33 @@ export const ReadReviewSessionInvocationDtoSchema = z.strictObject({
   }),
 });
 
+export const PrepareReviewerGenerationInvocationDtoSchema = z.strictObject({
+  operation: z.literal("prepare-reviewer-generation"),
+  input: z.strictObject({
+    reviewSessionHandle: IdentifierDtoSchema,
+    browserCapability: BrowserCapabilityDtoSchema,
+    idempotencyKey: z.string().min(1).max(200),
+    command: ReviewerGenerationCommandDtoSchema,
+  }),
+});
+
+export const ActivateGenerationInvocationDtoSchema = z.strictObject({
+  operation: z.literal("activate-generation"),
+  input: z.strictObject({
+    leaseId: IdentifierDtoSchema,
+    leaseReceipt: z.string().min(1),
+    workload: GenerationWorkloadDtoSchema,
+  }),
+});
+
+export const SettleGenerationInvocationDtoSchema = z.strictObject({
+  operation: z.literal("settle-generation"),
+  input: z.strictObject({
+    terminalReceipt: z.string().min(1),
+    workload: GenerationWorkloadDtoSchema,
+  }),
+});
+
 export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
   "operation",
   [
@@ -56,6 +88,9 @@ export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
     ReadEntryChallengeInvocationDtoSchema,
     AdvanceEntryInvocationDtoSchema,
     ReadReviewSessionInvocationDtoSchema,
+    PrepareReviewerGenerationInvocationDtoSchema,
+    ActivateGenerationInvocationDtoSchema,
+    SettleGenerationInvocationDtoSchema,
   ],
 );
 
@@ -100,6 +135,42 @@ export const ReadReviewSessionInvocationResultDtoSchema = z.strictObject({
   ]),
 });
 
+export const PrepareReviewerGenerationInvocationResultDtoSchema =
+  z.strictObject({
+    operation: z.literal("prepare-reviewer-generation"),
+    result: z.discriminatedUnion("status", [
+      z.strictObject({
+        status: z.literal("prepared"),
+        permit: z.string().min(1),
+        workload: GenerationWorkloadDtoSchema,
+      }),
+      z.strictObject({
+        status: z.literal("rejected"),
+        code: ReviewerGenerationRejectionCodeDtoSchema,
+        retryable: z.boolean(),
+      }),
+    ]),
+  });
+
+export const ActivateGenerationInvocationResultDtoSchema = z.strictObject({
+  operation: z.literal("activate-generation"),
+  result: z.discriminatedUnion("status", [
+    z.strictObject({
+      status: z.literal("activated"),
+      activation: z.string().min(1),
+    }),
+    z.strictObject({ status: z.literal("rejected") }),
+  ]),
+});
+
+export const SettleGenerationInvocationResultDtoSchema = z.strictObject({
+  operation: z.literal("settle-generation"),
+  result: z.discriminatedUnion("status", [
+    z.strictObject({ status: z.literal("settled") }),
+    z.strictObject({ status: z.literal("rejected") }),
+  ]),
+});
+
 export type ContextFunctionInvocationDto = z.infer<
   typeof ContextFunctionInvocationDtoSchema
 >;
@@ -115,6 +186,15 @@ export type AdvanceEntryInvocationDto = z.infer<
 export type ReadReviewSessionInvocationDto = z.infer<
   typeof ReadReviewSessionInvocationDtoSchema
 >;
+export type PrepareReviewerGenerationInvocationDto = z.infer<
+  typeof PrepareReviewerGenerationInvocationDtoSchema
+>;
+export type ActivateGenerationInvocationDto = z.infer<
+  typeof ActivateGenerationInvocationDtoSchema
+>;
+export type SettleGenerationInvocationDto = z.infer<
+  typeof SettleGenerationInvocationDtoSchema
+>;
 export type PrepareEntryInvocationResultDto = z.infer<
   typeof PrepareEntryInvocationResultDtoSchema
 >;
@@ -126,4 +206,13 @@ export type AdvanceEntryInvocationResultDto = z.infer<
 >;
 export type ReadReviewSessionInvocationResultDto = z.infer<
   typeof ReadReviewSessionInvocationResultDtoSchema
+>;
+export type PrepareReviewerGenerationInvocationResultDto = z.infer<
+  typeof PrepareReviewerGenerationInvocationResultDtoSchema
+>;
+export type ActivateGenerationInvocationResultDto = z.infer<
+  typeof ActivateGenerationInvocationResultDtoSchema
+>;
+export type SettleGenerationInvocationResultDto = z.infer<
+  typeof SettleGenerationInvocationResultDtoSchema
 >;
