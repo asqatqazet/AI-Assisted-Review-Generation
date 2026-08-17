@@ -1,23 +1,10 @@
-import { serve } from "@hono/node-server";
+import { handle } from "hono/aws-lambda";
 
-import { createWebBffApp } from "./app.js";
-import { createHmacCsrfProtector } from "./security/csrf-protector.js";
+import { createWebBffRuntime } from "./runtime.js";
 
-const csrfSecret = process.env["REVIEW_CSRF_SECRET"];
-if (csrfSecret === undefined) {
-  throw new Error("REVIEW_CSRF_SECRET is required");
-}
-const publicOrigin = process.env["REVIEW_PUBLIC_ORIGIN"];
-if (publicOrigin === undefined) {
-  throw new Error("REVIEW_PUBLIC_ORIGIN is required");
-}
+type BufferedHandler = ReturnType<typeof handle>;
 
-export const app = createWebBffApp({
-  csrfProtector: createHmacCsrfProtector(csrfSecret),
-  publicOrigin,
-});
+let runtime: BufferedHandler | undefined;
 
-const port = Number.parseInt(process.env["PORT"] ?? "3000", 10);
-serve({ fetch: app.fetch, port });
-
-export { createWebBffApp };
+export const handler: BufferedHandler = async (event, context) =>
+  await (runtime ??= handle(createWebBffRuntime()))(event, context);

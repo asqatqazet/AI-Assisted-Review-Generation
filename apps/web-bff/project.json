@@ -7,14 +7,14 @@
   "targets": {
     "serve": {
       "executor": "nx:run-commands",
-      "options": { "command": "tsx watch apps/web-bff/src/main.ts" }
+      "options": { "command": "tsx watch apps/web-bff/dev.ts" }
     },
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{workspaceRoot}/dist/apps/web-bff"],
       "options": {
         "commands": [
-          "tsup apps/web-bff/src/main.ts --format esm --out-dir dist/apps/web-bff --clean",
+          "tsup apps/web-bff/src/main.ts apps/web-bff/src/stream-main.ts --format esm --out-dir dist/apps/web-bff --clean",
           "vite build apps/web-bff --config apps/web-bff/vite.config.ts"
         ],
         "parallel": false

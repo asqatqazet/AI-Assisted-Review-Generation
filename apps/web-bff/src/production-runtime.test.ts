@@ -29,7 +29,9 @@ describe("US-01.3 BFF production composition", () => {
   it("allows only public-operational settings and qualified service aliases", () => {
     const source = fs.readFileSync(new URL("./runtime.ts", import.meta.url), "utf8");
     const environmentKeys = [
-      ...source.matchAll(/(?:required\(|process\.env\[)["']([^"']+)["']/g),
+      ...source.matchAll(
+        /(?:required\(|qualifiedAliasArn\(|process\.env\[)["']([^"']+)["']/g,
+      ),
     ].map((match) => match[1]);
 
     expect(new Set(environmentKeys)).toEqual(

@@ -31,7 +31,11 @@ describe("AWS private Lambda JSON invoker", () => {
       InvocationType: "RequestResponse",
       LogType: "None",
     });
-    expect(JSON.parse(new TextDecoder().decode(received?.input.Payload))).toEqual({
+    const payload = received?.input.Payload;
+    if (!(payload instanceof Uint8Array)) {
+      throw new Error("Expected binary Lambda invocation payload");
+    }
+    expect(JSON.parse(new TextDecoder().decode(payload))).toEqual({
       operation: "private-operation",
     });
   });
