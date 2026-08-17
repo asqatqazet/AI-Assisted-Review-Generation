@@ -59,10 +59,10 @@ END $$;
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'context_svc') THEN
-    CREATE ROLE context_svc WITH LOGIN PASSWORD 'context_svc_secret';
+    CREATE ROLE context_svc WITH LOGIN;
   END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'generation_svc') THEN
-    CREATE ROLE generation_svc WITH LOGIN PASSWORD 'generation_svc_secret';
+    CREATE ROLE generation_svc WITH LOGIN;
   END IF;
 END $$;
 
@@ -70,7 +70,8 @@ END $$;
 GRANT USAGE ON SCHEMA public TO context_svc;
 GRANT SELECT ON platform_settings, providers, provider_models, price_rates, feature_flags, action_definitions, review_format_versions, posting_destination_types, entry_mode_definitions, operator_role_definitions, prompt_template_versions TO context_svc;
 GRANT SELECT, INSERT, UPDATE ON tenants, tenant_access_grants, tenant_action_enablements, locations, posting_destination_bindings, fact_option_categories, fact_option_versions, review_format_enablements, prompt_versions, experiments, experiment_variants, effective_configuration_snapshots TO context_svc;
+GRANT SELECT, INSERT, UPDATE ON visits, invitation_tokens, review_sessions, source_text_revisions, assertions, budget_reservations, generation_batches, generation_batch_assertions TO context_svc;
 
 -- Generation Service Grants (Execution Plane):
 GRANT USAGE ON SCHEMA public TO generation_svc;
-GRANT SELECT, INSERT, UPDATE ON budget_reservations, generation_batches, generation_batch_assertions, generations, provider_attempts, claims, claim_groundings, unsupported_outputs, drafts, draft_revisions, dispositions TO generation_svc;
+GRANT SELECT, INSERT, UPDATE ON generations, provider_attempts, claims, claim_groundings, unsupported_outputs, drafts, draft_revisions, dispositions TO generation_svc;
