@@ -76,6 +76,13 @@ export interface PaidWorkAttemptInput {
   })[];
 }
 
+const normalizeProposition = (value: string): string =>
+  value
+    .normalize("NFKC")
+    .toLocaleLowerCase("en-US")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
 function candidateFromProviderOutput(
   output: Readonly<Record<string, unknown>>,
   assertions: PaidWorkAttemptInput["assertions"],
@@ -94,6 +101,15 @@ function candidateFromProviderOutput(
     const supportingAssertion = assertions.find(
       (assertion) => assertion.id === assertionIds[0],
     );
+    const text = typeof record["text"] === "string" ? record["text"] : "";
+    if (
+      assertionIds.length !== 1 ||
+      supportingAssertion === undefined ||
+      normalizeProposition(text) !==
+        normalizeProposition(supportingAssertion.proposition)
+    ) {
+      throw new PaidWorkGroundingRejectedError();
+    }
 
     return {
       id:
@@ -103,7 +119,7 @@ function candidateFromProviderOutput(
       semanticId: supportingAssertion?.semanticId ?? `unknown-${index + 1}`,
       semanticKind: supportingAssertion?.semanticKind ?? "experience-fact",
       polarity: supportingAssertion?.polarity ?? "neutral",
-      text: typeof record["text"] === "string" ? record["text"] : "",
+      text,
       grounding: assertionIds.map((assertionId) => {
         const assertion = assertions.find((candidate) => candidate.id === assertionId);
         return {

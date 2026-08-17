@@ -185,11 +185,11 @@ describe("US-03.2 paid-work Attempt preparation", () => {
     const gateway: ModelGatewayPort = {
       generate: async () => ({
         output: {
-          draft: "The treatment was guaranteed to be explained well.",
+          draft: "The treatment was guaranteed.",
           claims: [
             {
               id: "claim-a",
-              text: "The treatment was guaranteed to be explained well.",
+              text: "The treatment was guaranteed.",
               assertionIds: ["assertion-a"],
             },
           ],
@@ -203,7 +203,18 @@ describe("US-03.2 paid-work Attempt preparation", () => {
       }),
     };
 
-    const prepared = await createPaidWorkAttemptPreparer({ gateway })(workload);
+    const policyWorkload = {
+      ...workload,
+      assertions: [
+        {
+          ...workload.assertions[0]!,
+          proposition: "The treatment was guaranteed.",
+        },
+      ],
+    };
+    const prepared = await createPaidWorkAttemptPreparer({ gateway })(
+      policyWorkload,
+    );
     const rejected = await prepared.execute("attempt-b").catch((error: unknown) =>
       error,
     );
