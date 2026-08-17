@@ -11,6 +11,7 @@ import {
   type GenerationAssertion,
   type GroundedCandidateClaim,
 } from "@review/domain/generation";
+import { applyPolicy } from "@review/domain/policy";
 import { composePrompt } from "@review/domain/prompt";
 import type { ReviewFormatManifest } from "@review/domain/review-format";
 
@@ -37,6 +38,15 @@ export class PaidWorkGroundingRejectedError extends Error {
   }
 }
 
+export class PaidWorkPolicyRejectedError extends Error {
+  public readonly code = "POLICY_REJECTED";
+
+  public constructor() {
+    super("The grounded candidate failed the resolved policy.");
+    this.name = "PaidWorkPolicyRejectedError";
+  }
+}
+
 export interface PaidWorkAttemptInput {
   readonly bindings: {
     readonly generationId: string;
@@ -44,9 +54,15 @@ export interface PaidWorkAttemptInput {
     readonly reviewFormatVersionId: string;
   };
   readonly snapshot: {
+    readonly tenantName: string;
     readonly settings: Pick<
       EffectiveSettings,
-      "locale" | "toneGuidelines" | "bannedTerms"
+      | "locale"
+      | "toneGuidelines"
+      | "bannedTerms"
+      | "requireDisclosure"
+      | "requireVerifiedExperience"
+      | "maxReviewFormatsPerRequest"
     >;
     readonly reviewFormats: readonly ReviewFormatVersion[];
     readonly promptVersions: readonly PromptVersion[];
@@ -199,12 +215,29 @@ export function createPaidWorkAttemptPreparer({
         if (grounding.verdict === "rejected") {
           throw new PaidWorkGroundingRejectedError();
         }
+        const policy = applyPolicy({
+          draft: grounding.draftBody,
+          claims: grounding.candidate.claims,
+          policy: {
+            requireDisclosure: workload.snapshot.settings.requireDisclosure,
+            requireVerifiedExperience:
+              workload.snapshot.settings.requireVerifiedExperience,
+            maxReviewFormatsPerRequest:
+              workload.snapshot.settings.maxReviewFormatsPerRequest,
+            bannedTerms: workload.snapshot.settings.bannedTerms,
+          },
+          tenantName: workload.snapshot.tenantName,
+          locale: workload.snapshot.settings.locale,
+        });
+        if (policy.violations.length > 0) {
+          throw new PaidWorkPolicyRejectedError();
+        }
 
         return {
           status: "completed",
           generationId: workload.bindings.generationId,
           attemptId,
-          draft: grounding.draftBody,
+          draft: policy.draft,
           claims: grounding.candidate.claims,
           attempt: run.attempt,
         };
