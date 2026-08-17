@@ -10,7 +10,7 @@
   "scripts": {
     "aws:preflight": "tsx infra/aws/preflight-command.ts",
     "postinstall": "pnpm --filter @review/db generate",
-    "dev": "nx run workspace:dev",
+    "dev": "tsx infra/local/start.ts",
     "verify": "nx run workspace:verify",
     "db:reset": "nx run db:reset",
     "test": "nx run workspace:unit",
