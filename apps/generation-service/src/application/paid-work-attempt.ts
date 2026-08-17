@@ -5,6 +5,12 @@ import type {
   ProviderRouting,
   ReviewFormatVersion,
 } from "@review/domain/configuration";
+import {
+  evaluateGrounding,
+  type Candidate,
+  type GenerationAssertion,
+  type GroundedCandidateClaim,
+} from "@review/domain/generation";
 import { composePrompt } from "@review/domain/prompt";
 import type { ReviewFormatManifest } from "@review/domain/review-format";
 
@@ -22,8 +28,19 @@ export interface PreparedPaidWorkAttempt {
   readonly execute: (attemptId: string) => Promise<unknown>;
 }
 
+export class PaidWorkGroundingRejectedError extends Error {
+  public readonly code = "GROUNDING_REJECTED";
+
+  public constructor() {
+    super("The provider candidate failed grounding.");
+    this.name = "PaidWorkGroundingRejectedError";
+  }
+}
+
 export interface PaidWorkAttemptInput {
   readonly bindings: {
+    readonly generationId: string;
+    readonly reviewSessionId: string;
     readonly reviewFormatVersionId: string;
   };
   readonly snapshot: {
@@ -38,10 +55,59 @@ export interface PaidWorkAttemptInput {
   readonly command: {
     readonly kind: CommandKind | "resample";
   };
-  readonly assertions: readonly {
-    readonly id: string;
+  readonly assertions: readonly (GenerationAssertion & {
     readonly proposition: string;
-  }[];
+  })[];
+}
+
+function candidateFromProviderOutput(
+  output: Readonly<Record<string, unknown>>,
+  assertions: PaidWorkAttemptInput["assertions"],
+): Candidate {
+  const rawClaims = Array.isArray(output["claims"]) ? output["claims"] : [];
+  const claims: GroundedCandidateClaim[] = rawClaims.map((rawClaim, index) => {
+    const record =
+      typeof rawClaim === "object" && rawClaim !== null
+        ? (rawClaim as Readonly<Record<string, unknown>>)
+        : {};
+    const assertionIds = Array.isArray(record["assertionIds"])
+      ? record["assertionIds"].filter(
+          (assertionId): assertionId is string => typeof assertionId === "string",
+        )
+      : [];
+    const supportingAssertion = assertions.find(
+      (assertion) => assertion.id === assertionIds[0],
+    );
+
+    return {
+      id:
+        typeof record["id"] === "string"
+          ? record["id"]
+          : `provider-claim-${index + 1}`,
+      semanticId: supportingAssertion?.semanticId ?? `unknown-${index + 1}`,
+      semanticKind: supportingAssertion?.semanticKind ?? "experience-fact",
+      polarity: supportingAssertion?.polarity ?? "neutral",
+      text: typeof record["text"] === "string" ? record["text"] : "",
+      grounding: assertionIds.map((assertionId) => {
+        const assertion = assertions.find((candidate) => candidate.id === assertionId);
+        return {
+          kind: "assertion" as const,
+          assertionId,
+          assertionVersion: assertion?.version ?? "unknown-version",
+        };
+      }),
+    };
+  });
+
+  return {
+    claims,
+    segments: claims.flatMap((claim, index) => [
+      { kind: "claim" as const, claimId: claim.id },
+      ...(index < claims.length - 1
+        ? [{ kind: "connector" as const, text: " " }]
+        : []),
+    ]),
+  };
 }
 
 export function createPaidWorkAttemptPreparer({
@@ -111,7 +177,38 @@ export function createPaidWorkAttemptPreparer({
 
     return {
       requestPayload,
-      execute: async () => await gateway.generate(requestPayload),
+      execute: async (attemptId) => {
+        const run = await gateway.generate(requestPayload);
+        const candidate = candidateFromProviderOutput(
+          run.output,
+          workload.assertions,
+        );
+        const grounding = evaluateGrounding({
+          reviewSessionId: workload.bindings.reviewSessionId,
+          candidate,
+          assertions: workload.assertions,
+          permittedContextFacts: [],
+          postcondition: {
+            kind: "generate",
+            allowedAssertionIds: workload.assertions.map(
+              (assertion) => assertion.id,
+            ),
+            allowedContextFactIds: [],
+          },
+        });
+        if (grounding.verdict === "rejected") {
+          throw new PaidWorkGroundingRejectedError();
+        }
+
+        return {
+          status: "completed",
+          generationId: workload.bindings.generationId,
+          attemptId,
+          draft: grounding.draftBody,
+          claims: grounding.candidate.claims,
+          attempt: run.attempt,
+        };
+      },
     };
   };
 }

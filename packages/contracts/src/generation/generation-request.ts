@@ -30,7 +30,13 @@ export const GenerationAssertionSourceDtoSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("rating"),
-    rating: z.number().int().min(1).max(5),
+    rating: z.union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+    ]),
   }),
   z.strictObject({
     kind: z.literal("confirmed-fact"),
