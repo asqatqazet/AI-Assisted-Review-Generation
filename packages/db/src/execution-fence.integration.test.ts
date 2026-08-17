@@ -4,8 +4,8 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 const execFileAsync = promisify(execFile);
-const databaseUrl = process.env.DATABASE_URL;
-const psql = process.env.PSQL_BIN ?? "psql";
+const databaseUrl = process.env["DATABASE_URL"];
+const psql = process.env["PSQL_BIN"] ?? "psql";
 const describeDatabase = databaseUrl ? describe : describe.skip;
 
 async function runSql(sql: string): Promise<string> {
