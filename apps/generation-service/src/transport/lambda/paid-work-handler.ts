@@ -81,6 +81,8 @@ export interface GenerationReceiptSigner {
     readonly requestHash: string;
     readonly snapshotId: string;
     readonly snapshotHash: string;
+    readonly providerModelId: string;
+    readonly priceRateId: string;
     readonly idempotencyKey: string;
   }): Promise<string>;
   signStatus(

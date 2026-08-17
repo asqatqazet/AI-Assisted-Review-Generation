@@ -76,6 +76,8 @@ export const GenerationWorkloadBindingsDtoSchema = z.strictObject({
   requestHash: BoundHashDtoSchema,
   snapshotId: IdentifierDtoSchema,
   snapshotHash: BoundHashDtoSchema,
+  providerModelId: IdentifierDtoSchema,
+  priceRateId: IdentifierDtoSchema,
   idempotencyKey: z.string().min(1).max(200),
 });
 
@@ -107,12 +109,34 @@ export const GenerationWorkloadDtoSchema = z
         "Action binding does not match the supplied command",
         ["bindings", "action"],
       ],
+      [
+        workload.bindings.providerModelId ===
+          workload.snapshot.providerRouting.providerModelId,
+        "Provider Model binding does not match the supplied snapshot",
+        ["bindings", "providerModelId"],
+      ],
     ];
 
     for (const [valid, message, path] of checks) {
       if (!valid) {
         context.addIssue({ code: "custom", message, path: [...path] });
       }
+    }
+
+    const boundRate = workload.snapshot.priceRates.find(
+      (rate) => rate.id === workload.bindings.priceRateId,
+    );
+    if (
+      boundRate === undefined ||
+      boundRate.providerModelId !== workload.bindings.providerModelId ||
+      boundRate.provider !== workload.snapshot.providerRouting.primaryProvider ||
+      boundRate.model !== workload.snapshot.providerRouting.primaryModel
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "Price Rate binding does not match the routed Provider Model",
+        path: ["bindings", "priceRateId"],
+      });
     }
   });
 

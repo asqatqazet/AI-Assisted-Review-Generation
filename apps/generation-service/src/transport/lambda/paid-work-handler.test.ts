@@ -15,6 +15,8 @@ const workload = {
     requestHash: "sha256:request",
     snapshotId: "snap-01",
     snapshotHash: "sha256:snapshot",
+    providerModelId: "provider-model-fake-v1",
+    priceRateId: "price-rate-fake-v1",
     idempotencyKey: "request-1",
   },
   snapshot: {
@@ -37,7 +39,20 @@ const workload = {
     factOptions: [],
     reviewFormats: [],
     promptVersions: [],
-    priceRates: [],
+    priceRates: [
+      {
+        id: "price-rate-fake-v1",
+        providerModelId: "provider-model-fake-v1",
+        provider: "fake",
+        model: "fake-v1",
+        inputPerMillionMicros: 0,
+        outputPerMillionMicros: 0,
+        currency: "EUR",
+        unit: "token" as const,
+        effectiveFrom: "2026-08-01T00:00:00.000Z",
+        effectiveTo: null,
+      },
+    ],
     providerRouting: {
       version: "routing-v1",
       providerModelId: "provider-model-fake-v1",
