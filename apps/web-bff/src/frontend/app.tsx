@@ -9,6 +9,10 @@ import {
   createHttpReviewSessionClient,
   type ReviewSessionClient,
 } from "./review-session-client.js";
+import {
+  createReviewSessionState,
+  transitionReviewSession,
+} from "./review-session-machine.js";
 import { createSurveyState, transition, type SurveyState } from "./survey-machine.js";
 
 const OperatorConsole = lazy(() => import("./console/operator-console.js"));
@@ -155,36 +159,92 @@ function ReviewRoute({
   readonly reviewSessionClient: ReviewSessionClient;
 }): React.JSX.Element {
   const { reviewSessionHandle = "" } = useParams();
-  const [projection, setProjection] = useState<
-    Awaited<ReturnType<ReviewSessionClient["read"]>> | undefined
-  >();
+  const [state, setState] = useState(() =>
+    createReviewSessionState(reviewSessionHandle),
+  );
 
   useEffect(() => {
     const abortController = new AbortController();
     void reviewSessionClient
       .read(reviewSessionHandle, abortController.signal)
-      .then(setProjection)
+      .then((projection) => {
+        setState((current) =>
+          transitionReviewSession(current, {
+            type: "REVIEW_SESSION_LOADED",
+            projection,
+          }),
+        );
+      })
       .catch(() => undefined);
     return () => abortController.abort();
   }, [reviewSessionClient, reviewSessionHandle]);
 
-  if (projection !== undefined) {
+  if (state.value === "facts") {
     return (
       <main>
-        <p>{projection.locationDisplayName}</p>
+        <p>{state.projection.locationDisplayName}</p>
         <h1>What stood out?</h1>
-        <p>{projection.rating} out of 5</p>
+        <p>{state.projection.rating} out of 5</p>
         <form>
           <fieldset>
             <legend>Choose the facts you want to include</legend>
-            {projection.factOptions.map((factOption) => (
+            {state.projection.factOptions.map((factOption) => (
               <label key={factOption.id}>
                 <input
                   type="checkbox"
                   name="factOptionIds"
                   value={factOption.id}
+                  checked={state.selectedFactOptionIds.includes(factOption.id)}
+                  onChange={() =>
+                    setState((current) =>
+                      transitionReviewSession(current, {
+                        type: "FACT_OPTION_TOGGLED",
+                        factOptionId: factOption.id,
+                      }),
+                    )
+                  }
                 />
                 {factOption.label}
+              </label>
+            ))}
+          </fieldset>
+          <button
+            type="button"
+            disabled={state.selectedFactOptionIds.length === 0}
+            onClick={() =>
+              setState((current) =>
+                transitionReviewSession(current, {
+                  type: "CONTINUE_REQUESTED",
+                }),
+              )
+            }
+          >
+            Continue
+          </button>
+        </form>
+      </main>
+    );
+  }
+
+  if (state.value === "format") {
+    const compatibleFormats = state.projection.reviewFormats.filter((format) =>
+      format.availableCommands.includes(state.projection.action),
+    );
+    return (
+      <main>
+        <p>{state.projection.locationDisplayName}</p>
+        <h1>Choose a format</h1>
+        <form>
+          <fieldset>
+            <legend>How should your review read?</legend>
+            {compatibleFormats.map((format) => (
+              <label key={format.id}>
+                <input
+                  type="radio"
+                  name="reviewFormatId"
+                  value={format.id}
+                />
+                {format.displayName}
               </label>
             ))}
           </fieldset>
