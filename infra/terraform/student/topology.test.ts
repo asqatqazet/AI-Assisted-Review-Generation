@@ -14,7 +14,7 @@ describe("student AWS topology invariants", () => {
       /variable\s+"aws_region"\s*\{[\s\S]*?default\s*=\s*"eu-central-1"/,
     );
     expect(terraform).not.toContain('runtime       = "nodejs20.x"');
-    expect(terraform.match(/runtime\s*=\s*"nodejs24\.x"/g)).toHaveLength(2);
+    expect(terraform.match(/runtime\s*=\s*"nodejs24\.x"/g)).toHaveLength(5);
   });
 
   it("publishes immutable service artifacts behind qualified live aliases", () => {
@@ -23,13 +23,16 @@ describe("student AWS topology invariants", () => {
     expect(terraform).not.toContain("dummy-context.zip");
     expect(terraform).not.toContain("dummy-gen.zip");
     expect(terraform).not.toContain('function_version = "$LATEST"');
-    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(2);
-    expect(terraform.match(/source_code_hash\s*=\s*filebase64sha256/g)).toHaveLength(2);
+    expect(terraform.match(/publish\s*=\s*true/g)).toHaveLength(5);
+    expect(terraform.match(/source_code_hash\s*=\s*filebase64sha256/g)).toHaveLength(5);
     expect(terraform).toContain(
       "function_version = aws_lambda_function.context_service.version",
     );
     expect(terraform).toContain(
       "function_version = aws_lambda_function.generation_service.version",
+    );
+    expect(terraform).toContain(
+      "function_version = aws_lambda_function.web_bff_stream.version",
     );
   });
 
@@ -70,7 +73,8 @@ describe("student AWS topology invariants", () => {
     expect(terraform).not.toMatch(
       /resource\s+"aws_ssm_parameter"\s+"(?:openai|gemini|anthropic)_api_key"/,
     );
-    expect(terraform).toContain("parameter/review-gen/student/providers/*");
+    expect(terraform).not.toContain("parameter/review-gen/student/providers/*");
+    expect(terraform).not.toMatch(/OPENAI|GEMINI|PROVIDER_API_KEY/);
   });
 
   it("allows the Generation Lambda to outlive the bounded 60-second provider call", () => {
@@ -82,5 +86,75 @@ describe("student AWS topology invariants", () => {
     expect(terraform).toMatch(
       /resource\s+"aws_lambda_function"\s+"generation_service"\s*\{[\s\S]*?timeout\s*=\s*75/,
     );
+  });
+
+  it("exposes only the fast and streaming BFF aliases through IAM Function URLs", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform.match(/resource\s+"aws_lambda_function_url"/g)).toHaveLength(
+      2,
+    );
+    expect(terraform.match(/authorization_type\s*=\s*"AWS_IAM"/g)).toHaveLength(
+      2,
+    );
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function_url"\s+"web_bff_stream"[\s\S]*?invoke_mode\s*=\s*"RESPONSE_STREAM"/,
+    );
+    expect(terraform).not.toMatch(
+      /resource\s+"aws_lambda_function_url"\s+"(?:context|generation)/,
+    );
+  });
+
+  it("uses private S3 and Lambda OAC origins behind one default-domain CloudFront distribution", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform).toMatch(
+      /origin_access_control_origin_type\s*=\s*"s3"/,
+    );
+    expect(terraform.match(/origin_access_control_origin_type\s*=\s*"lambda"/g)).toHaveLength(
+      2,
+    );
+    expect(terraform).toContain('resource "aws_cloudfront_distribution" "student"');
+    expect(terraform).toContain('target_origin_id       = "web-bff-stream"');
+    expect(terraform).toContain('path_pattern           = "/api/v1/review-sessions/*/generations"');
+    expect(terraform).toContain("response_completion_timeout = 95");
+    expect(terraform).toContain("origin_read_timeout         = 30");
+    expect(terraform).toContain("cloudfront_default_certificate = true");
+    expect(terraform).not.toMatch(/aliases\s*=/);
+    expect(terraform).not.toMatch(/aws_route53|aws_acm_certificate|aws_wafv2/);
+  });
+
+  it("keeps the capacity and timeout budget explicit without provisioned concurrency", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"web_bff_fast"[\s\S]*?reserved_concurrent_executions\s*=\s*5[\s\S]*?timeout\s*=\s*10/,
+    );
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"web_bff_stream"[\s\S]*?reserved_concurrent_executions\s*=\s*2[\s\S]*?timeout\s*=\s*85/,
+    );
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"context_service"[\s\S]*?reserved_concurrent_executions\s*=\s*5[\s\S]*?timeout\s*=\s*7/,
+    );
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"generation_service"[\s\S]*?reserved_concurrent_executions\s*=\s*1[\s\S]*?timeout\s*=\s*75/,
+    );
+    expect(terraform).not.toContain("provisioned_concurrent_executions");
+  });
+
+  it("lets only BFF roles invoke qualified service aliases and EventBridge invoke reconciliation", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform).toContain("aws_lambda_alias.context_service_live.arn");
+    expect(terraform).toContain("aws_lambda_alias.generation_service_live.arn");
+    expect(terraform).toContain('principal     = "events.amazonaws.com"');
+    expect(terraform).toContain("aws_cloudwatch_event_rule.reconcile.arn");
+    expect(terraform).not.toMatch(/aws_apigateway|aws_api_gateway|aws_nat_gateway/);
+  });
+
+  it("expires every Lambda log group after three days", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+
+    expect(terraform.match(/retention_in_days\s*=\s*3/g)).toHaveLength(5);
   });
 });
