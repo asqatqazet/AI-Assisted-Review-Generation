@@ -23,6 +23,7 @@ const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
 const defaultGenerationClient = createHttpGenerationClient();
 const defaultReviewSessionClient = createHttpReviewSessionClient();
+const defaultNavigate = (path: string): void => globalThis.location.assign(path);
 const defaultCopyText = async (text: string): Promise<void> => {
   if (globalThis.navigator.clipboard === undefined) {
     throw new Error("CLIPBOARD_UNAVAILABLE");
@@ -39,8 +40,10 @@ const ratings = [
 
 function StartRoute({
   entryChallengeClient,
+  navigate,
 }: {
   readonly entryChallengeClient: EntryChallengeClient;
+  readonly navigate: (path: string) => void;
 }): React.JSX.Element {
   const { entryChallengeHandle = "" } = useParams();
   const [state, setState] = useState<SurveyState>(() =>
@@ -73,16 +76,29 @@ function StartRoute({
         <p>{state.context.locationDisplayName}</p>
         <h1>Write your review of {state.context.tenantDisplayName}</h1>
         <form
-          method="post"
-          action={`/api/v1/entry-challenges/${encodeURIComponent(entryChallengeHandle)}/start`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (state.rating === null || state.selectedAction === null) {
+              return;
+            }
+            const abortController = new AbortController();
+            void entryChallengeClient
+              .start(
+                {
+                  entryChallengeHandle,
+                  rating: state.rating,
+                  action: state.selectedAction,
+                  csrfToken,
+                },
+                abortController.signal,
+              )
+              .then(({ redirectTo }) => navigate(redirectTo))
+              .catch(() => undefined);
+            setState((current) =>
+              transition(current, { type: "START_REQUESTED" }),
+            );
+          }}
         >
-          <input type="hidden" name="rating" value={state.rating ?? ""} />
-          <input
-            type="hidden"
-            name="action"
-            value={state.selectedAction ?? ""}
-          />
-          <input type="hidden" name="csrfToken" value={csrfToken} />
           <section aria-labelledby="rating-question">
             <h2 id="rating-question">How was it?</h2>
             <div role="group" aria-label="Rating, 1 to 5">
@@ -431,6 +447,7 @@ export interface ReviewerApplicationProps {
   readonly generationClient?: GenerationClient | undefined;
   readonly newIdempotencyKey?: (() => string) | undefined;
   readonly copyText?: ((text: string) => Promise<void>) | undefined;
+  readonly navigate?: ((path: string) => void) | undefined;
 }
 
 export function ReviewerApplication({
@@ -439,12 +456,18 @@ export function ReviewerApplication({
   generationClient = defaultGenerationClient,
   newIdempotencyKey = () => globalThis.crypto.randomUUID(),
   copyText = defaultCopyText,
+  navigate = defaultNavigate,
 }: ReviewerApplicationProps = {}): React.JSX.Element {
   return (
     <Routes>
       <Route
         path="/start/:entryChallengeHandle"
-        element={<StartRoute entryChallengeClient={entryChallengeClient} />}
+        element={
+          <StartRoute
+            entryChallengeClient={entryChallengeClient}
+            navigate={navigate}
+          />
+        }
       />
       <Route
         path="/review/:reviewSessionHandle"
