@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import { createPostgresGenerationLeaseJournal } from "./execution-plane/index.js";
+import {
+  createPostgresGenerationLeaseJournal,
+  createPostgresGenerationTerminalStore,
+} from "./execution-plane/index.js";
 
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
@@ -29,6 +32,7 @@ interface SeededScope {
   readonly generationBatchId: string;
   readonly generationId: string;
   readonly permitJti: string;
+  readonly snapshotId: string;
 }
 
 interface SeededPrice {
@@ -88,6 +92,7 @@ async function seedScope(): Promise<SeededScope> {
     generationBatchId,
     generationId,
     permitJti,
+    snapshotId,
   };
 }
 
@@ -307,5 +312,118 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
         `SELECT count(*) FROM provider_attempts WHERE execution_lease_id = '${leaseId}';`,
       ),
     ).toBe("0");
+  });
+
+  it("atomically persists a grounded terminal Generation, Claim and Draft", async () => {
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL is required for database integration tests");
+    }
+    const scope = await seedScope();
+    const price = await seedPrice();
+    const promptVersionId = randomUUID();
+    const reviewFormatVersionId = randomUUID();
+    const assertionId = randomUUID();
+    const categoryId = randomUUID();
+    const factOptionVersionId = randomUUID();
+    await runSql(`
+      INSERT INTO review_format_versions (
+        id, format_key, version, locale, target_platform, constraints,
+        localized_text, supported_actions, content_hash
+      ) VALUES (
+        '${reviewFormatVersionId}', 'format-${reviewFormatVersionId}', 1,
+        'en-GB', 'generic', '{"minChars":1,"maxChars":500}'::jsonb,
+        '{"displayName":{"en-GB":"Concise"},"description":{"en-GB":"Short"},"sample":{"en-GB":"Sample"}}'::jsonb,
+        ARRAY['GENERATE']::generation_action[],
+        'format-hash-${reviewFormatVersionId}'
+      );
+      INSERT INTO prompt_versions (
+        id, tenant_id, prompt_key, action, content_hash, body
+      ) VALUES (
+        '${promptVersionId}', '${scope.tenantId}', 'prompt-${promptVersionId}',
+        'GENERATE', 'prompt-hash-${promptVersionId}', 'Generate grounded JSON.'
+      );
+      INSERT INTO fact_option_categories (id, tenant_id, key, label)
+      VALUES (
+        '${categoryId}', '${scope.tenantId}', 'category-${categoryId}',
+        '{"en-GB":"Service"}'::jsonb
+      );
+      INSERT INTO fact_option_versions (
+        id, tenant_id, location_id, category_id, fact_option_key, version,
+        owner_scope, label, proposition, polarity
+      ) VALUES (
+        '${factOptionVersionId}', '${scope.tenantId}', '${scope.locationId}',
+        '${categoryId}', 'fact-${factOptionVersionId}', 1, 'LOCATION',
+        '{"en-GB":"Attentive"}'::jsonb, 'The team was attentive.', 'POSITIVE'
+      );
+      INSERT INTO assertions (
+        id, tenant_id, location_id, review_session_id, source,
+        proposition, fact_option_version_id
+      ) VALUES (
+        '${assertionId}', '${scope.tenantId}', '${scope.locationId}',
+        '${scope.reviewSessionId}', 'FACT_OPTION',
+        'The team was attentive.', '${factOptionVersionId}'
+      );
+    `);
+    const leaseId = await prepareLease(scope);
+    const journal = createPostgresGenerationLeaseJournal({ databaseUrl });
+    const claimed = await journal.claimExecution({
+      ...scope,
+      leaseId,
+      activationExpiresAt: new Date(Date.now() + 20_000).toISOString(),
+      attemptOrdinal: 1,
+      providerModelId: price.providerModelId,
+      priceRateId: price.priceRateId,
+      requestPayload: { model: "fake-v1" },
+    });
+    const terminalStore = createPostgresGenerationTerminalStore({ databaseUrl });
+
+    try {
+      await expect(
+        terminalStore.complete({
+          ...scope,
+          leaseId,
+          attemptId: claimed.attemptId,
+          promptVersionId,
+          reviewFormatVersionId,
+          action: "GENERATE",
+          result: {
+            draft: "The team was attentive.",
+            claims: [
+              {
+                proposition: "The team was attentive.",
+                assertionIds: [assertionId],
+              },
+            ],
+            inputTokens: 12,
+            outputTokens: 7,
+            providerReceipt: { requestId: "fake-request-a" },
+          },
+        }),
+      ).resolves.toMatchObject({
+        draft: {
+          generationId: scope.generationId,
+          revision: 1,
+          text: "The team was attentive.",
+        },
+        actualCostMicros: 0,
+      });
+
+      expect(
+        await runSql(
+          `SELECT status::text || '|' || grounding_verdict::text FROM generations WHERE id = '${scope.generationId}';`,
+        ),
+      ).toBe("SUCCEEDED|PASSED");
+      expect(
+        await runSql(
+          `SELECT count(*) FROM claim_groundings WHERE generation_id = '${scope.generationId}';`,
+        ),
+      ).toBe("1");
+      expect(
+        await runSql(`SELECT state::text FROM execution_leases WHERE id = '${leaseId}';`),
+      ).toBe("TERMINAL");
+    } finally {
+      await terminalStore.disconnect();
+      await journal.disconnect();
+    }
   });
 });
