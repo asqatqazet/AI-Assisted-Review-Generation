@@ -31,6 +31,8 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
     const reviewSessionId = randomUUID();
     const categoryId = randomUUID();
     const factOptionId = randomUUID();
+    const reviewFormatVersionId = randomUUID();
+    const reviewFormatEnablementId = randomUUID();
     const bindingId = randomUUID();
     const routeHandleHash = `sha256:route-${randomUUID()}`;
     const browserCapabilityHash = `sha256:browser-${randomUUID()}`;
@@ -64,6 +66,24 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
         'TENANT', '{"en-GB":"The team was attentive"}'::jsonb,
         'The team was attentive.', 'POSITIVE', 1, true
       );
+      INSERT INTO review_format_versions (
+        id, format_key, version, locale, target_platform, constraints,
+        localized_text, supported_actions, content_hash, status
+      ) VALUES (
+        '${reviewFormatVersionId}', 'concise', 1, 'en-GB', 'google',
+        '{"minChars":20,"maxChars":350,"paragraphs":1}'::jsonb,
+        '{"displayName":{"en-GB":"Concise review"},"description":{"en-GB":"One short paragraph."},"sample":{"en-GB":"The team was attentive."}}'::jsonb,
+        ARRAY['GENERATE']::generation_action[],
+        'sha256:format-${reviewFormatVersionId}', 'ACTIVE'
+      );
+      INSERT INTO review_format_enablements (
+        id, tenant_id, review_format_version_id, enabled, sort_order,
+        allowed_actions
+      ) VALUES (
+        '${reviewFormatEnablementId}', '${tenantId}',
+        '${reviewFormatVersionId}', true, 1,
+        ARRAY['GENERATE']::generation_action[]
+      );
     `);
 
     const reader = createPostgresReviewSessionReader({ databaseUrl });
@@ -85,6 +105,15 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
             label: "The team was attentive",
             categoryLabel: "Service",
             polarity: "positive",
+          },
+        ],
+        reviewFormats: [
+          {
+            id: reviewFormatVersionId,
+            displayName: "Concise review",
+            description: "One short paragraph.",
+            sample: "The team was attentive.",
+            availableCommands: ["generate"],
           },
         ],
       });
