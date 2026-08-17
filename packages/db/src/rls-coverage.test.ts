@@ -69,4 +69,20 @@ describe("TS-06 RLS Coverage Test", () => {
       ).toBe(true);
     }
   });
+
+  it("compares UUID tenant columns to a UUID-typed session setting", () => {
+    const migrationPath = path.resolve(
+      __dirname,
+      "../prisma/migrations/20260813000001_rls_and_roles/migration.sql",
+    );
+    const sql = fs.readFileSync(migrationPath, "utf8");
+    const uuidSetting =
+      "NULLIF(current_setting('app.tenant_id', true), '')::uuid";
+
+    expect(sql).toContain(`id = ${uuidSetting}`);
+    expect(sql).toContain(`tenant_id = ${uuidSetting}`);
+    expect(sql).not.toMatch(
+      /(?:id|tenant_id) = NULLIF\(current_setting\('app\.tenant_id', true\), ''\)(?!::uuid)/,
+    );
+  });
 });
