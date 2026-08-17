@@ -81,6 +81,13 @@ describe("student AWS topology invariants", () => {
     expect(workflow).toContain(
       'unzip -p "$artifact" package.json',
     );
+    expect(workflow).toContain(
+      'unzip -l "$RELEASE_DIR/context-service.zip"',
+    );
+    expect(workflow).toContain(
+      'unzip -l "$RELEASE_DIR/generation-service.zip"',
+    );
+    expect(workflow).toContain("libquery_engine-rhel-openssl-3.0.x.so.node");
   });
 
   it("deploys the reviewed low-quota profile explicitly from preflight through Terraform", () => {
