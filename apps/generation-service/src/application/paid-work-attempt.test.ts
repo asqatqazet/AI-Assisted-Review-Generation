@@ -253,4 +253,53 @@ describe("US-03.2 paid-work Attempt preparation", () => {
     expect(rejected).toMatchObject({ code: "GROUNDING_REJECTED" });
     expect(JSON.stringify(rejected)).not.toContain("free upgrade");
   });
+
+  it("rejects a grounded Draft outside the selected Review Format", async () => {
+    const gateway: ModelGatewayPort = {
+      generate: async () => ({
+        output: {
+          draft: "The treatment was explained well.",
+          claims: [
+            {
+              id: "claim-a",
+              text: "The treatment was explained well.",
+              assertionIds: ["assertion-a"],
+            },
+          ],
+        },
+        attempt: {
+          provider: "fake",
+          model: "fake-v1",
+          usage: { inputTokens: 20, outputTokens: 8 },
+          receipt: { requestId: "provider-request-d", finishReason: "stop" },
+        },
+      }),
+    };
+    const formatWorkload = {
+      ...workload,
+      snapshot: {
+        ...workload.snapshot,
+        reviewFormats: [
+          {
+            ...workload.snapshot.reviewFormats[0]!,
+            constraints: {
+              ...workload.snapshot.reviewFormats[0]!.constraints,
+              minChars: 0,
+              maxChars: 10,
+            },
+          },
+        ],
+      },
+    };
+
+    const prepared = await createPaidWorkAttemptPreparer({ gateway })(
+      formatWorkload,
+    );
+    const rejected = await prepared.execute("attempt-d").catch((error: unknown) =>
+      error,
+    );
+
+    expect(rejected).toMatchObject({ code: "FORMAT_REJECTED" });
+    expect(JSON.stringify(rejected)).not.toContain("explained well");
+  });
 });
