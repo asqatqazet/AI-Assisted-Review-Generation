@@ -7,7 +7,7 @@
   "targets": {
     "serve": {
       "executor": "nx:run-commands",
-      "options": { "command": "PORT=3001 tsx watch apps/context-service/src/main.ts" }
+      "options": { "command": "PORT=3001 tsx watch apps/context-service/dev.ts" }
     },
     "build": {
       "executor": "nx:run-commands",
@@ -17,4 +17,3 @@
   },
   "tags": ["type:deployable", "plane:control"]
 }
-

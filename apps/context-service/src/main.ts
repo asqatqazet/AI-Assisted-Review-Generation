@@ -1,10 +1,26 @@
-import { serve } from "@hono/node-server";
+import { createContextRuntime } from "./runtime.js";
 
-import { createContextServiceApp } from "./app.js";
+let runtime: ((event: unknown) => Promise<unknown>) | undefined;
 
-const app = createContextServiceApp();
+const required = (name: string): string => {
+  const value = process.env[name];
+  if (value === undefined || value.length === 0) {
+    throw new Error(`${name} is required`);
+  }
+  return value;
+};
 
-const port = Number.parseInt(process.env["PORT"] ?? "3001", 10);
-serve({ fetch: app.fetch, port });
+const decodeKey = (name: string): string =>
+  Buffer.from(required(name), "base64").toString("utf8");
 
-export { app };
+const getRuntime = (): ((event: unknown) => Promise<unknown>) => {
+  runtime ??= createContextRuntime({
+    databaseUrl: required("DATABASE_URL"),
+    contextPrivateKeyPem: decodeKey("CONTEXT_WORK_PRIVATE_KEY_B64"),
+    generationPublicKeyPem: decodeKey("GENERATION_WORK_PUBLIC_KEY_B64"),
+  });
+  return runtime;
+};
+
+export const handler = async (event: unknown): Promise<unknown> =>
+  await getRuntime()(event);
