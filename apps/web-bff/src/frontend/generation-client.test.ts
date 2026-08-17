@@ -61,6 +61,8 @@ describe("HTTP reviewer Generation client", () => {
           Accept: "text/event-stream",
           "Content-Type": "application/json",
           "Idempotency-Key": "generation-request-a",
+          "x-amz-content-sha256":
+            "dce940abe8303c5f5919f83cdb432d18413b30d8458a22cbb447c9f752d61794",
         },
       },
     });
