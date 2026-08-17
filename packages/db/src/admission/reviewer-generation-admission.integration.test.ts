@@ -254,6 +254,38 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         },
       });
       expect(replay).toEqual(first);
+      if (first.status !== "prepared") {
+        throw new Error("Expected a prepared reviewer Generation");
+      }
+      const workloadBindings = first.workload["bindings"] as Readonly<
+        Record<string, string>
+      >;
+      const leaseId = randomUUID();
+      const activation = await store.activate({
+        tenantId,
+        locationId,
+        reviewSessionId,
+        generationBatchId: workloadBindings["generationBatchId"]!,
+        generationId: workloadBindings["generationId"]!,
+        requestHash: workloadBindings["requestHash"]!,
+        permitJti: first.permitJti,
+        leaseId,
+        leaseExpiresAt: new Date(Date.now() + 45_000).toISOString(),
+      });
+      expect(activation).toMatchObject({ status: "activated", leaseId });
+      await expect(
+        store.settle({
+          tenantId,
+          locationId,
+          reviewSessionId,
+          generationBatchId: workloadBindings["generationBatchId"]!,
+          generationId: workloadBindings["generationId"]!,
+          requestHash: workloadBindings["requestHash"]!,
+          permitJti: first.permitJti,
+          leaseId,
+          actualCostMicros: 0,
+        }),
+      ).resolves.toEqual({ status: "settled" });
       expect(
         await runSql(
           `SELECT count(*) FROM generation_batches WHERE tenant_id = '${tenantId}' AND review_session_id = '${reviewSessionId}';`,
@@ -264,6 +296,11 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
           `SELECT count(*) FROM assertions WHERE tenant_id = '${tenantId}' AND review_session_id = '${reviewSessionId}';`,
         ),
       ).toBe("1");
+      expect(
+        await runSql(
+          `SELECT status::text || '|' || actual_cost_micros::text FROM budget_reservations WHERE permit_jti = '${first.permitJti}';`,
+        ),
+      ).toBe("SETTLED|0");
     } finally {
       await store.disconnect();
     }
