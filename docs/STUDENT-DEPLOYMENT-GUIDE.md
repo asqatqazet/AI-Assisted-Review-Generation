@@ -65,6 +65,17 @@ Audience:     sts.amazonaws.com
 `PowerUserAccess` 仍然较宽；这是隔离 assessment 账户的务实 bootstrap 权限，不应复用到包含其他工作负载的
 账户。
 
+如果 Terraform 在 `iam:CreateRole` 处报告 deploy role 没有 identity-based permission，运行专用修复向导：
+
+```bash
+./scripts/repair-student-deploy-role.sh
+```
+
+它从 GitHub variable 读取公开的 role ARN，生成仅匹配 `review-*-student-role` 的 inline policy，指导人工在
+AWS Console 保存，然后在再次确认后用 `student-low-quota` 重跑部署。它不会接收或保存 AWS access key、密码、
+MFA code、数据库 URL 或 provider secret。AWS 官方 console 路径是 Permissions → Add permissions →
+Create inline policy → JSON。
+
 这个仓库创建于 2026-08-16，因此必须使用 GitHub 新版 immutable OIDC subject：
 
 ```text
