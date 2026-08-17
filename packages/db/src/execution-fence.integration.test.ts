@@ -434,4 +434,82 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
       await journal.disconnect();
     }
   });
+
+  it("atomically persists a rejected terminal and never creates a Draft", async () => {
+    if (!databaseUrl) {
+      throw new Error("DATABASE_URL is required for database integration tests");
+    }
+    const scope = await seedScope();
+    const price = await seedPrice();
+    const promptVersionId = randomUUID();
+    const reviewFormatVersionId = randomUUID();
+    await runSql(`
+      INSERT INTO review_format_versions (
+        id, format_key, version, locale, target_platform, constraints,
+        localized_text, supported_actions, content_hash
+      ) VALUES (
+        '${reviewFormatVersionId}', 'format-${reviewFormatVersionId}', 1,
+        'en-GB', 'generic', '{"minChars":1,"maxChars":500}'::jsonb,
+        '{"displayName":{"en-GB":"Concise"},"description":{"en-GB":"Short"},"sample":{"en-GB":"Sample"}}'::jsonb,
+        ARRAY['GENERATE']::generation_action[],
+        'format-hash-${reviewFormatVersionId}'
+      );
+      INSERT INTO prompt_versions (
+        id, tenant_id, prompt_key, action, content_hash, body
+      ) VALUES (
+        '${promptVersionId}', '${scope.tenantId}', 'prompt-${promptVersionId}',
+        'GENERATE', 'prompt-hash-${promptVersionId}', 'Generate grounded JSON.'
+      );
+    `);
+    const leaseId = await prepareLease(scope);
+    const journal = createPostgresGenerationLeaseJournal({ databaseUrl });
+    const claimed = await journal.claimExecution({
+      ...scope,
+      leaseId,
+      activationExpiresAt: new Date(Date.now() + 20_000).toISOString(),
+      attemptOrdinal: 1,
+      providerModelId: price.providerModelId,
+      priceRateId: price.priceRateId,
+      requestPayload: { model: "fake-v1" },
+    });
+    const terminalStore = createPostgresGenerationTerminalStore({ databaseUrl });
+
+    try {
+      await expect(
+        terminalStore.reject({
+          ...scope,
+          leaseId,
+          attemptId: claimed.attemptId,
+          promptVersionId,
+          reviewFormatVersionId,
+          action: "GENERATE",
+          code: "PROVIDER_UNAVAILABLE",
+          retryable: true,
+        }),
+      ).resolves.toEqual({ actualCostMicros: 0 });
+      expect(
+        await runSql(
+          `SELECT status::text || '|' || grounding_verdict::text FROM generations WHERE id = '${scope.generationId}';`,
+        ),
+      ).toBe("PROVIDER_ERROR|REJECTED");
+      expect(
+        await runSql(
+          `SELECT status::text || '|' || error_code FROM provider_attempts WHERE id = '${claimed.attemptId}';`,
+        ),
+      ).toBe("FAILED|PROVIDER_UNAVAILABLE");
+      expect(
+        await runSql(
+          `SELECT state::text || '|' || (terminal_at IS NOT NULL)::text FROM execution_leases WHERE id = '${leaseId}';`,
+        ),
+      ).toBe("TERMINAL|true");
+      expect(
+        await runSql(
+          `SELECT count(*) FROM drafts WHERE originating_generation_id = '${scope.generationId}';`,
+        ),
+      ).toBe("0");
+    } finally {
+      await terminalStore.disconnect();
+      await journal.disconnect();
+    }
+  });
 });

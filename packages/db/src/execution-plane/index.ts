@@ -74,6 +74,21 @@ export interface CompleteGenerationInput extends GenerationExecutionScope {
   };
 }
 
+export interface RejectGenerationInput extends GenerationExecutionScope {
+  readonly leaseId: string;
+  readonly attemptId: string;
+  readonly snapshotId: string;
+  readonly promptVersionId: string;
+  readonly reviewFormatVersionId: string;
+  readonly action: CompleteGenerationInput["action"];
+  readonly code:
+    | "GROUNDING_REJECTED"
+    | "POLICY_REJECTED"
+    | "FORMAT_REJECTED"
+    | "PROVIDER_UNAVAILABLE";
+  readonly retryable: boolean;
+}
+
 export interface PersistedTerminalDraft {
   readonly draft: {
     readonly id: string;
@@ -89,6 +104,9 @@ export interface PostgresGenerationTerminalStore {
     scope: GenerationExecutionScope,
   ): Promise<PersistedTerminalDraft | null>;
   complete(input: CompleteGenerationInput): Promise<PersistedTerminalDraft>;
+  reject(input: RejectGenerationInput): Promise<{
+    readonly actualCostMicros: number;
+  }>;
   disconnect(): Promise<void>;
 }
 
@@ -507,6 +525,79 @@ export function createPostgresGenerationTerminalStore({
           },
           actualCostMicros: 0,
         };
+      });
+    },
+
+    async reject(input) {
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${input.tenantId}, true)
+        `;
+        const failedAttempts = await transaction.$executeRaw`
+          UPDATE provider_attempts
+          SET
+            status = 'FAILED',
+            error_code = ${input.code},
+            cost_micros = 0,
+            finished_at = clock_timestamp()
+          WHERE id = ${input.attemptId}::uuid
+            AND execution_lease_id = ${input.leaseId}::uuid
+            AND tenant_id = ${input.tenantId}::uuid
+            AND location_id = ${input.locationId}::uuid
+            AND review_session_id = ${input.reviewSessionId}::uuid
+            AND generation_id = ${input.generationId}::uuid
+            AND status = 'RUNNING'
+        `;
+        if (failedAttempts !== 1) {
+          throw new Error("Provider Attempt is not rejectable");
+        }
+
+        const generationStatus =
+          input.code === "PROVIDER_UNAVAILABLE" ? "PROVIDER_ERROR" : "REJECTED";
+        await transaction.$executeRaw`
+          INSERT INTO generations (
+            id, tenant_id, location_id, review_session_id,
+            generation_batch_id, execution_lease_id, snapshot_id,
+            prompt_version_id, review_format_version_id, action, status,
+            provider_output, grounded_output, grounding_verdict, policy_result,
+            total_input_tokens, total_output_tokens, total_cost_micros
+          ) VALUES (
+            ${input.generationId}::uuid,
+            ${input.tenantId}::uuid,
+            ${input.locationId}::uuid,
+            ${input.reviewSessionId}::uuid,
+            ${input.generationBatchId}::uuid,
+            ${input.leaseId}::uuid,
+            ${input.snapshotId}::uuid,
+            ${input.promptVersionId}::uuid,
+            ${input.reviewFormatVersionId}::uuid,
+            ${input.action}::generation_action,
+            ${generationStatus}::generation_status,
+            NULL,
+            NULL,
+            'REJECTED',
+            ${JSON.stringify({ code: input.code, retryable: input.retryable })}::jsonb,
+            0,
+            0,
+            0
+          )
+        `;
+        const terminalLeases = await transaction.$executeRaw`
+          UPDATE execution_leases
+          SET state = 'TERMINAL', terminal_at = clock_timestamp()
+          WHERE id = ${input.leaseId}::uuid
+            AND tenant_id = ${input.tenantId}::uuid
+            AND location_id = ${input.locationId}::uuid
+            AND review_session_id = ${input.reviewSessionId}::uuid
+            AND generation_batch_id = ${input.generationBatchId}::uuid
+            AND generation_id = ${input.generationId}::uuid
+            AND permit_jti = ${input.permitJti}
+            AND state = 'RUNNING'
+        `;
+        if (terminalLeases !== 1) {
+          throw new Error("Execution Lease is not terminally rejectable");
+        }
+        return { actualCostMicros: 0 };
       });
     },
 

@@ -107,6 +107,7 @@ describe("US-01.3 persistent terminal Generation adapter", () => {
           actualCostMicros: 0,
         };
       },
+      reject: async () => ({ actualCostMicros: 0 }),
       disconnect: async () => undefined,
     } satisfies PostgresGenerationTerminalStore;
     const terminalStore = createPersistentGenerationTerminalStore(databaseStore);

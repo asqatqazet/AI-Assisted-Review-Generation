@@ -240,94 +240,120 @@ const dataEvents = (body: string): readonly unknown[] =>
     .filter((line) => line.startsWith("data: "))
     .map((line) => JSON.parse(line.slice(6)) as unknown);
 
+function createJourneyApp(
+  activeDatabaseUrl: string,
+  {
+    fakeDelayMs = 0,
+    fakeFailure = false,
+  }: { readonly fakeDelayMs?: number; readonly fakeFailure?: boolean } = {},
+) {
+  const contextKeys = generateKeyPairSync("ed25519");
+  const generationKeys = generateKeyPairSync("ed25519");
+  const context = createContextRuntime({
+    databaseUrl: activeDatabaseUrl,
+    contextPrivateKeyPem: contextKeys.privateKey
+      .export({ type: "pkcs8", format: "pem" })
+      .toString(),
+    generationPublicKeyPem: generationKeys.publicKey
+      .export({ type: "spki", format: "pem" })
+      .toString(),
+  });
+  const generation = createGenerationRuntime({
+    databaseUrl: activeDatabaseUrl,
+    contextPublicKeyPem: contextKeys.publicKey
+      .export({ type: "spki", format: "pem" })
+      .toString(),
+    generationPrivateKeyPem: generationKeys.privateKey
+      .export({ type: "pkcs8", format: "pem" })
+      .toString(),
+    fakeDelayMs,
+    fakeFailure,
+  });
+  const contextInvoker = { invoke: context };
+  return createWebBffApp({
+    contextPort: createInvokedContextPort(contextInvoker),
+    reviewerGenerationContextPort:
+      createInvokedReviewerGenerationContextPort(contextInvoker),
+    reviewerGenerationExecutionPort:
+      createInvokedReviewerGenerationExecutionPort({ invoke: generation }),
+    csrfProtector: createHmacCsrfProtector(
+      "acceptance-secret-at-least-32-characters",
+    ),
+    newBrowserCapability: () => "browser-capability-acceptance-123456789",
+    publicOrigin,
+  });
+}
+
+async function enterReview(
+  app: ReturnType<typeof createWebBffApp>,
+  seeded: Awaited<ReturnType<typeof seedJourney>>,
+): Promise<{ readonly cookie: string; readonly reviewSessionHandle: string }> {
+  const entryResponse = await app.request(
+    `/s/${seeded.tenantSlug}/${seeded.locationSlug}`,
+  );
+  expect(entryResponse.status).toBe(303);
+  const cookie = entryResponse.headers.get("set-cookie")?.split(";")[0];
+  const entryPath = entryResponse.headers.get("location");
+  if (cookie === undefined || entryPath === null) {
+    throw new Error("Entry did not issue its browser capability and route");
+  }
+  expect(entryPath).toMatch(/^\/start\//);
+  const entryHandle = entryPath.slice("/start/".length);
+
+  const challengeResponse = await app.request(
+    `/api/v1/entry-challenges/${entryHandle}`,
+    { headers: { Cookie: cookie } },
+  );
+  const challenge = (await challengeResponse.json()) as {
+    readonly csrfToken: string;
+  };
+  expect(challengeResponse.status).toBe(200);
+
+  const startResponse = await app.request(
+    `/api/v1/entry-challenges/${entryHandle}/start`,
+    {
+      method: "POST",
+      headers: {
+        Cookie: cookie,
+        Origin: publicOrigin,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        rating: 4,
+        action: "generate",
+        csrfToken: challenge.csrfToken,
+      }),
+    },
+  );
+  expect(startResponse.status).toBe(303);
+  const reviewPath = startResponse.headers.get("location");
+  if (reviewPath === null) {
+    throw new Error("Entry did not create a Review Session route");
+  }
+  expect(reviewPath).toMatch(/^\/review\//);
+  const reviewSessionHandle = reviewPath.slice("/review/".length);
+
+  const reviewResponse = await app.request(
+    `/api/v1/review-sessions/${reviewSessionHandle}`,
+    { headers: { Cookie: cookie } },
+  );
+  expect(reviewResponse.status).toBe(200);
+  await expect(reviewResponse.json()).resolves.toMatchObject({
+    status: "ready",
+    factOptions: [{ id: seeded.factOptionId }],
+    reviewFormats: [{ id: seeded.reviewFormatVersionId }],
+  });
+  return { cookie, reviewSessionHandle };
+}
+
 describeDatabase("R1 browser-to-PostgreSQL walking skeleton", () => {
   it("persists a settled grounded Draft through all three deployables", async () => {
     if (databaseUrl === undefined) {
       throw new Error("DATABASE_URL is required for database acceptance tests");
     }
     const seeded = await seedJourney();
-    const contextKeys = generateKeyPairSync("ed25519");
-    const generationKeys = generateKeyPairSync("ed25519");
-    const context = createContextRuntime({
-      databaseUrl,
-      contextPrivateKeyPem: contextKeys.privateKey
-        .export({ type: "pkcs8", format: "pem" })
-        .toString(),
-      generationPublicKeyPem: generationKeys.publicKey
-        .export({ type: "spki", format: "pem" })
-        .toString(),
-    });
-    const generation = createGenerationRuntime({
-      databaseUrl,
-      contextPublicKeyPem: contextKeys.publicKey
-        .export({ type: "spki", format: "pem" })
-        .toString(),
-      generationPrivateKeyPem: generationKeys.privateKey
-        .export({ type: "pkcs8", format: "pem" })
-        .toString(),
-    });
-    const contextInvoker = { invoke: context };
-    const app = createWebBffApp({
-      contextPort: createInvokedContextPort(contextInvoker),
-      reviewerGenerationContextPort:
-        createInvokedReviewerGenerationContextPort(contextInvoker),
-      reviewerGenerationExecutionPort:
-        createInvokedReviewerGenerationExecutionPort({ invoke: generation }),
-      csrfProtector: createHmacCsrfProtector("acceptance-secret-at-least-32-characters"),
-      newBrowserCapability: () => "browser-capability-acceptance-123456789",
-      publicOrigin,
-    });
-
-    const entryResponse = await app.request(
-      `/s/${seeded.tenantSlug}/${seeded.locationSlug}`,
-    );
-    expect(entryResponse.status).toBe(303);
-    const cookie = entryResponse.headers.get("set-cookie")?.split(";")[0];
-    const entryPath = entryResponse.headers.get("location");
-    expect(cookie).toBeTruthy();
-    expect(entryPath).toMatch(/^\/start\//);
-    const entryHandle = entryPath?.slice("/start/".length);
-
-    const challengeResponse = await app.request(
-      `/api/v1/entry-challenges/${entryHandle}`,
-      { headers: { Cookie: cookie ?? "" } },
-    );
-    const challenge = (await challengeResponse.json()) as {
-      readonly csrfToken: string;
-    };
-    expect(challengeResponse.status).toBe(200);
-
-    const startResponse = await app.request(
-      `/api/v1/entry-challenges/${entryHandle}/start`,
-      {
-        method: "POST",
-        headers: {
-          Cookie: cookie ?? "",
-          Origin: publicOrigin,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          rating: 4,
-          action: "generate",
-          csrfToken: challenge.csrfToken,
-        }),
-      },
-    );
-    expect(startResponse.status).toBe(303);
-    const reviewPath = startResponse.headers.get("location");
-    expect(reviewPath).toMatch(/^\/review\//);
-    const reviewSessionHandle = reviewPath?.slice("/review/".length);
-
-    const reviewResponse = await app.request(
-      `/api/v1/review-sessions/${reviewSessionHandle}`,
-      { headers: { Cookie: cookie ?? "" } },
-    );
-    expect(reviewResponse.status).toBe(200);
-    await expect(reviewResponse.json()).resolves.toMatchObject({
-      status: "ready",
-      factOptions: [{ id: seeded.factOptionId }],
-      reviewFormats: [{ id: seeded.reviewFormatVersionId }],
-    });
+    const app = createJourneyApp(databaseUrl);
+    const { cookie, reviewSessionHandle } = await enterReview(app, seeded);
 
     const requestBody = JSON.stringify({
       factOptionIds: [seeded.factOptionId],
@@ -340,7 +366,7 @@ describeDatabase("R1 browser-to-PostgreSQL walking skeleton", () => {
         headers: {
           Accept: "text/event-stream",
           "Content-Type": "application/json",
-          Cookie: cookie ?? "",
+          Cookie: cookie,
           Origin: publicOrigin,
           "Idempotency-Key": `request-${randomUUID()}`,
           "x-amz-content-sha256": createHash("sha256")
@@ -378,4 +404,117 @@ describeDatabase("R1 browser-to-PostgreSQL walking skeleton", () => {
       `),
     ).toBe("1|1|1|SETTLED");
   });
+
+  it("settles provider failure without exposing or persisting a Draft", async () => {
+    if (databaseUrl === undefined) {
+      throw new Error("DATABASE_URL is required for database acceptance tests");
+    }
+    const seeded = await seedJourney();
+    const app = createJourneyApp(databaseUrl, { fakeFailure: true });
+    const { cookie, reviewSessionHandle } = await enterReview(app, seeded);
+    const requestBody = JSON.stringify({
+      factOptionIds: [seeded.factOptionId],
+      reviewFormatId: seeded.reviewFormatVersionId,
+    });
+    const response = await app.request(
+      `/api/v1/review-sessions/${reviewSessionHandle}/generations`,
+      {
+        method: "POST",
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+          Cookie: cookie,
+          Origin: publicOrigin,
+          "Idempotency-Key": `request-${randomUUID()}`,
+          "x-amz-content-sha256": createHash("sha256")
+            .update(requestBody)
+            .digest("hex"),
+        },
+        body: requestBody,
+      },
+    );
+
+    expect(dataEvents(await response.text())).toEqual([
+      { type: "accepted" },
+      { type: "progress", phase: "generating", elapsedSeconds: 0 },
+      {
+        type: "terminal",
+        status: "rejected",
+        code: "PROVIDER_UNAVAILABLE",
+        retryable: true,
+      },
+    ]);
+    expect(
+      await runSql(`
+        SELECT
+          generation.status::text || '|' ||
+          reservation.status::text || '|' ||
+          count(draft.id)::text
+        FROM generations AS generation
+        JOIN generation_batches AS generation_batch
+          ON generation_batch.id = generation.generation_batch_id
+        JOIN budget_reservations AS reservation
+          ON reservation.id = generation_batch.budget_reservation_id
+        LEFT JOIN drafts AS draft
+          ON draft.originating_generation_id = generation.id
+        WHERE generation.tenant_id = '${seeded.tenantId}'
+        GROUP BY generation.status, reservation.status;
+      `),
+    ).toBe("PROVIDER_ERROR|SETTLED|0");
+  });
+
+  it(
+    "keeps a 60-second Generation alive using progress-only heartbeats",
+    async () => {
+      if (databaseUrl === undefined) {
+        throw new Error("DATABASE_URL is required for database acceptance tests");
+      }
+      const seeded = await seedJourney();
+      const app = createJourneyApp(databaseUrl, { fakeDelayMs: 60_000 });
+      const { cookie, reviewSessionHandle } = await enterReview(app, seeded);
+      const requestBody = JSON.stringify({
+        factOptionIds: [seeded.factOptionId],
+        reviewFormatId: seeded.reviewFormatVersionId,
+      });
+      const response = await app.request(
+        `/api/v1/review-sessions/${reviewSessionHandle}/generations`,
+        {
+          method: "POST",
+          headers: {
+            Accept: "text/event-stream",
+            "Content-Type": "application/json",
+            Cookie: cookie,
+            Origin: publicOrigin,
+            "Idempotency-Key": `request-${randomUUID()}`,
+            "x-amz-content-sha256": createHash("sha256")
+              .update(requestBody)
+              .digest("hex"),
+          },
+          body: requestBody,
+        },
+      );
+      const events = dataEvents(await response.text()) as readonly Readonly<
+        Record<string, unknown>
+      >[];
+      const terminalIndex = events.findIndex((event) => event["type"] === "terminal");
+      const heartbeats = events.filter((event) => event["type"] === "heartbeat");
+
+      expect(events.slice(0, 2)).toEqual([
+        { type: "accepted" },
+        { type: "progress", phase: "generating", elapsedSeconds: 0 },
+      ]);
+      expect(heartbeats.length).toBeGreaterThanOrEqual(5);
+      expect(
+        events
+          .slice(0, terminalIndex)
+          .some((event) => event["draft"] !== undefined),
+      ).toBe(false);
+      expect(events.at(-1)).toMatchObject({
+        type: "terminal",
+        status: "completed",
+        draft: { text: "The team was attentive." },
+      });
+    },
+    75_000,
+  );
 });

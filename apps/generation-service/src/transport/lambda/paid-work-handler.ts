@@ -111,7 +111,7 @@ export interface GenerationReceiptSigner {
   signTerminal(claims: {
     readonly leaseId: string;
     readonly permitJti: string;
-    readonly outcome: "completed";
+    readonly outcome: "completed" | "rejected";
     readonly actualCostMicros: number;
     readonly tenantId: string;
     readonly locationId: string;
@@ -141,6 +141,18 @@ export interface GenerationTerminalStore {
     readonly draft: ReviewerDraftDto;
     readonly actualCostMicros: number;
   }>;
+  reject(input: {
+    readonly leaseId: string;
+    readonly attemptId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+    readonly code:
+      | "GROUNDING_REJECTED"
+      | "POLICY_REJECTED"
+      | "FORMAT_REJECTED"
+      | "PROVIDER_UNAVAILABLE";
+    readonly retryable: boolean;
+  }): Promise<{ readonly actualCostMicros: number }>;
 }
 
 export interface PaidWorkGenerationHandlerOptions {
@@ -226,7 +238,42 @@ export function createPaidWorkGenerationHandler({
         return await tailExisting(executionInput);
       }
 
-      const result = await preparedAttempt.execute(claim.attemptId);
+      let result: CompletedPaidWorkAttemptResult;
+      try {
+        result = await preparedAttempt.execute(claim.attemptId);
+      } catch (error) {
+        const knownCode =
+          error instanceof Error &&
+          ["GROUNDING_REJECTED", "POLICY_REJECTED", "FORMAT_REJECTED"].includes(
+            Reflect.get(error, "code") as string,
+          )
+            ? (Reflect.get(error, "code") as
+                | "GROUNDING_REJECTED"
+                | "POLICY_REJECTED"
+                | "FORMAT_REJECTED")
+            : undefined;
+        const code = knownCode ?? "PROVIDER_UNAVAILABLE";
+        const retryable = knownCode === undefined;
+        const rejected = await terminalStore.reject({
+          ...executionInput,
+          code,
+          retryable,
+        });
+        const terminalReceipt = await receiptSigner.signTerminal({
+          leaseId: invocation.leaseId,
+          permitJti: verifiedActivation.permitJti,
+          outcome: "rejected",
+          actualCostMicros: rejected.actualCostMicros,
+          ...invocation.workload.bindings,
+        });
+        return PrivateGenerationTerminalEventDtoSchema.parse({
+          type: "terminal",
+          status: "rejected",
+          terminalReceipt,
+          code,
+          retryable,
+        });
+      }
       const terminal = await terminalStore.complete({
         leaseId: invocation.leaseId,
         attemptId: claim.attemptId,

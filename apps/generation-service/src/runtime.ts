@@ -34,7 +34,10 @@ const waitFor = async (
 
 export function createAssessmentFakeGateway(
   workload: GenerationWorkloadDto,
-  { delayMs }: { readonly delayMs: number },
+  {
+    delayMs,
+    fail = false,
+  }: { readonly delayMs: number; readonly fail?: boolean },
 ): ModelGatewayPort {
   if (!Number.isInteger(delayMs) || delayMs < 0 || delayMs > 60_000) {
     throw new Error("FakeProvider delay must be between 0 and 60000ms");
@@ -49,6 +52,9 @@ export function createAssessmentFakeGateway(
         throw new Error("LIVE_PROVIDER_DISABLED");
       }
       await waitFor(delayMs, signal);
+      if (fail) {
+        throw new Error("FAKE_PROVIDER_UNAVAILABLE");
+      }
       const outputWords = workload.assertions.reduce(
         (total, assertion) => total + assertion.proposition.split(/\s+/).length,
         0,
@@ -83,11 +89,13 @@ export function createGenerationRuntime({
   contextPublicKeyPem,
   generationPrivateKeyPem,
   fakeDelayMs = 0,
+  fakeFailure = false,
 }: {
   readonly databaseUrl: string;
   readonly contextPublicKeyPem: string;
   readonly generationPrivateKeyPem: string;
   readonly fakeDelayMs?: number;
+  readonly fakeFailure?: boolean;
 }): (event: unknown) => Promise<unknown> {
   const databaseJournal = createPostgresGenerationLeaseJournal({ databaseUrl });
   const databaseTerminalStore = createPostgresGenerationTerminalStore({
@@ -116,7 +124,10 @@ export function createGenerationRuntime({
     terminalStore,
     prepareAttempt: async (workload) =>
       await createPaidWorkAttemptPreparer({
-        gateway: createAssessmentFakeGateway(workload, { delayMs: fakeDelayMs }),
+        gateway: createAssessmentFakeGateway(workload, {
+          delayMs: fakeDelayMs,
+          fail: fakeFailure,
+        }),
       })(workload),
     tailExisting: createPersistentTerminalTailer({
       databaseStore: databaseTerminalStore,

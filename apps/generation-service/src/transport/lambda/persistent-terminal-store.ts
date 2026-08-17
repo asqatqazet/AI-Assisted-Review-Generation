@@ -2,7 +2,7 @@ import type { PostgresGenerationTerminalStore } from "@review/db/execution-plane
 
 import type { GenerationTerminalStore } from "./paid-work-handler.js";
 
-type DatabaseStore = Pick<PostgresGenerationTerminalStore, "complete">;
+type DatabaseStore = Pick<PostgresGenerationTerminalStore, "complete" | "reject">;
 
 const toDatabaseAction = (
   action:
@@ -90,6 +90,31 @@ export function createPersistentGenerationTerminalStore(
           outputTokens: result.attempt.usage.outputTokens,
           providerReceipt: result.attempt.receipt,
         },
+      });
+    },
+
+    async reject({ leaseId, attemptId, permitJti, workload, code, retryable }) {
+      const promptVersions = workload.snapshot.promptVersions.filter(
+        (prompt) => prompt.commandKind === workload.command.kind,
+      );
+      if (promptVersions.length !== 1 || promptVersions[0] === undefined) {
+        throw new Error("Rejected Generation has no unique Prompt Version");
+      }
+      return await databaseStore.reject({
+        tenantId: workload.bindings.tenantId,
+        locationId: workload.bindings.locationId,
+        reviewSessionId: workload.bindings.reviewSessionId,
+        generationBatchId: workload.bindings.generationBatchId,
+        generationId: workload.bindings.generationId,
+        permitJti,
+        snapshotId: workload.bindings.snapshotId,
+        promptVersionId: promptVersions[0].id,
+        reviewFormatVersionId: workload.bindings.reviewFormatVersionId,
+        action: toDatabaseAction(workload.bindings.action),
+        leaseId,
+        attemptId,
+        code,
+        retryable,
       });
     },
   };

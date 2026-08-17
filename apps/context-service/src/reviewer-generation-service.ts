@@ -140,9 +140,6 @@ export function createReviewerGenerationService({
         input.terminalReceipt,
         workload,
       );
-      if (terminal.outcome !== "completed") {
-        return { status: "rejected" };
-      }
       return await store.settle({
         ...bindingsForStore(workload),
         permitJti: terminal.permitJti,

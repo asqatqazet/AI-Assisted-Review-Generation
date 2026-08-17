@@ -150,6 +150,9 @@ describe("US-03.2 paid-work Generation handler", () => {
         complete: async () => {
           throw new Error("terminal persistence must not run during prepare");
         },
+        reject: async () => {
+          throw new Error("terminal rejection must not run during prepare");
+        },
       },
       prepareAttempt: async () => ({
         requestPayload: {},
@@ -273,6 +276,9 @@ describe("US-03.2 paid-work Generation handler", () => {
             actualCostMicros: 0,
           };
         },
+        reject: async () => {
+          throw new Error("successful work must not persist a rejection");
+        },
       },
       prepareAttempt: async (receivedWorkload) => {
         events.push("attempt-prepared");
@@ -380,6 +386,9 @@ describe("US-03.2 paid-work Generation handler", () => {
       terminalStore: {
         complete: async () => {
           throw new Error("replayed execution must not persist another terminal");
+        },
+        reject: async () => {
+          throw new Error("replayed execution must not persist another rejection");
         },
       },
       prepareAttempt: async () => ({
@@ -573,6 +582,9 @@ describe("US-03.2 paid-work Generation handler", () => {
       terminalStore: {
         complete: async () => {
           throw new Error("terminal persistence must not run during reconciliation");
+        },
+        reject: async () => {
+          throw new Error("terminal rejection must not run during reconciliation");
         },
       },
       prepareAttempt: async () => {
