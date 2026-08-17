@@ -11,4 +11,4 @@ terraform.tfstate
 terraform.tfstate.*
 .terraform/
 *.tfplan
-
+packages/db/src/generated/

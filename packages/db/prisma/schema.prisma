@@ -2,18 +2,21 @@
 // docs/agents/domain.md. RLS and runtime grants intentionally arrive in TS-05.
 
 generator controlPlaneClient {
-  provider = "prisma-client-js"
-  output   = "../src/generated/control-plane"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/control-plane"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 generator admissionClient {
-  provider = "prisma-client-js"
-  output   = "../src/generated/admission"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/admission"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 generator executionPlaneClient {
-  provider = "prisma-client-js"
-  output   = "../src/generated/execution-plane"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/execution-plane"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
@@ -832,27 +835,27 @@ model GenerationBatchAssertion {
 }
 
 model ExecutionLease {
-  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId             String              @map("tenant_id") @db.Uuid
-  locationId           String              @map("location_id") @db.Uuid
-  reviewSessionId      String              @map("review_session_id") @db.Uuid
-  permitJti            String              @unique @map("permit_jti") @db.VarChar(128)
-  generationBatchId    String              @map("generation_batch_id") @db.Uuid
-  generationId         String              @unique @map("generation_id") @db.Uuid
-  permitExpiresAt      DateTime            @map("permit_expires_at") @db.Timestamptz(6)
-  leaseExpiresAt       DateTime            @map("lease_expires_at") @db.Timestamptz(6)
-  activationExpiresAt  DateTime?           @map("activation_expires_at") @db.Timestamptz(6)
-  state                ExecutionLeaseState @default(LEASED)
-  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
-  runningAt            DateTime?           @map("running_at") @db.Timestamptz(6)
-  cancelledAt          DateTime?           @map("cancelled_at") @db.Timestamptz(6)
-  terminalAt           DateTime?           @map("terminal_at") @db.Timestamptz(6)
-  tenant               Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location             Location            @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  reviewSession        ReviewSession       @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  generationBatch      GenerationBatch     @relation(fields: [generationBatchId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
-  generation           Generation?
-  providerAttempts     ProviderAttempt[]
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String              @map("tenant_id") @db.Uuid
+  locationId          String              @map("location_id") @db.Uuid
+  reviewSessionId     String              @map("review_session_id") @db.Uuid
+  permitJti           String              @unique @map("permit_jti") @db.VarChar(128)
+  generationBatchId   String              @map("generation_batch_id") @db.Uuid
+  generationId        String              @unique @map("generation_id") @db.Uuid
+  permitExpiresAt     DateTime            @map("permit_expires_at") @db.Timestamptz(6)
+  leaseExpiresAt      DateTime            @map("lease_expires_at") @db.Timestamptz(6)
+  activationExpiresAt DateTime?           @map("activation_expires_at") @db.Timestamptz(6)
+  state               ExecutionLeaseState @default(LEASED)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  runningAt           DateTime?           @map("running_at") @db.Timestamptz(6)
+  cancelledAt         DateTime?           @map("cancelled_at") @db.Timestamptz(6)
+  terminalAt          DateTime?           @map("terminal_at") @db.Timestamptz(6)
+  tenant              Tenant              @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location            Location            @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  reviewSession       ReviewSession       @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  generationBatch     GenerationBatch     @relation(fields: [generationBatchId, tenantId, locationId, reviewSessionId], references: [id, tenantId, locationId, reviewSessionId], onDelete: Restrict)
+  generation          Generation?
+  providerAttempts    ProviderAttempt[]
 
   @@unique([id, tenantId, locationId, reviewSessionId, generationId])
   @@index([tenantId, locationId, reviewSessionId])
