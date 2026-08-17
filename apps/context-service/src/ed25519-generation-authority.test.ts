@@ -130,6 +130,45 @@ describe("US-03.2 Context Ed25519 generation authority", () => {
       actualCostMicros: 0,
     });
 
+    const statusReceipt = signedBy(
+      {
+        kind: "generation-status",
+        issuer: "generation-service",
+        audience: "context-service",
+        operation: "cancel-expired-lease",
+        state: "cancelled",
+        leaseId: "lease-a",
+        scope: {
+          tenantId: bindings.tenantId,
+          locationId: bindings.locationId,
+          reviewSessionId: bindings.reviewSessionId,
+          generationBatchId: bindings.generationBatchId,
+          generationId: bindings.generationId,
+          permitJti: "permit-a",
+        },
+      },
+      generationKeys.privateKey,
+    );
+    await expect(
+      authority.verifyStatus(statusReceipt, {
+        operation: "cancel-expired-lease",
+        outcome: "cancelled",
+        permitJti: "permit-a",
+        leaseId: "lease-a",
+        workload,
+      }),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      authority.verifyStatus(statusReceipt, {
+        operation: "cancel-expired-lease",
+        outcome: "cancelled",
+        permitJti: "permit-other",
+        leaseId: "lease-a",
+        workload,
+      }),
+    ).rejects.toThrow("GENERATION_RECEIPT_INVALID");
+
     const forged = signedBy(
       {
         kind: "generation-terminal",

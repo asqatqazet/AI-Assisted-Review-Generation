@@ -522,7 +522,18 @@ describe("US-03.2 paid-work Generation handler", () => {
           permitJti: "permit-jti-a",
         },
       },
-      { operation: "status", state: "leased" },
+      {
+        operation: "status",
+        state: "leased",
+        scope: {
+          tenantId: "tenant-a",
+          locationId: "location-a",
+          reviewSessionId: "session-a",
+          generationBatchId: "batch-a",
+          generationId: "generation-a",
+          permitJti: "permit-jti-a",
+        },
+      },
     ],
     [
       {
@@ -537,7 +548,19 @@ describe("US-03.2 paid-work Generation handler", () => {
           permitJti: "permit-jti-a",
         },
       },
-      { operation: "cancel-expired-lease", state: "cancelled" },
+      {
+        operation: "cancel-expired-lease",
+        state: "cancelled",
+        leaseId: "lease-a",
+        scope: {
+          tenantId: "tenant-a",
+          locationId: "location-a",
+          reviewSessionId: "session-a",
+          generationBatchId: "batch-a",
+          generationId: "generation-a",
+          permitJti: "permit-jti-a",
+        },
+      },
     ],
   ])("returns signed reconciliation evidence for $operation", async (event, unsigned) => {
     const handler = createPaidWorkGenerationHandler({
