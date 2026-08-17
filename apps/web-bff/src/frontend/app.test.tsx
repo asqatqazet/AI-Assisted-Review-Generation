@@ -315,4 +315,85 @@ describe("reviewer application routes", () => {
       screen.getByRole("radio", { name: "Concise blurb" }),
     ).toBeVisible();
   });
+
+  it("shows only progress until a terminal grounded Draft arrives", async () => {
+    const user = userEvent.setup();
+    const starts: unknown[] = [];
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  id: "format-concise-v1",
+                  displayName: "Concise blurb",
+                  description: "One concise paragraph.",
+                  sample: "The team was attentive.",
+                  availableCommands: ["generate"],
+                },
+              ],
+            }),
+          }}
+          generationClient={{
+            async *start(input) {
+              starts.push(input);
+              yield { type: "accepted" } as const;
+              yield {
+                type: "progress",
+                phase: "validating",
+                elapsedSeconds: 12,
+              } as const;
+              yield {
+                type: "terminal",
+                status: "completed",
+                draft: {
+                  id: "draft-a",
+                  generationId: "generation-a",
+                  revision: 1,
+                  text: "The team was attentive.",
+                },
+              } as const;
+            },
+          }}
+          newIdempotencyKey={() => "generation-request-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Create my draft" }));
+
+    expect(
+      await screen.findByRole("heading", { name: "Your review" }),
+    ).toBeVisible();
+    expect(screen.getByText("The team was attentive.")).toBeVisible();
+    expect(starts).toEqual([
+      {
+        reviewSessionHandle: "review-session-demo",
+        idempotencyKey: "generation-request-a",
+        factOptionIds: ["fact-attentive"],
+        reviewFormatId: "format-concise-v1",
+      },
+    ]);
+  });
 });
