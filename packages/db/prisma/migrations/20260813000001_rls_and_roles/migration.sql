@@ -7,8 +7,8 @@ ALTER TABLE tenants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tenants FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation_policy ON tenants
   FOR ALL
-  USING (id = NULLIF(current_setting('app.tenant_id', true), ''))
-  WITH CHECK (id = NULLIF(current_setting('app.tenant_id', true), ''));
+  USING (id = NULLIF(current_setting('app.tenant_id', true), '')::uuid)
+  WITH CHECK (id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
 
 -- 2. Tenant-scoped child tables
 DO $$
@@ -49,7 +49,7 @@ BEGIN
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY;', tbl);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY;', tbl);
     EXECUTE format(
-      'CREATE POLICY tenant_isolation_policy ON %I FOR ALL USING (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')) WITH CHECK (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), ''''));',
+      'CREATE POLICY tenant_isolation_policy ON %I FOR ALL USING (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid) WITH CHECK (tenant_id = NULLIF(current_setting(''app.tenant_id'', true), '''')::uuid);',
       tbl
     );
   END LOOP;
