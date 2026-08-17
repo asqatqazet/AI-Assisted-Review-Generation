@@ -102,6 +102,48 @@ export interface PostgresReviewerGenerationAdmissionStore {
   disconnect(): Promise<void>;
 }
 
+export interface PostgresEntryAdmissionStore {
+  prepare(input: {
+    readonly tenantSlug: string;
+    readonly locationSlug: string;
+    readonly routeHandleHash: string;
+    readonly browserCapabilityHash: string;
+    readonly expiresAt: string;
+  }): Promise<{ readonly status: "prepared" } | { readonly status: "unavailable" }>;
+  read(input: ReviewSessionCapabilityHashes): Promise<
+    | {
+        readonly status: "ready";
+        readonly context: {
+          readonly tenantDisplayName: string;
+          readonly locationDisplayName: string;
+          readonly locale: "en-GB" | "de-DE";
+          readonly entryMode: "open-qr";
+          readonly ratingRequired: true;
+          readonly factOptions: readonly ReviewSessionFactProjection[];
+          readonly reviewFormats: readonly ReviewSessionFormatProjection[];
+        };
+      }
+    | { readonly status: "unavailable" }
+  >;
+  advance(input: {
+    readonly routeHandleHash: string;
+    readonly browserCapabilityHash: string;
+    readonly reviewSessionRouteHandleHash: string;
+    readonly rating: 1 | 2 | 3 | 4 | 5;
+    readonly action: "GENERATE" | "PARAPHRASE";
+    readonly reviewSessionExpiresAt: string;
+  }): Promise<
+    | {
+        readonly status: "admitted";
+        readonly reviewSessionId: string;
+        readonly tenantId: string;
+        readonly locationId: string;
+      }
+    | { readonly status: "unavailable" }
+  >;
+  disconnect(): Promise<void>;
+}
+
 interface BindingRow {
   readonly tenant_id: string;
   readonly location_id: string;
@@ -160,6 +202,18 @@ interface ExistingAdmissionRow {
 interface ActivationRow {
   readonly execution_lease_id: string;
   readonly activation_expires_at: Date;
+}
+
+interface EntryScopeRow {
+  readonly challenge_id: string;
+  readonly tenant_id: string;
+  readonly location_id: string;
+}
+
+interface EntryContextRow {
+  readonly tenant_name: string;
+  readonly location_name: string;
+  readonly locale: string;
 }
 
 const isLocale = (value: string): value is "en-GB" | "de-DE" =>
@@ -368,6 +422,245 @@ export function createPostgresReviewSessionReader({
           action,
           factOptions,
           reviewFormats,
+        };
+      });
+    },
+
+    async disconnect() {
+      await client.$disconnect();
+    },
+  };
+}
+
+export function createPostgresEntryAdmissionStore({
+  databaseUrl,
+}: {
+  readonly databaseUrl: string;
+}): PostgresEntryAdmissionStore {
+  if (databaseUrl.trim().length === 0) {
+    throw new Error("Admission database URL is required");
+  }
+  const client = new PrismaClient({
+    datasources: { db: { url: databaseUrl } },
+  });
+
+  const resolveScope = async (
+    routeHandleHash: string,
+    browserCapabilityHash: string,
+  ): Promise<EntryScopeRow | undefined> =>
+    (
+      await client.$queryRaw<EntryScopeRow[]>`
+        SELECT challenge_id, tenant_id, location_id
+        FROM resolve_live_entry_challenge(
+          ${routeHandleHash}::varchar,
+          ${browserCapabilityHash}::varchar
+        )
+      `
+    )[0];
+
+  return {
+    async prepare(input) {
+      const expiresAt = new Date(input.expiresAt);
+      if (Number.isNaN(expiresAt.getTime())) {
+        return { status: "unavailable" };
+      }
+      const rows = await client.$queryRaw<{ readonly prepared: boolean }[]>`
+        SELECT prepare_open_qr_entry_challenge(
+          ${input.tenantSlug}::varchar,
+          ${input.locationSlug}::varchar,
+          ${input.routeHandleHash}::varchar,
+          ${input.browserCapabilityHash}::varchar,
+          ${expiresAt}::timestamptz
+        ) AS prepared
+      `;
+      return rows[0]?.prepared === true
+        ? { status: "prepared" }
+        : { status: "unavailable" };
+    },
+
+    async read(input) {
+      const scope = await resolveScope(
+        input.routeHandleHash,
+        input.browserCapabilityHash,
+      );
+      if (scope === undefined) {
+        return { status: "unavailable" };
+      }
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${scope.tenant_id}, true)
+        `;
+        const contexts = await transaction.$queryRaw<EntryContextRow[]>`
+          SELECT
+            tenant.name AS tenant_name,
+            location.name AS location_name,
+            tenant.locale
+          FROM tenants AS tenant
+          JOIN locations AS location
+            ON location.tenant_id = tenant.id
+          WHERE tenant.id = ${scope.tenant_id}::uuid
+            AND tenant.status = 'ACTIVE'
+            AND tenant.default_entry_mode_key = 'open-qr'
+            AND location.id = ${scope.location_id}::uuid
+            AND location.status = 'ACTIVE'
+        `;
+        const context = contexts[0];
+        if (context === undefined || !isLocale(context.locale)) {
+          return { status: "unavailable" } as const;
+        }
+        const facts = await transaction.$queryRaw<FactRow[]>`
+          SELECT
+            fact.id,
+            COALESCE(fact.label ->> ${context.locale}, fact.label ->> 'en-GB') AS label,
+            COALESCE(category.label ->> ${context.locale}, category.label ->> 'en-GB') AS category_label,
+            fact.polarity::text
+          FROM fact_option_versions AS fact
+          JOIN fact_option_categories AS category
+            ON category.id = fact.category_id
+           AND category.tenant_id = fact.tenant_id
+          WHERE fact.tenant_id = ${scope.tenant_id}::uuid
+            AND (fact.location_id IS NULL OR fact.location_id = ${scope.location_id}::uuid)
+            AND fact.is_active = true
+            AND fact.retired_at IS NULL
+          ORDER BY fact.sort_order, fact.id
+        `;
+        const factOptions = facts.flatMap((fact) => {
+          const polarity = toPolarity(fact.polarity);
+          return polarity === undefined ||
+            fact.label === null ||
+            fact.category_label === null
+            ? []
+            : [
+                {
+                  id: fact.id,
+                  label: fact.label,
+                  categoryLabel: fact.category_label,
+                  polarity,
+                },
+              ];
+        });
+        const formats = await transaction.$queryRaw<ReviewFormatRow[]>`
+          SELECT
+            format.id,
+            COALESCE(
+              format.localized_text -> 'displayName' ->> ${context.locale},
+              format.localized_text -> 'displayName' ->> 'en-GB'
+            ) AS display_name,
+            COALESCE(
+              format.localized_text -> 'description' ->> ${context.locale},
+              format.localized_text -> 'description' ->> 'en-GB'
+            ) AS description,
+            COALESCE(
+              format.localized_text -> 'sample' ->> ${context.locale},
+              format.localized_text -> 'sample' ->> 'en-GB'
+            ) AS sample,
+            enablement.allowed_actions::text[]
+          FROM review_format_enablements AS enablement
+          JOIN review_format_versions AS format
+            ON format.id = enablement.review_format_version_id
+          WHERE enablement.tenant_id = ${scope.tenant_id}::uuid
+            AND enablement.enabled = true
+            AND format.status = 'ACTIVE'
+            AND format.locale IN (${context.locale}, 'any')
+          ORDER BY enablement.sort_order, format.id
+        `;
+        const reviewFormats = formats.flatMap((format) =>
+          format.display_name === null ||
+          format.description === null ||
+          format.sample === null
+            ? []
+            : [
+                {
+                  id: format.id,
+                  displayName: format.display_name,
+                  description: format.description,
+                  sample: format.sample,
+                  availableCommands: format.allowed_actions.flatMap((action) => {
+                    const command = toAvailableCommand(action);
+                    return command === undefined ? [] : [command];
+                  }),
+                },
+              ],
+        );
+        return {
+          status: "ready" as const,
+          context: {
+            tenantDisplayName: context.tenant_name,
+            locationDisplayName: context.location_name,
+            locale: context.locale,
+            entryMode: "open-qr" as const,
+            ratingRequired: true as const,
+            factOptions,
+            reviewFormats,
+          },
+        };
+      });
+    },
+
+    async advance(input) {
+      const scope = await resolveScope(
+        input.routeHandleHash,
+        input.browserCapabilityHash,
+      );
+      const reviewSessionExpiresAt = new Date(input.reviewSessionExpiresAt);
+      if (
+        scope === undefined ||
+        Number.isNaN(reviewSessionExpiresAt.getTime())
+      ) {
+        return { status: "unavailable" };
+      }
+      return await client.$transaction(async (transaction) => {
+        await transaction.$executeRaw`
+          SELECT set_config('app.tenant_id', ${scope.tenant_id}, true)
+        `;
+        const consumed = await transaction.$queryRaw<{ readonly id: string }[]>`
+          UPDATE entry_challenges
+          SET consumed_at = clock_timestamp()
+          WHERE id = ${scope.challenge_id}::uuid
+            AND tenant_id = ${scope.tenant_id}::uuid
+            AND location_id = ${scope.location_id}::uuid
+            AND route_handle_hash = ${input.routeHandleHash}
+            AND browser_capability_hash = ${input.browserCapabilityHash}
+            AND consumed_at IS NULL
+            AND expires_at > clock_timestamp()
+          RETURNING id
+        `;
+        if (consumed[0] === undefined) {
+          return { status: "unavailable" } as const;
+        }
+        const reviewSessionId = randomUUID();
+        await transaction.$executeRaw`
+          INSERT INTO review_sessions (
+            id, tenant_id, location_id, status, rating,
+            selected_action, expires_at
+          ) VALUES (
+            ${reviewSessionId}::uuid,
+            ${scope.tenant_id}::uuid,
+            ${scope.location_id}::uuid,
+            'OPEN',
+            ${input.rating},
+            ${input.action}::generation_action,
+            ${reviewSessionExpiresAt}::timestamptz
+          )
+        `;
+        await transaction.$executeRaw`
+          INSERT INTO review_session_browser_bindings (
+            tenant_id, location_id, review_session_id,
+            route_handle_hash, browser_capability_hash, expires_at
+          ) VALUES (
+            ${scope.tenant_id}::uuid,
+            ${scope.location_id}::uuid,
+            ${reviewSessionId}::uuid,
+            ${input.reviewSessionRouteHandleHash},
+            ${input.browserCapabilityHash},
+            ${reviewSessionExpiresAt}::timestamptz
+          )
+        `;
+        return {
+          status: "admitted" as const,
+          reviewSessionId,
+          tenantId: scope.tenant_id,
+          locationId: scope.location_id,
         };
       });
     },

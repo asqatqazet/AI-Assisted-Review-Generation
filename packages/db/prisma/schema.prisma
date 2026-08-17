@@ -365,6 +365,7 @@ model Tenant {
   invitationTokens             InvitationToken[]
   reviewSessions               ReviewSession[]
   reviewSessionBrowserBindings ReviewSessionBrowserBinding[]
+  entryChallenges              EntryChallenge[]
   sourceTextRevisions          SourceTextRevision[]
   assertions                   Assertion[]
   snapshots                    EffectiveConfigurationSnapshot[]
@@ -448,6 +449,7 @@ model Location {
   invitationTokens             InvitationToken[]
   reviewSessions               ReviewSession[]
   reviewSessionBrowserBindings ReviewSessionBrowserBinding[]
+  entryChallenges              EntryChallenge[]
   experimentAssignments        ExperimentAssignment[]
   sourceTextRevisions          SourceTextRevision[]
   assertions                   Assertion[]
@@ -698,6 +700,23 @@ model ReviewSessionBrowserBinding {
   @@unique([tenantId, reviewSessionId, browserCapabilityHash])
   @@index([browserCapabilityHash, routeHandleHash])
   @@map("review_session_browser_bindings")
+}
+
+model EntryChallenge {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String   @map("tenant_id") @db.Uuid
+  locationId            String   @map("location_id") @db.Uuid
+  routeHandleHash       String   @unique @map("route_handle_hash") @db.VarChar(128)
+  browserCapabilityHash String   @map("browser_capability_hash") @db.VarChar(128)
+  expiresAt             DateTime @map("expires_at") @db.Timestamptz(6)
+  consumedAt            DateTime? @map("consumed_at") @db.Timestamptz(6)
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location              Location @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+
+  @@unique([id, tenantId, locationId])
+  @@index([tenantId, locationId, browserCapabilityHash])
+  @@map("entry_challenges")
 }
 
 model ExperimentAssignment {

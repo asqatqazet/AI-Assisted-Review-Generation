@@ -8,7 +8,14 @@ describe("TS-06 RLS Coverage Test", () => {
       __dirname,
       "../prisma/migrations/20260813000001_rls_and_roles/migration.sql",
     );
-    const sql = fs.readFileSync(migrationPath, "utf8");
+    const migrationsRoot = path.dirname(path.dirname(migrationPath));
+    const sql = fs
+      .readdirSync(migrationsRoot)
+      .sort()
+      .map((directory) =>
+        fs.readFileSync(path.join(migrationsRoot, directory, "migration.sql"), "utf8"),
+      )
+      .join("\n");
 
     const schemaPath = path.resolve(__dirname, "../prisma/schema.prisma");
     const schema = fs.readFileSync(schemaPath, "utf8");
@@ -45,6 +52,7 @@ describe("TS-06 RLS Coverage Test", () => {
       "visits",
       "invitation_tokens",
       "review_sessions",
+      "entry_challenges",
       "experiment_assignments",
       "source_text_revisions",
       "assertions",
@@ -63,8 +71,13 @@ describe("TS-06 RLS Coverage Test", () => {
     ];
 
     for (const table of expectedTables) {
+      const coveredByLoop = sql.includes(`'${table}'`);
+      const coveredExplicitly =
+        sql.includes(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;`) &&
+        sql.includes(`ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;`) &&
+        sql.includes(`CREATE POLICY tenant_isolation_policy ON ${table}`);
       expect(
-        sql.includes(`'${table}'`),
+        coveredByLoop || coveredExplicitly,
         `Missing RLS policy coverage for tenant table: ${table}`,
       ).toBe(true);
     }
