@@ -157,6 +157,16 @@ export const GenerationWorkloadDtoSchema = z
       }
     }
 
+    workload.assertions.forEach((assertion, index) => {
+      if (assertion.reviewSessionId !== workload.bindings.reviewSessionId) {
+        context.addIssue({
+          code: "custom",
+          message: "Assertion does not belong to the bound Review Session",
+          path: ["assertions", index, "reviewSessionId"],
+        });
+      }
+    });
+
     const boundRate = workload.snapshot.priceRates.find(
       (rate) => rate.id === workload.bindings.priceRateId,
     );
