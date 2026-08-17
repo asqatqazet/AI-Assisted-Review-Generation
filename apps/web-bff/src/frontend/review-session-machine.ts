@@ -1,5 +1,12 @@
 import type { ReviewSessionProjectionDto } from "@review/contracts/context";
 
+export interface ReviewerDraft {
+  readonly id: string;
+  readonly generationId: string;
+  readonly revision: number;
+  readonly text: string;
+}
+
 export type ReviewSessionState =
   | {
       readonly value: "review-session-loading";
@@ -24,6 +31,14 @@ export type ReviewSessionState =
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
       readonly selectedReviewFormatId: string;
+    }
+  | {
+      readonly value: "results";
+      readonly reviewSessionHandle: string;
+      readonly projection: ReviewSessionProjectionDto;
+      readonly selectedFactOptionIds: readonly string[];
+      readonly selectedReviewFormatId: string;
+      readonly draft: ReviewerDraft;
     };
 
 export type ReviewSessionEvent =
@@ -40,7 +55,11 @@ export type ReviewSessionEvent =
       readonly type: "REVIEW_FORMAT_SELECTED";
       readonly reviewFormatId: string;
     }
-  | { readonly type: "GENERATION_REQUESTED" };
+  | { readonly type: "GENERATION_REQUESTED" }
+  | {
+      readonly type: "GENERATION_SUCCEEDED";
+      readonly draft: ReviewerDraft;
+    };
 
 export function createReviewSessionState(
   reviewSessionHandle: string,
@@ -122,6 +141,20 @@ export function transitionReviewSession(
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
       selectedReviewFormatId: state.selectedReviewFormatId,
+    };
+  }
+
+  if (
+    state.value === "generating" &&
+    event.type === "GENERATION_SUCCEEDED"
+  ) {
+    return {
+      value: "results",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      selectedReviewFormatId: state.selectedReviewFormatId,
+      draft: event.draft,
     };
   }
 
