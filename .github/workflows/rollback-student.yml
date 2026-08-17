@@ -1,0 +1,71 @@
+name: rollback-student
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_run_id:
+        description: Successful deploy-student run containing student-release
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: student-deployment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: review-generation-student-rollback
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Retrieve and verify the immutable prior release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "${{ inputs.release_run_id }}" =~ ^[1-9][0-9]*$ ]]
+          gh run download "${{ inputs.release_run_id }}" --name student-release --dir release
+          shasum -a 256 -c release/checksums.sha256
+          jq -e 'all(.[]; test("^[1-9][0-9]*$"))' release/alias-versions.json >/dev/null
+
+      - name: Move qualified aliases to the recorded versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws lambda update-alias --function-name review-context-service-student --name live --function-version "$(jq -r .context release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-generation-service-student --name live --function-version "$(jq -r .generation release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-fast-student --name live --function-version "$(jq -r .webFast release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-stream-student --name live --function-version "$(jq -r .webStream release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-reconcile-student --name live --function-version "$(jq -r .webReconcile release/alias-versions.json)" >/dev/null
+
+      - name: Restore the matching UI and invalidate the edge
+        shell: bash
+        run: |
+          set -euo pipefail
+          UI_BUCKET="$(jq -r .ui_bucket_name.value release/deployment-outputs.json)"
+          DISTRIBUTION_ID="$(jq -r .cloudfront_distribution_id.value release/deployment-outputs.json)"
+          aws s3 sync release/ui "s3://$UI_BUCKET" --delete
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
+
+      - name: Run a real post-rollback smoke probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          DOMAIN="$(jq -r .cloudfront_domain_name.value release/deployment-outputs.json)"
+          curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/health"
+          curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/" >/dev/null

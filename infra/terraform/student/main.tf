@@ -1,5 +1,6 @@
 terraform {
   required_version = ">= 1.7.0"
+  backend "s3" {}
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -43,7 +44,8 @@ locals {
     "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${name}:*"
   ]
   parameter_names = {
-    database_url                = "/review-gen/student/database-url"
+    context_database_url        = "/review-gen/student/context-database-url"
+    generation_database_url     = "/review-gen/student/generation-database-url"
     review_csrf_secret          = "/review-gen/student/review-csrf-secret"
     context_work_private_key    = "/review-gen/student/context-work-private-key"
     context_work_public_key     = "/review-gen/student/context-work-public-key"
@@ -184,7 +186,7 @@ data "aws_iam_policy_document" "context_parameters" {
   statement {
     actions = ["ssm:GetParameter"]
     resources = [
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_database_url}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_private_key}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_public_key}",
     ]
@@ -200,7 +202,7 @@ data "aws_iam_policy_document" "generation_parameters" {
   statement {
     actions = ["ssm:GetParameter"]
     resources = [
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_database_url}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_public_key}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_private_key}",
     ]
@@ -266,7 +268,7 @@ resource "aws_lambda_function" "context_service" {
 
   environment {
     variables = {
-      DATABASE_URL_PARAMETER               = local.parameter_names.database_url
+      CONTEXT_DATABASE_URL_PARAMETER       = local.parameter_names.context_database_url
       CONTEXT_WORK_PRIVATE_KEY_PARAMETER   = local.parameter_names.context_work_private_key
       GENERATION_WORK_PUBLIC_KEY_PARAMETER = local.parameter_names.generation_work_public_key
     }
@@ -295,7 +297,7 @@ resource "aws_lambda_function" "generation_service" {
 
   environment {
     variables = {
-      DATABASE_URL_PARAMETER                = local.parameter_names.database_url
+      GENERATION_DATABASE_URL_PARAMETER     = local.parameter_names.generation_database_url
       CONTEXT_WORK_PUBLIC_KEY_PARAMETER     = local.parameter_names.context_work_public_key
       GENERATION_WORK_PRIVATE_KEY_PARAMETER = local.parameter_names.generation_work_private_key
       REVIEW_FAKE_DELAY_MS                  = "0"
@@ -499,6 +501,21 @@ resource "aws_cloudfront_distribution" "student" {
 
   ordered_cache_behavior {
     path_pattern             = "/s/*"
+    target_origin_id         = "web-bff-fast"
+    viewer_protocol_policy   = "https-only"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS"]
+    cached_methods           = ["GET", "HEAD"]
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    compress                 = false
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_origin.arn
+    }
+  }
+
+  ordered_cache_behavior {
+    path_pattern             = "/health"
     target_origin_id         = "web-bff-fast"
     viewer_protocol_policy   = "https-only"
     allowed_methods          = ["GET", "HEAD", "OPTIONS"]

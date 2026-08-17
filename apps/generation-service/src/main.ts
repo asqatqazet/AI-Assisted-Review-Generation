@@ -26,7 +26,7 @@ const requiredParameter = async (name: string): Promise<string> => {
 
 const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
   runtime ??= Promise.all([
-    requiredParameter("DATABASE_URL_PARAMETER"),
+    requiredParameter("GENERATION_DATABASE_URL_PARAMETER"),
     requiredParameter("CONTEXT_WORK_PUBLIC_KEY_PARAMETER"),
     requiredParameter("GENERATION_WORK_PRIVATE_KEY_PARAMETER"),
   ]).then(([databaseUrl, contextPublicKeyPem, generationPrivateKeyPem]) =>

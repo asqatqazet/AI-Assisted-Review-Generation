@@ -1,0 +1,218 @@
+name: deploy-student
+
+on:
+  workflow_dispatch:
+    inputs:
+      teardown_date:
+        description: YYYY-MM-DD; must precede AWS Free-plan expiry
+        required: true
+        type: string
+      acknowledge_fake_provider_only:
+        description: Public assessment deploy uses FakeProvider only
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: student-deployment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  TF_DIR: infra/terraform/student
+  RELEASE_DIR: release
+
+jobs:
+  deploy:
+    if: inputs.acknowledge_fake_provider_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: assisted_reviews
+          POSTGRES_USER: review_owner
+          POSTGRES_PASSWORD: local_only_change_me
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U review_owner -d assisted_reviews"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.7
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: review-generation-student-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Install the locked workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Migrate the disposable CI database
+        run: pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
+
+      - name: Verify and build exactly once
+        run: pnpm verify
+        env:
+          DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
+
+      - name: Package immutable release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RELEASE_DIR/ui"
+          cp -R dist/apps/web-bff/ui/. "$RELEASE_DIR/ui/"
+          test -f dist/apps/web-bff/main.js
+          test -f dist/apps/web-bff/stream-main.js
+          test -f dist/apps/web-bff/reconcile-main.js
+          (cd dist/apps/web-bff && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/web-bff.zip" . -x 'ui/*')
+          (cd dist/apps/context-service && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/context-service.zip" .)
+          (cd dist/apps/generation-service && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/generation-service.zip" .)
+          shasum -a 256 "$RELEASE_DIR"/*.zip > "$RELEASE_DIR/checksums.sha256"
+          jq -n \
+            --arg releaseId "$GITHUB_SHA" \
+            --arg webBff "$(shasum -a 256 "$RELEASE_DIR/web-bff.zip" | cut -d ' ' -f 1)" \
+            --arg context "$(shasum -a 256 "$RELEASE_DIR/context-service.zip" | cut -d ' ' -f 1)" \
+            --arg generation "$(shasum -a 256 "$RELEASE_DIR/generation-service.zip" | cut -d ' ' -f 1)" \
+            '{releaseId:$releaseId,sha256:{webBff:$webBff,context:$context,generation:$generation}}' \
+            > "$RELEASE_DIR/release-manifest.json"
+
+      - name: Refuse an unsafe AWS account or concurrency allocation
+        run: pnpm aws:preflight
+        env:
+          REVIEW_TEARDOWN_DATE: ${{ inputs.teardown_date }}
+
+      - name: Store operational secrets outside Terraform state
+        shell: bash
+        env:
+          CONTEXT_DATABASE_URL: ${{ secrets.NEON_CONTEXT_DATABASE_URL }}
+          GENERATION_DATABASE_URL: ${{ secrets.NEON_GENERATION_DATABASE_URL }}
+          REVIEW_CSRF_SECRET: ${{ secrets.REVIEW_CSRF_SECRET }}
+          CONTEXT_PRIVATE_KEY: ${{ secrets.CONTEXT_WORK_PRIVATE_KEY_PEM }}
+          CONTEXT_PUBLIC_KEY: ${{ secrets.CONTEXT_WORK_PUBLIC_KEY_PEM }}
+          GENERATION_PRIVATE_KEY: ${{ secrets.GENERATION_WORK_PRIVATE_KEY_PEM }}
+          GENERATION_PUBLIC_KEY: ${{ secrets.GENERATION_WORK_PUBLIC_KEY_PEM }}
+        run: |
+          set -euo pipefail
+          test -n "$CONTEXT_DATABASE_URL"
+          test -n "$GENERATION_DATABASE_URL"
+          test -n "$REVIEW_CSRF_SECRET"
+          test -n "$CONTEXT_PRIVATE_KEY"
+          test -n "$CONTEXT_PUBLIC_KEY"
+          test -n "$GENERATION_PRIVATE_KEY"
+          test -n "$GENERATION_PUBLIC_KEY"
+          aws ssm put-parameter --name /review-gen/student/context-database-url --type SecureString --value "$CONTEXT_DATABASE_URL" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/generation-database-url --type SecureString --value "$GENERATION_DATABASE_URL" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/review-csrf-secret --type SecureString --value "$REVIEW_CSRF_SECRET" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/context-work-private-key --type SecureString --value "$CONTEXT_PRIVATE_KEY" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/context-work-public-key --type SecureString --value "$CONTEXT_PUBLIC_KEY" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/generation-work-private-key --type SecureString --value "$GENERATION_PRIVATE_KEY" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/generation-work-public-key --type SecureString --value "$GENERATION_PUBLIC_KEY" --overwrite >/dev/null
+
+      - name: Apply database migrations to the assessment database
+        run: pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+
+      - name: Install the idempotent synthetic assessment fixture
+        run: >-
+          pnpm --dir packages/db exec prisma db execute
+          --schema prisma/schema.prisma
+          --file "$GITHUB_WORKSPACE/infra/aws/seed-student.sql"
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+
+      - name: Bootstrap encrypted remote Terraform state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          STATE_BUCKET="review-gen-student-tfstate-$ACCOUNT_ID"
+          if ! aws s3api head-bucket --bucket "$STATE_BUCKET" 2>/dev/null; then
+            aws s3api create-bucket --bucket "$STATE_BUCKET" --region "$AWS_REGION" --create-bucket-configuration "LocationConstraint=$AWS_REGION" >/dev/null
+            aws s3api put-public-access-block --bucket "$STATE_BUCKET" --public-access-block-configuration BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+            aws s3api put-bucket-encryption --bucket "$STATE_BUCKET" --server-side-encryption-configuration '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+            aws s3api put-bucket-versioning --bucket "$STATE_BUCKET" --versioning-configuration Status=Enabled
+          fi
+          echo "bucket=$STATE_BUCKET" >> "$GITHUB_OUTPUT"
+
+      - name: Plan the exact release
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$TF_DIR"
+          terraform init -backend-config="bucket=${{ steps.state.outputs.bucket }}" -backend-config="key=student/terraform.tfstate" -backend-config="region=$AWS_REGION" -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+          terraform fmt -check
+          terraform validate
+          terraform plan -out=student.tfplan \
+            -var="alert_email=${{ vars.COST_ALERT_EMAIL }}" \
+            -var="web_bff_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/web-bff.zip" \
+            -var="context_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/context-service.zip" \
+            -var="generation_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/generation-service.zip"
+
+      - name: Apply the reviewed plan
+        working-directory: infra/terraform/student
+        run: terraform apply -auto-approve student.tfplan
+
+      - name: Publish the verified UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
+          DISTRIBUTION_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)"
+          aws s3 sync "$RELEASE_DIR/ui" "s3://$UI_BUCKET" --delete
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
+
+      - name: Capture deployed alias versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -n \
+            --arg webFast "$(aws lambda get-alias --function-name review-web-bff-fast-student --name live --query FunctionVersion --output text)" \
+            --arg webStream "$(aws lambda get-alias --function-name review-web-bff-stream-student --name live --query FunctionVersion --output text)" \
+            --arg webReconcile "$(aws lambda get-alias --function-name review-web-bff-reconcile-student --name live --query FunctionVersion --output text)" \
+            --arg context "$(aws lambda get-alias --function-name review-context-service-student --name live --query FunctionVersion --output text)" \
+            --arg generation "$(aws lambda get-alias --function-name review-generation-service-student --name live --query FunctionVersion --output text)" \
+            '{webFast:$webFast,webStream:$webStream,webReconcile:$webReconcile,context:$context,generation:$generation}' \
+            > "$RELEASE_DIR/alias-versions.json"
+          terraform -chdir="$TF_DIR" output -json > "$RELEASE_DIR/deployment-outputs.json"
+
+      - name: Probe CloudFront and prove direct-origin denial
+        shell: bash
+        run: |
+          set -euo pipefail
+          DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
+          curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/health"
+          curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/" >/dev/null
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$DOMAIN/s/demo-tenant/demo-location")" = 303
+          FAST_URL="$(terraform -chdir="$TF_DIR" output -raw web_bff_fast_function_url)"
+          STREAM_URL="$(terraform -chdir="$TF_DIR" output -raw web_bff_stream_function_url)"
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$FAST_URL")" = 403
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "$STREAM_URL")" = 403
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: student-release
+          path: release
+          if-no-files-found: error
+          retention-days: 30
