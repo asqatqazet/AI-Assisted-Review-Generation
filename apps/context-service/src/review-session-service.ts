@@ -1,21 +1,12 @@
 import type { ReviewSessionProjectionDto } from "@review/contracts/context";
 import type { PostgresReviewSessionReader } from "@review/db/admission";
 
+import { hashCapability } from "./capability-hash.js";
+
 type ReviewSessionReader = Pick<PostgresReviewSessionReader, "read">;
 
 export interface ReviewSessionServiceOptions {
   readonly reader: ReviewSessionReader;
-}
-
-const toHex = (bytes: Uint8Array): string =>
-  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-
-async function hashCapability(value: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest(
-    "SHA-256",
-    new TextEncoder().encode(value),
-  );
-  return `sha256:${toHex(new Uint8Array(digest))}`;
 }
 
 export function createReviewSessionService({ reader }: ReviewSessionServiceOptions): {
