@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
@@ -187,13 +187,18 @@ describe("reviewer application routes", () => {
     expect(paraphrase).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("builds an explicit Start command from memory-only reviewer choices", async () => {
+  it("starts and navigates with memory-only reviewer choices", async () => {
     const user = userEvent.setup();
+    const starts: unknown[] = [];
+    const navigations: string[] = [];
     render(
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
-            start: async () => ({ redirectTo: "/review/review-session-demo" }),
+            start: async (input) => {
+              starts.push(input);
+              return { redirectTo: "/review/review-session-demo" };
+            },
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
@@ -209,6 +214,7 @@ describe("reviewer application routes", () => {
               },
             }),
           }}
+          navigate={(path) => navigations.push(path)}
         />
       </MemoryRouter>,
     );
@@ -218,19 +224,20 @@ describe("reviewer application routes", () => {
       screen.getByRole("button", { name: "Generate from my facts" }),
     );
 
-    const start = screen.getByRole("button", { name: "Start" });
-    const form = start.closest("form");
+    await user.click(screen.getByRole("button", { name: "Start" }));
 
-    expect(start).toBeEnabled();
-    expect(form).toHaveAttribute(
-      "action",
-      "/api/v1/entry-challenges/entry-challenge-demo/start",
-    );
-    expect(form).toHaveAttribute("method", "post");
-    expect(Object.fromEntries(new FormData(form as HTMLFormElement))).toEqual({
-      rating: "4",
-      action: "generate",
-      csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+    await waitFor(() => {
+      expect({ starts, navigations }).toEqual({
+        starts: [
+          {
+            entryChallengeHandle: "entry-challenge-demo",
+            rating: 4,
+            action: "generate",
+            csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+          },
+        ],
+        navigations: ["/review/review-session-demo"],
+      });
     });
   });
 
