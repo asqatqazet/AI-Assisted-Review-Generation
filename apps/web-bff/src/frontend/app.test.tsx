@@ -39,8 +39,9 @@ describe("reviewer application routes", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Operator console" }),
+      await screen.findByRole("heading", { name: "Overview" }),
     ).toBeVisible();
+    expect(screen.getByText("No operating data loaded")).toBeVisible();
   });
 
   it("renders the prepared business and rating question on the Start route", async () => {
@@ -135,7 +136,7 @@ describe("reviewer application routes", () => {
     );
 
     const generate = await screen.findByRole("button", {
-      name: "Generate from my facts",
+      name: "Pick what to mention",
     });
     expect(generate).toBeDisabled();
 
@@ -144,13 +145,17 @@ describe("reviewer application routes", () => {
     expect(generate).toBeEnabled();
   });
 
-  it("retains exactly one reviewer-selected drafting path", async () => {
+  it("uses each prototype path card as the explicit Start action", async () => {
     const user = userEvent.setup();
+    const starts: unknown[] = [];
     render(
       <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
         <ReviewerApplication
           entryChallengeClient={{
-            start: async () => ({ redirectTo: "/review/review-session-demo" }),
+            start: async (input) => {
+              starts.push(input);
+              return { redirectTo: "/review/review-session-demo" };
+            },
             read: async () => ({
               status: "ready",
               entryChallengeHandle: "entry-challenge-demo",
@@ -171,20 +176,13 @@ describe("reviewer application routes", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "4, Good" }));
-    const generate = screen.getByRole("button", {
-      name: "Generate from my facts",
-    });
-    const paraphrase = screen.getByRole("button", {
-      name: "Improve my wording",
-    });
+    await user.click(screen.getByRole("button", { name: "Improve my wording" }));
 
-    await user.click(generate);
-    expect(generate).toHaveAttribute("aria-pressed", "true");
-    expect(paraphrase).toHaveAttribute("aria-pressed", "false");
-
-    await user.click(paraphrase);
-    expect(generate).toHaveAttribute("aria-pressed", "false");
-    expect(paraphrase).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => {
+      expect(starts).toEqual([
+        expect.objectContaining({ action: "paraphrase", rating: 4 }),
+      ]);
+    });
   });
 
   it("starts and navigates with memory-only reviewer choices", async () => {
@@ -221,10 +219,8 @@ describe("reviewer application routes", () => {
 
     await user.click(await screen.findByRole("button", { name: "4, Good" }));
     await user.click(
-      screen.getByRole("button", { name: "Generate from my facts" }),
+      screen.getByRole("button", { name: "Pick what to mention" }),
     );
-
-    await user.click(screen.getByRole("button", { name: "Start" }));
 
     await waitFor(() => {
       expect({ starts, navigations }).toEqual({
@@ -272,7 +268,8 @@ describe("reviewer application routes", () => {
     expect(
       await screen.findByRole("heading", { name: "What stood out?" }),
     ).toBeVisible();
-    expect(screen.getByText("4 out of 5")).toBeVisible();
+    expect(screen.getByRole("group", { name: "Service" })).toBeVisible();
+    expect(screen.getByText(/rating 4 of 5/)).toBeVisible();
     expect(
       screen.getByRole("checkbox", { name: "The team was attentive" }),
     ).toBeVisible();
@@ -318,14 +315,16 @@ describe("reviewer application routes", () => {
     await user.click(
       await screen.findByRole("checkbox", { name: "The team was attentive" }),
     );
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
 
     expect(
-      screen.getByRole("heading", { name: "Choose a format" }),
+      screen.getByRole("heading", { name: "Pick a format" }),
     ).toBeVisible();
     expect(
       screen.getByRole("radio", { name: "Concise blurb" }),
     ).toBeVisible();
+    expect(screen.getByText("One concise paragraph.")).toBeVisible();
+    expect(screen.getByText("The team was attentive.")).toBeVisible();
   });
 
   it("shows only progress until a terminal grounded Draft arrives", async () => {
@@ -391,12 +390,12 @@ describe("reviewer application routes", () => {
     await user.click(
       await screen.findByRole("checkbox", { name: "The team was attentive" }),
     );
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
     await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
-    await user.click(screen.getByRole("button", { name: "Create my draft" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
 
     expect(
-      await screen.findByRole("heading", { name: "Your review" }),
+      await screen.findByRole("heading", { name: "Here it is" }),
     ).toBeVisible();
     expect(screen.getByText("The team was attentive.")).toBeVisible();
     expect(starts).toEqual([
@@ -460,9 +459,9 @@ describe("reviewer application routes", () => {
     await user.click(
       await screen.findByRole("checkbox", { name: "The team was attentive" }),
     );
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
     await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
-    await user.click(screen.getByRole("button", { name: "Create my draft" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
 
     expect(
       await screen.findByRole("heading", { name: "We couldn't create a draft" }),
@@ -530,14 +529,18 @@ describe("reviewer application routes", () => {
     await user.click(
       await screen.findByRole("checkbox", { name: "The team was attentive" }),
     );
-    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
     await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
-    await user.click(screen.getByRole("button", { name: "Create my draft" }));
-    await user.click(await screen.findByRole("button", { name: "Copy review" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
 
-    expect(copied).toEqual(["The team was attentive."]);
-    expect(screen.getByRole("textbox", { name: "Review text" })).toHaveValue(
-      "The team was attentive.",
+    const draft = await screen.findByRole("textbox", { name: "Review text" });
+    await user.clear(draft);
+    await user.type(draft, "The team was exceptionally attentive.");
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(copied).toEqual(["The team was exceptionally attentive."]);
+    expect(draft).toHaveValue(
+      "The team was exceptionally attentive.",
     );
     expect(screen.getByRole("status")).toHaveTextContent("Copied");
   });

@@ -1,0 +1,105 @@
+{
+  "generatedAt": "2026-08-18",
+  "strategy": "direct-design-component-source-to-react",
+  "input": {
+    "format": "Maue Design Component source",
+    "bundledOfflineWrapper": false,
+    "files": [
+      {
+        "path": "prototypes/Survey.dc.html",
+        "sha256": "9e7cd5a390650ca57edaa35ab6ae3ec8fd07b301d62713a1cc663ab01fa8656c",
+        "role": "reviewer interaction source"
+      },
+      {
+        "path": "prototypes/Admin.dc.html",
+        "sha256": "74a79ed2e274588c7027d2171a669009d6e692c49b4731650d701c7b04b17f7a",
+        "role": "operator interaction source"
+      },
+      {
+        "path": "prototypes/Index.dc.html",
+        "sha256": "8ff4b8ca9347168a6411540fa117c5105f6e65e6cbf22efd33d351d9d2768306",
+        "role": "state catalogue"
+      },
+      {
+        "path": "prototypes/Gallery.dc.html",
+        "sha256": "9b6e647f08b63052776d6f989854630d6f04866598790fefc03978bb9c64abb9",
+        "role": "visual reference gallery"
+      }
+    ],
+    "excluded": [
+      {
+        "path": "prototypes/MarketingPage.dc.html",
+        "reason": "different product; excluded by accepted architecture"
+      }
+    ]
+  },
+  "bundleMilestones": {
+    "manifestExtraction": "not-applicable",
+    "resourceDecoding": "not-applicable",
+    "blobPageReconstruction": "not-applicable",
+    "reason": "The checked-in inputs are already unbundled .dc.html source documents."
+  },
+  "reactBaseline": {
+    "framework": "React 19 + TypeScript + Vite",
+    "routes": [
+      "/start/:entryChallengeHandle",
+      "/review/:reviewSessionHandle",
+      "/console/*"
+    ],
+    "prototypeRuntimeInProduction": false,
+    "directDomManipulation": 0,
+    "iframeFallbacks": 0,
+    "dangerouslySetInnerHTML": 0
+  },
+  "fidelity": {
+    "viewports": [320, 375, 768, 1024],
+    "survey": {
+      "catalogueStates": 20,
+      "productionSlicesRendered": [
+        "entry",
+        "keywords",
+        "style",
+        "generating",
+        "results",
+        "editing",
+        "rate-limited",
+        "budget-exceeded",
+        "provider-error",
+        "grounding-rejected"
+      ],
+      "pendingServiceBackedSlices": [
+        "entry-token-used",
+        "verification",
+        "verification-unavailable",
+        "paraphrase-input",
+        "results-grounding-stripped",
+        "refine",
+        "done",
+        "invalid-link",
+        "expired",
+        "not-configured"
+      ]
+    },
+    "console": {
+      "catalogueViews": 23,
+      "productionSlicesRendered": ["overview-shell"],
+      "pendingServiceBackedSlices": 22,
+      "note": "The complete prototype navigation and layout are present, but fabricated fixture metrics and browser-selected authorization are deliberately absent."
+    }
+  },
+  "deliberateProductionDeltas": [
+    "Tenant, Location and operator role are never accepted from query parameters or localStorage.",
+    "Prototype latency and failure-injection controls are excluded from production.",
+    "Unsupported model wording is never returned to the browser.",
+    "Console metrics remain empty until a server-authorized projection exists.",
+    "MarketingPage.dc.html is not part of this product."
+  ],
+  "verification": {
+    "unit": "pass-364",
+    "browser": "pending-ci-postgresql",
+    "typescript": "pass",
+    "eslint": "pass",
+    "build": "pass",
+    "deployment": "pending"
+  }
+}

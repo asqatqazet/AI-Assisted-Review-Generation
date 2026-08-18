@@ -48,6 +48,10 @@ function SurveyHeader({ brand }: { readonly brand: string }): React.JSX.Element 
   );
 }
 
+function entryHeaderNote(entryMode: "invite" | "open-qr" | "both"): string {
+  return entryMode === "open-qr" ? "Open visit" : "Invited visit";
+}
+
 function SurveyScreen({
   brand,
   location,
@@ -65,8 +69,8 @@ function SurveyScreen({
       <main
         className={styles.surveyMain}
         aria-busy={busy ? "true" : undefined}
+        aria-label={location}
       >
-        <p className={styles.eyebrow}>{location}</p>
         {children}
       </main>
     </div>
@@ -125,20 +129,32 @@ function StartRoute({
   if (state.value === "entry") {
     return (
       <div className={styles.page}>
-        <SurveyHeader brand={state.context.tenantDisplayName} />
+        <header className={styles.header}>
+          <span className={styles.brand}>{state.context.tenantDisplayName}</span>
+          <span className={styles.headerNote}>
+            {entryHeaderNote(state.context.entryMode)}
+          </span>
+        </header>
         <main className={styles.surveyMain}>
-        <p className={styles.eyebrow}>{state.context.locationDisplayName}</p>
+        <p className={styles.eyebrow}>
+          Review · {state.context.locationDisplayName}
+        </p>
         <h1 className={`${styles.title} ${styles.entryTitle}`}>
           Write your review of {state.context.tenantDisplayName}
         </h1>
         <p className={styles.lead}>
-          A few details from you are enough to create a review you can edit and
-          post yourself.
+          Thanks for visiting {state.context.locationDisplayName}.
         </p>
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            if (state.rating === null || state.selectedAction === null) {
+            const submitter = (event.nativeEvent as SubmitEvent).submitter;
+            const action =
+              submitter instanceof HTMLButtonElement &&
+              (submitter.value === "generate" || submitter.value === "paraphrase")
+                ? submitter.value
+                : null;
+            if (state.rating === null || action === null) {
               return;
             }
             const abortController = new AbortController();
@@ -147,16 +163,20 @@ function StartRoute({
                 {
                   entryChallengeHandle,
                   rating: state.rating,
-                  action: state.selectedAction,
+                  action,
                   csrfToken,
                 },
                 abortController.signal,
               )
               .then(({ redirectTo }) => navigate(redirectTo))
               .catch(() => undefined);
-            setState((current) =>
-              transition(current, { type: "START_REQUESTED" }),
-            );
+            setState((current) => {
+              const selected = transition(current, {
+                type: "ACTION_SELECTED",
+                action,
+              });
+              return transition(selected, { type: "START_REQUESTED" });
+            });
           }}
         >
           <section
@@ -191,7 +211,7 @@ function StartRoute({
                 </button>
               ))}
             </div>
-            <p className={styles.status} aria-live="polite">
+            <p className={styles.visuallyHidden} aria-live="polite">
               {state.rating === null
                 ? "Choose a rating to continue."
                 : ratings[state.rating - 1]?.label}
@@ -199,72 +219,52 @@ function StartRoute({
           </section>
           <aside className={styles.trustNote}>
             <p className={styles.trustCopy}>
-              Only facts you select are sent to the writing assistant. It does
-              not invent details or post anything for you.
+              You supply the facts. Everything on the next screens is a draft
+              you read, change and copy yourself. Nothing is posted anywhere
+              for you.
             </p>
           </aside>
-          <section
-            className={styles.pathSection}
-            aria-labelledby="drafting-path-question"
-          >
-            <h2 className={styles.sectionTitle} id="drafting-path-question">
-              How would you like to write?
-            </h2>
+          <section className={styles.pathSection} aria-label="Writing path">
             <div className={styles.pathCard}>
-              <p className={styles.cardEyebrow}>Guided</p>
-              <h3 className={styles.cardTitle}>Start from what happened</h3>
+              <p className={styles.cardEyebrow}>Path one</p>
+              <h3 className={styles.cardTitle}>Help me write one</h3>
               <p className={styles.cardCopy}>
-                Pick the facts that describe your experience and we will shape
-                them into a draft.
+                Choose the things that actually happened. The draft is built
+                only from those.
               </p>
             <button
               className={styles.pathButton}
-              type="button"
+              type="submit"
+              name="action"
+              value="generate"
               disabled={state.rating === null}
-              aria-pressed={state.selectedAction === "generate"}
-              onClick={() =>
-                setState((current) =>
-                  transition(current, {
-                    type: "ACTION_SELECTED",
-                    action: "generate",
-                  }),
-                )
-              }
             >
-              Generate from my facts
+              Pick what to mention
             </button>
             </div>
             <div className={styles.pathCard}>
-              <p className={styles.cardEyebrow}>Already written</p>
-              <h3 className={styles.cardTitle}>Improve your wording</h3>
+              <p className={styles.cardEyebrow}>Path two</p>
+              <h3 className={styles.cardTitle}>I have written one</h3>
               <p className={styles.cardCopy}>
-                Keep every fact you wrote while making the review clearer.
+                Paste your own review. Your facts stay exactly as you wrote
+                them; only the wording changes.
               </p>
             <button
               className={styles.pathButton}
-              type="button"
+              type="submit"
+              name="action"
+              value="paraphrase"
               disabled={state.rating === null}
-              aria-pressed={state.selectedAction === "paraphrase"}
-              onClick={() =>
-                setState((current) =>
-                  transition(current, {
-                    type: "ACTION_SELECTED",
-                    action: "paraphrase",
-                  }),
-                )
-              }
             >
               Improve my wording
             </button>
             </div>
           </section>
-          <button
-            className={styles.primaryButton}
-            type="submit"
-            disabled={state.rating === null || state.selectedAction === null}
-          >
-            Start
-          </button>
+          <p className={styles.pathHint}>
+            {state.rating === null
+              ? "Choose a rating first. It sets the register of the draft, and it is the one thing the assistant will not decide for you."
+              : "Choose either path to continue."}
+          </p>
         </form>
         </main>
       </div>
@@ -298,6 +298,7 @@ function ReviewRoute({
   const [copyStatus, setCopyStatus] = useState<
     "idle" | "copied" | "manual"
   >("idle");
+  const [draftText, setDraftText] = useState("");
 
   useEffect(() => {
     const abortController = new AbortController();
@@ -333,6 +334,7 @@ function ReviewRoute({
           abortController.signal,
         )) {
           if (event.type === "terminal" && event.status === "completed") {
+            setDraftText(event.draft.text);
             setState((current) =>
               transitionReviewSession(current, {
                 type: "GENERATION_SUCCEEDED",
@@ -369,44 +371,58 @@ function ReviewRoute({
   }, [generationClient, state]);
 
   if (state.value === "facts") {
+    const groupedFacts = new Map<
+      string,
+      (typeof state.projection.factOptions)[number][]
+    >();
+    for (const factOption of state.projection.factOptions) {
+      const group = groupedFacts.get(factOption.categoryLabel) ?? [];
+      group.push(factOption);
+      groupedFacts.set(factOption.categoryLabel, group);
+    }
+    const factGroups = [...groupedFacts.entries()];
     return (
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
       >
+        <p className={styles.eyebrow}>What happened</p>
         <h1 className={styles.title}>What stood out?</h1>
         <p className={styles.lead}>
-          Choose only the details that were true for your visit.{" "}
-          <span>{state.projection.rating} out of 5</span>
+          Pick everything that actually happened. The order you pick them is
+          the order they are written in.
         </p>
         <form className={styles.reviewForm}>
-          <fieldset className={styles.choiceFieldset}>
-            <legend className={styles.sectionTitle}>
-              Choose the facts you want to include
-            </legend>
-            <div className={styles.choiceList}>
-            {state.projection.factOptions.map((factOption) => (
-              <label className={styles.choiceCard} key={factOption.id}>
-                <input
-                  className={styles.choiceControl}
-                  type="checkbox"
-                  name="factOptionIds"
-                  value={factOption.id}
-                  checked={state.selectedFactOptionIds.includes(factOption.id)}
-                  onChange={() =>
-                    setState((current) =>
-                      transitionReviewSession(current, {
-                        type: "FACT_OPTION_TOGGLED",
-                        factOptionId: factOption.id,
-                      }),
-                    )
-                  }
-                />
-                <span>{factOption.label}</span>
-              </label>
-            ))}
-            </div>
-          </fieldset>
+          {factGroups.map(([categoryLabel, factOptions]) => (
+            <fieldset className={styles.factGroup} key={categoryLabel}>
+              <legend className={styles.factGroupTitle}>{categoryLabel}</legend>
+              <div className={styles.factChoices}>
+                {factOptions?.map((factOption) => (
+                  <label className={styles.factChoice} key={factOption.id}>
+                    <input
+                      className={styles.visuallyHidden}
+                      type="checkbox"
+                      name="factOptionIds"
+                      value={factOption.id}
+                      checked={state.selectedFactOptionIds.includes(factOption.id)}
+                      onChange={() =>
+                        setState((current) =>
+                          transitionReviewSession(current, {
+                            type: "FACT_OPTION_TOGGLED",
+                            factOptionId: factOption.id,
+                          }),
+                        )
+                      }
+                    />
+                    <span>{factOption.label}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
+          <p className={styles.selectionCount}>
+            {state.selectedFactOptionIds.length} selected · rating {state.projection.rating} of 5
+          </p>
           <button
             className={styles.primaryButton}
             type="button"
@@ -419,8 +435,11 @@ function ReviewRoute({
               )
             }
           >
-            Continue
+            Choose a format
           </button>
+          <p className={styles.pathHint}>
+            Pick at least one thing. The assistant will not invent the rest.
+          </p>
         </form>
       </SurveyScreen>
     );
@@ -435,10 +454,10 @@ function ReviewRoute({
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
       >
-        <h1 className={styles.title}>Choose a format</h1>
+        <p className={styles.eyebrow}>What happened</p>
+        <h1 className={styles.title}>Pick a format</h1>
         <p className={styles.lead}>
-          Each option uses the same facts you selected. Only the shape and
-          length change.
+          Formats this business has enabled, for what you are doing.
         </p>
         <form className={styles.reviewForm}>
           <fieldset className={styles.choiceFieldset}>
@@ -449,10 +468,11 @@ function ReviewRoute({
             {compatibleFormats.map((format) => (
               <label className={styles.formatCard} key={format.id}>
                 <input
-                  className={styles.choiceControl}
+                  className={styles.visuallyHidden}
                   type="radio"
                   name="reviewFormatId"
                   value={format.id}
+                  aria-label={format.displayName}
                   checked={state.selectedReviewFormatId === format.id}
                   onChange={() =>
                     setState((current) =>
@@ -463,7 +483,12 @@ function ReviewRoute({
                     )
                   }
                 />
-                <span className={styles.formatName}>{format.displayName}</span>
+                <span className={styles.formatBody}>
+                  <span className={styles.formatName}>{format.displayName}</span>
+                  <span className={styles.formatDescription}>{format.description}</span>
+                  <span className={styles.formatMeta}>Review format · no emoji</span>
+                  <span className={styles.formatSample}>{format.sample}</span>
+                </span>
               </label>
             ))}
             </div>
@@ -481,8 +506,13 @@ function ReviewRoute({
               )
             }
           >
-            Create my draft
+            Write the draft
           </button>
+          <p className={styles.pathHint}>
+            {state.selectedReviewFormatId === null
+              ? "Choose at least one format."
+              : "1 format chosen."}
+          </p>
         </form>
       </SurveyScreen>
     );
@@ -515,41 +545,63 @@ function ReviewRoute({
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
       >
-        <h1 className={styles.title}>Your review</h1>
+        <p className={styles.eyebrow}>Your draft</p>
+        <h1 className={styles.title}>Here it is</h1>
         <p className={styles.lead}>
-          This draft is built only from the facts you selected. Read it before
-          copying it—you remain in control of what you post.
+          Change anything you like. Nothing leaves this page until you copy it
+          yourself.
         </p>
         <section className={styles.resultCard}>
-        <label className={styles.fieldLabel} htmlFor="review-text">
-          Your draft — edit it freely
-        </label>
-        <textarea
-          className={styles.reviewTextarea}
-          id="review-text"
-          aria-label="Review text"
-          readOnly
-          value={state.draft.text}
-        />
-        <button
-          className={styles.primaryButton}
-          type="button"
-          onClick={() => {
-            void copyText(state.draft.text)
-              .then(() => setCopyStatus("copied"))
-              .catch(() => setCopyStatus("manual"));
-          }}
-        >
-          Copy review
-        </button>
-        <p className={styles.status} role="status" aria-live="polite">
-          {copyStatus === "copied"
-            ? "Copied"
-            : copyStatus === "manual"
-              ? "Select the review text and copy it manually."
-              : "Ready to copy."}
-        </p>
+          <header className={styles.resultHeader}>
+            <h2 className={styles.resultTitle}>
+              {state.projection.reviewFormats.find(
+                (format) => format.id === state.selectedReviewFormatId,
+              )?.displayName ?? "Review"}
+            </h2>
+            <span className={styles.resultMeta}>
+              {state.projection.action} · guarded
+            </span>
+          </header>
+          <label className={styles.fieldLabel} htmlFor="review-text">
+            Your draft — edit it freely
+          </label>
+          <textarea
+            className={styles.reviewTextarea}
+            id="review-text"
+            aria-label="Review text"
+            value={draftText}
+            onChange={(event) => setDraftText(event.target.value)}
+          />
+          <p className={styles.characterCount}>{draftText.length} characters</p>
+          <details className={styles.provenance}>
+            <summary>
+              What this draft is built on ({state.selectedFactOptionIds.length} facts, each traceable)
+            </summary>
+          </details>
+          <div className={styles.resultActions}>
+            <button
+              className={styles.copyButton}
+              type="button"
+              onClick={() => {
+                void copyText(draftText)
+                  .then(() => setCopyStatus("copied"))
+                  .catch(() => setCopyStatus("manual"));
+              }}
+            >
+              Copy
+            </button>
+          </div>
+          <p className={styles.status} role="status" aria-live="polite">
+            {copyStatus === "copied"
+              ? "Copied"
+              : copyStatus === "manual"
+                ? "Select the review text and copy it manually."
+                : "Ready to copy."}
+          </p>
         </section>
+        <p className={styles.resultFootnote}>
+          Copying puts the text on your clipboard. Nothing is submitted from here.
+        </p>
       </SurveyScreen>
     );
   }
