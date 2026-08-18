@@ -61,11 +61,7 @@
         "style",
         "generating",
         "results",
-        "editing",
-        "rate-limited",
-        "budget-exceeded",
-        "provider-error",
-        "grounding-rejected"
+        "editing"
       ],
       "pendingServiceBackedSlices": [
         "entry-token-used",
@@ -75,6 +71,10 @@
         "results-grounding-stripped",
         "refine",
         "done",
+        "rate-limited",
+        "budget-exceeded",
+        "provider-error",
+        "grounding-rejected",
         "invalid-link",
         "expired",
         "not-configured"
@@ -96,10 +96,18 @@
   ],
   "verification": {
     "unit": "pass-364",
-    "browser": "pending-ci-postgresql",
+    "browser": "pass-6-ci-postgresql",
     "typescript": "pass",
     "eslint": "pass",
     "build": "pass",
-    "deployment": "pending"
+    "deployment": {
+      "status": "pass",
+      "commit": "e47865b24a9cf70a037477c2e8c52e99fe114108",
+      "workflowRun": "https://github.com/asqatqazet/AI-Assisted-Review-Generation/actions/runs/32129035826",
+      "url": "https://d1s5xk7no6xahh.cloudfront.net",
+      "profile": "student-low-quota",
+      "providerMode": "fake-only",
+      "teardownDate": "2026-09-07"
+    }
   }
 }
