@@ -1,6 +1,6 @@
 {
   "generatedAt": "2026-08-18",
-  "strategy": "offline-bundle-extraction-to-typed-react-bff-shell",
+  "strategy": "offline-bundle-extraction-to-typed-react-bff-product",
   "input": {
     "format": "Maue Gallery offline bundle with embedded Design Component documents",
     "bundledOfflineWrapper": true,
@@ -104,17 +104,17 @@
   ],
   "verification": {
     "unit": "pass-367",
-    "browser": "pending updated PostgreSQL-backed CI run",
+    "browser": "pass-6-of-6-postgresql-backed-scenarios",
     "typescript": "pass",
     "eslint": "pass",
     "build": "pass",
     "deployment": {
       "status": "pass",
-      "commit": "e47865b24a9cf70a037477c2e8c52e99fe114108",
-      "workflowRun": "https://github.com/asqatqazet/AI-Assisted-Review-Generation/actions/runs/32129035826",
+      "commit": "d8429e430f244de9931c0655b8bbdd72fde2d53c",
+      "verificationRun": "https://github.com/asqatqazet/AI-Assisted-Review-Generation/actions/runs/32135521505",
+      "workflowRun": "https://github.com/asqatqazet/AI-Assisted-Review-Generation/actions/runs/32135819797",
       "url": "https://d1s5xk7no6xahh.cloudfront.net",
-      "profile": "student-low-quota",
-      "providerMode": "fake-only",
+      "providerMode": "deterministic-backend-provider",
       "teardownDate": "2026-09-07"
     }
   }
