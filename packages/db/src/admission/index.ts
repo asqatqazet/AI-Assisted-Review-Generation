@@ -881,7 +881,7 @@ export function createPostgresReviewerGenerationAdmissionStore({
           return { status: "rejected" } as const;
         }
         const normalizedRequest = {
-          factOptionIds: [...new Set(input.factOptionIds)].sort(),
+          factOptionIds: [...new Set(input.factOptionIds)],
           reviewFormatVersionId: input.reviewFormatVersionId,
           rating: session.rating,
         };
@@ -932,7 +932,10 @@ export function createPostgresReviewerGenerationAdmissionStore({
             AND (location_id IS NULL OR location_id = ${binding.location_id}::uuid)
             AND is_active = true
             AND retired_at IS NULL
-          ORDER BY id
+          ORDER BY array_position(
+            ARRAY[${Prisma.join(normalizedRequest.factOptionIds)}]::text[],
+            id::text
+          )
         `;
         if (facts.length !== normalizedRequest.factOptionIds.length) {
           return { status: "rejected" } as const;

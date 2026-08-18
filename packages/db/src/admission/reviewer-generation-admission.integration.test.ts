@@ -32,6 +32,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
     const reviewSessionId = randomUUID();
     const categoryId = randomUUID();
     const factOptionId = randomUUID();
+    const secondFactOptionId = randomUUID();
     const reviewFormatVersionId = randomUUID();
     const reviewFormatEnablementId = randomUUID();
     const bindingId = randomUUID();
@@ -82,6 +83,17 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
           locale: "en-GB",
           active: true,
           sortOrder: 1,
+        },
+        {
+          id: secondFactOptionId,
+          version: "fact-well-seasoned@1",
+          owner: { scope: "tenant", tenantId },
+          proposition: "The food was well seasoned.",
+          categoryId,
+          polarity: "positive",
+          locale: "en-GB",
+          active: true,
+          sortOrder: 2,
         },
       ],
       reviewFormats: [
@@ -164,11 +176,17 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
       INSERT INTO fact_option_versions (
         id, tenant_id, category_id, fact_option_key, version, owner_scope,
         label, proposition, polarity, sort_order, is_active
-      ) VALUES (
-        '${factOptionId}', '${tenantId}', '${categoryId}', 'attentive', 1,
-        'TENANT', '{"en-GB":"The team was attentive"}'::jsonb,
-        'The team was attentive.', 'POSITIVE', 1, true
-      );
+      ) VALUES
+        (
+          '${factOptionId}', '${tenantId}', '${categoryId}', 'attentive', 1,
+          'TENANT', '{"en-GB":"The team was attentive"}'::jsonb,
+          'The team was attentive.', 'POSITIVE', 1, true
+        ),
+        (
+          '${secondFactOptionId}', '${tenantId}', '${categoryId}', 'well-seasoned', 1,
+          'TENANT', '{"en-GB":"The food was well seasoned"}'::jsonb,
+          'The food was well seasoned.', 'POSITIVE', 2, true
+        );
       INSERT INTO review_format_versions (
         id, format_key, version, locale, target_platform, constraints,
         localized_text, supported_actions, content_hash, status
@@ -225,16 +243,11 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
           reviewFormatVersionId,
         }),
       ).resolves.toEqual({ status: "rejected" });
-      await runSql(`
-        UPDATE tenants
-        SET policy = '{"maxActiveGenerations":1,"minimumFactSelections":1}'::jsonb
-        WHERE id = '${tenantId}';
-      `);
       const input = {
         routeHandleHash,
         browserCapabilityHash,
         idempotencyKey: "request-a",
-        factOptionIds: [factOptionId],
+        factOptionIds: [secondFactOptionId, factOptionId],
         reviewFormatVersionId,
       };
       const first = await store.prepare(input);
@@ -258,6 +271,12 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
           snapshot,
           command: { kind: "generate", rating: 4 },
           assertions: [
+            {
+              reviewSessionId,
+              semanticId: secondFactOptionId,
+              proposition: "The food was well seasoned.",
+              source: { kind: "fact-option", factOptionId: secondFactOptionId },
+            },
             {
               reviewSessionId,
               semanticId: factOptionId,
@@ -309,7 +328,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         await runSql(
           `SELECT count(*) FROM assertions WHERE tenant_id = '${tenantId}' AND review_session_id = '${reviewSessionId}';`,
         ),
-      ).toBe("1");
+      ).toBe("2");
       expect(
         await runSql(
           `SELECT status::text || '|' || actual_cost_micros::text FROM budget_reservations WHERE permit_jti = '${first.permitJti}';`,
