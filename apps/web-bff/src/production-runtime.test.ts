@@ -26,6 +26,17 @@ describe("US-01.3 BFF production composition", () => {
     expect(runtimeSource).not.toContain("@review/db");
   });
 
+  it("marks the streaming handler for the Node 24 response-streaming runtime", () => {
+    const streamSource = fs.readFileSync(
+      new URL("./stream-main.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(streamSource).toContain("awslambda?.streamifyResponse");
+    expect(streamSource).not.toMatch(/\(event,\s*context,\s*callback\)/);
+    expect(streamSource).not.toContain("callback(");
+  });
+
   it("allows only public-operational settings and qualified service aliases", () => {
     const source = fs.readFileSync(new URL("./runtime.ts", import.meta.url), "utf8");
     const environmentKeys = [
