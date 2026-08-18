@@ -256,6 +256,41 @@ describe("student AWS topology invariants", () => {
     expect(terraform).not.toMatch(/aws_route53|aws_acm_certificate|aws_wafv2/);
   });
 
+  it("provisions Cognito Authorization Code + PKCE login and routes auth only through the BFF", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+    const variables = fs.readFileSync(
+      path.join(__dirname, "variables.tf"),
+      "utf8",
+    );
+    const outputs = fs.readFileSync(path.join(__dirname, "outputs.tf"), "utf8");
+    const workflow = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/deploy-student.yml"),
+      "utf8",
+    );
+
+    expect(terraform).toContain('resource "aws_cognito_user_pool" "operators"');
+    expect(terraform).toMatch(/user_pool_tier\s*=\s*"LITE"/);
+    expect(terraform).toContain(
+      'resource "aws_cognito_user_pool_client" "operator_console"',
+    );
+    expect(terraform).toMatch(/allowed_oauth_flows\s*=\s*\["code"\]/);
+    expect(terraform).toMatch(
+      /allowed_oauth_flows_user_pool_client\s*=\s*true/,
+    );
+    expect(terraform).toMatch(/generate_secret\s*=\s*false/);
+    expect(terraform).toMatch(/path_pattern\s*=\s*"\/auth\/\*"/);
+    expect(terraform).toContain("OPERATOR_SESSION_SECRET_PARAMETER");
+    expect(terraform).toContain("OPERATOR_OIDC_CONFIG_PARAMETER");
+    expect(variables).toMatch(/variable\s+"operator_email"/);
+    expect(outputs).toContain('output "operator_oidc_issuer"');
+    expect(outputs).toContain('output "operator_subject"');
+    expect(workflow).toContain("TF_VAR_operator_email");
+    expect(workflow).not.toContain('-var="operator_email=${{');
+    expect(workflow).toContain("seed-operator-access.sql");
+    expect(workflow).toContain("/api/v1/console/session");
+    expect(workflow).not.toMatch(/OPERATOR_(?:PASSWORD|ACCESS_TOKEN|ID_TOKEN)/);
+  });
+
   it("omits function reservations only for the explicit low-quota profile", () => {
     const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
     const variables = fs.readFileSync(

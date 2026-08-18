@@ -41,7 +41,7 @@ describe("US-01.3 BFF production composition", () => {
     const source = fs.readFileSync(new URL("./runtime.ts", import.meta.url), "utf8");
     const environmentKeys = [
       ...source.matchAll(
-        /(?:required\(|qualifiedAliasArn\(|process\.env\[)["']([^"']+)["']/g,
+        /(?:required\(|requiredParameter\([^,]+,\s*|qualifiedAliasArn\(|process\.env\[)["']([^"']+)["']/g,
       ),
     ].map((match) => match[1]);
 
@@ -49,6 +49,8 @@ describe("US-01.3 BFF production composition", () => {
       new Set([
         "CONTEXT_FUNCTION_ALIAS_ARN",
         "GENERATION_FUNCTION_ALIAS_ARN",
+        "OPERATOR_OIDC_CONFIG_PARAMETER",
+        "OPERATOR_SESSION_SECRET_PARAMETER",
         "REVIEW_CSRF_SECRET_PARAMETER",
       ]),
     );
@@ -56,5 +58,7 @@ describe("US-01.3 BFF production composition", () => {
     expect(source).toContain("WithDecryption: true");
     expect(source).toContain('trustedPublicOriginHeader: "x-review-public-origin"');
     expect(source).not.toContain('required("REVIEW_PUBLIC_ORIGIN")');
+    expect(source).toContain("createCognitoOperatorAuth");
+    expect(source).toContain("createInvokedOperatorContextPort");
   });
 });

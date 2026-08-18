@@ -139,7 +139,61 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
   expect(resultRendering.width).toBeGreaterThanOrEqual(470);
 });
 
-test("the operator console keeps its 1024px working layout", async ({ page }) => {
+test("the operator console requires an authenticated BFF session", async ({
+  page,
+}) => {
+  await page.goto("/console");
+
+  await expect(
+    page.getByRole("heading", { name: "Sign in to Console" }),
+  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveAttribute(
+    "href",
+    "/auth/login?returnTo=%2Fconsole",
+  );
+  await expect(page.getByRole("navigation", { name: "Console" })).toHaveCount(
+    0,
+  );
+});
+
+test("the operator console renders only its BFF-granted 1024px scope", async ({
+  page,
+}) => {
+  await page.route("**/api/v1/console/session", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        status: "authorized",
+        operator: {
+          id: "00000000-0000-4000-8000-000000000301",
+          email: "owner@example.com",
+        },
+        platformGrants: [
+          {
+            roleKey: "platform_admin",
+            capabilities: ["console:read", "platform:admin"],
+          },
+        ],
+        tenantGrants: [
+          {
+            tenantId: "00000000-0000-4000-8000-000000000101",
+            tenantSlug: "speicher-neun",
+            tenantName: "Speicher Neun",
+            roleKey: "tenant_admin",
+            capabilities: ["console:read", "tenant:configure"],
+            locations: [
+              {
+                locationId: "00000000-0000-4000-8000-000000000102",
+                locationSlug: "hafencity",
+                locationName: "Speicher Neun · HafenCity",
+                status: "active",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+  });
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/console");
 
@@ -148,8 +202,9 @@ test("the operator console keeps its 1024px working layout", async ({ page }) =>
   ).toBeVisible();
   const scopeBar = page.getByRole("banner");
   await expect(scopeBar).toContainText("Platform");
-  await expect(scopeBar).toContainText("Tenant");
-  await expect(scopeBar).toContainText("Location");
+  await expect(scopeBar).toContainText("Speicher Neun");
+  await expect(scopeBar).toContainText("owner@example.com");
+  await expect(page.getByText("Speicher Neun · HafenCity")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
 
   const rendering = await page.evaluate(() => {

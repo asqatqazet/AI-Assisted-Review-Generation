@@ -24,4 +24,12 @@ describe("US-01.3 Context production composition", () => {
     expect(source).not.toMatch(/required\(["'](?:DATABASE_URL|.*KEY_B64)["']/);
     expect(source).not.toContain("serve(");
   });
+
+  it("composes Operator Access through the control-plane database entry point", () => {
+    const source = fs.readFileSync(new URL("./runtime.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("createPostgresOperatorAccessStore");
+    expect(source).toContain("operatorService");
+    expect(source).toContain("resolveAccess");
+  });
 });

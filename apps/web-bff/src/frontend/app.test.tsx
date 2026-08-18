@@ -95,14 +95,46 @@ describe("reviewer application routes", () => {
   it("loads the Operator Console only for a Console route", async () => {
     render(
       <MemoryRouter initialEntries={["/console"]}>
-        <ReviewerApplication />
+        <ReviewerApplication
+          consoleClient={{
+            readSession: async () => ({
+              status: "authorized",
+              operator: {
+                id: "00000000-0000-4000-8000-000000000301",
+                email: "owner@example.com",
+              },
+              platformGrants: [],
+              tenantGrants: [
+                {
+                  tenantId: "00000000-0000-4000-8000-000000000101",
+                  tenantSlug: "speicher-neun",
+                  tenantName: "Speicher Neun",
+                  roleKey: "tenant_admin",
+                  capabilities: ["console:read", "tenant:configure"],
+                  locations: [
+                    {
+                      locationId: "00000000-0000-4000-8000-000000000102",
+                      locationSlug: "hafencity",
+                      locationName: "Speicher Neun · HafenCity",
+                      status: "active",
+                    },
+                  ],
+                },
+              ],
+            }),
+            logout: async () => undefined,
+          }}
+        />
       </MemoryRouter>,
     );
 
     expect(
       await screen.findByRole("heading", { name: "Overview" }),
     ).toBeVisible();
-    expect(screen.getByText("No operating data loaded")).toBeVisible();
+    expect(screen.getByText("owner@example.com")).toBeVisible();
+    expect(screen.getAllByText("Speicher Neun")).toHaveLength(2);
+    expect(screen.getByText("Speicher Neun · HafenCity")).toBeVisible();
+    expect(screen.queryByText("No operating data loaded")).not.toBeInTheDocument();
   });
 
   it("renders the prepared business and rating question on the Start route", async () => {

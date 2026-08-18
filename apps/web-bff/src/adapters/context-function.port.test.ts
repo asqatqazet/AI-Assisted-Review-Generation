@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   createInvokedContextPort,
+  createInvokedOperatorContextPort,
   createInvokedReviewerGenerationContextPort,
 } from "./context-function.port.js";
 
@@ -43,6 +44,33 @@ describe("invoked Context port", () => {
         tableRef: "Chair-2",
         browserCapability: "existing-browser-capability-123",
       },
+    });
+  });
+
+  it("resolves Operator Access without accepting a browser-selected role or Tenant", async () => {
+    let received: unknown;
+    const port = createInvokedOperatorContextPort({
+      invoke: async (request) => {
+        received = request;
+        return {
+          operation: "resolve-operator-access",
+          result: { status: "unauthorized" },
+        };
+      },
+    });
+    const identity = {
+      issuer:
+        "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_pool",
+      subject: "cognito-subject-123",
+      email: "owner@example.com",
+    };
+
+    await expect(port.resolveAccess(identity)).resolves.toEqual({
+      status: "unauthorized",
+    });
+    expect(received).toEqual({
+      operation: "resolve-operator-access",
+      input: { identity },
     });
   });
 });
