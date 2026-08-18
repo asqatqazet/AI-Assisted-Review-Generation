@@ -38,6 +38,40 @@ const destinations: EntryChallengeProjectionDto["context"]["destinations"] = [
 ];
 
 describe("reviewer application routes", () => {
+  it("offers a fresh unaided copy path without revealing why an Entry is unavailable", async () => {
+    const user = userEvent.setup();
+    const copied: string[] = [];
+    render(
+      <MemoryRouter initialEntries={["/start/unavailable-entry"]}>
+        <ReviewerApplication
+          entryChallengeClient={{
+            read: async () => {
+              throw new Error("ENTRY_UNAVAILABLE");
+            },
+            start: async () => {
+              throw new Error("must not start");
+            },
+          }}
+          copyText={async (text) => {
+            copied.push(text);
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Review link unavailable" }),
+    ).toBeVisible();
+    expect(screen.getByText(/could not be opened/i)).toBeVisible();
+    const manual = screen.getByRole("textbox", {
+      name: "Write your review yourself",
+    });
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    await user.type(manual, "My own review.");
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+    expect(copied).toEqual(["My own review."]);
+  });
+
   it("shows an accessible loading projection while a clean Start route is prepared", () => {
     render(
       <MemoryRouter initialEntries={["/start/challenge-demo"]}>
