@@ -153,7 +153,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         id, slug, name, locale, monthly_budget_micros, policy
       ) VALUES (
         '${tenantId}', 'tenant-${tenantId}', 'Apex Dental', 'en-GB', 0,
-        '{"maxActiveGenerations":1,"minimumFactSelections":2}'::jsonb
+        '{"maxActiveGenerations":1,"minimumFactSelections":2,"maximumCustomerAssertionChars":80}'::jsonb
       );
       INSERT INTO locations (id, tenant_id, slug, name)
       VALUES ('${locationId}', '${tenantId}', 'location-${locationId}', 'Central Clinic');
@@ -248,6 +248,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         browserCapabilityHash,
         idempotencyKey: "request-a",
         factOptionIds: [secondFactOptionId, factOptionId],
+        customerAssertion: "The reception was calm.",
         reviewFormatVersionId,
       };
       const first = await store.prepare(input);
@@ -282,6 +283,16 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
               semanticId: factOptionId,
               proposition: "The team was attentive.",
               source: { kind: "fact-option", factOptionId },
+            },
+            {
+              reviewSessionId,
+              proposition: "The reception was calm.",
+              source: {
+                kind: "reviewer-text",
+                start: 0,
+                end: 23,
+                quotedText: "The reception was calm.",
+              },
             },
           ],
         },
@@ -328,7 +339,12 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         await runSql(
           `SELECT count(*) FROM assertions WHERE tenant_id = '${tenantId}' AND review_session_id = '${reviewSessionId}';`,
         ),
-      ).toBe("2");
+      ).toBe("3");
+      expect(
+        await runSql(
+          `SELECT count(*) FROM source_text_revisions WHERE tenant_id = '${tenantId}' AND review_session_id = '${reviewSessionId}' AND body = 'The reception was calm.';`,
+        ),
+      ).toBe("1");
       expect(
         await runSql(
           `SELECT status::text || '|' || actual_cost_micros::text FROM budget_reservations WHERE permit_jti = '${first.permitJti}';`,

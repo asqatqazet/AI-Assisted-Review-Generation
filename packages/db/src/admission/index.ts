@@ -52,6 +52,7 @@ export interface StoredReviewSessionProjection {
   readonly requirements: {
     readonly minimumFactSelections: number;
     readonly maximumReviewFormatsPerGeneration: 1;
+    readonly maximumCustomerAssertionChars: number;
   };
   readonly factOptions: readonly ReviewSessionFactProjection[];
   readonly reviewFormats: readonly ReviewSessionFormatProjection[];
@@ -70,6 +71,7 @@ export interface ReviewerGenerationAdmissionInput {
   readonly browserCapabilityHash: string;
   readonly idempotencyKey: string;
   readonly factOptionIds: readonly string[];
+  readonly customerAssertion?: string | undefined;
   readonly reviewFormatVersionId: string;
 }
 
@@ -176,6 +178,7 @@ export interface PostgresEntryAdmissionStore {
           readonly requirements: {
             readonly minimumFactSelections: number;
             readonly maximumReviewFormatsPerGeneration: 1;
+            readonly maximumCustomerAssertionChars: number;
           };
           readonly factOptions: readonly ReviewSessionFactProjection[];
           readonly reviewFormats: readonly ReviewSessionFormatProjection[];
@@ -314,6 +317,21 @@ const minimumFactSelections = (policy: unknown): number => {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 20
     ? value
     : 1;
+};
+
+const maximumCustomerAssertionChars = (policy: unknown): number => {
+  if (typeof policy !== "object" || policy === null || Array.isArray(policy)) {
+    return 500;
+  }
+  const value = (policy as Readonly<Record<string, unknown>>)[
+    "maximumCustomerAssertionChars"
+  ];
+  return typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 5_000
+    ? value
+    : 500;
 };
 
 const formatConstraints = (
@@ -562,6 +580,9 @@ export function createPostgresReviewSessionReader({
           requirements: {
             minimumFactSelections: minimumFactSelections(session.tenant_policy),
             maximumReviewFormatsPerGeneration: 1 as const,
+            maximumCustomerAssertionChars: maximumCustomerAssertionChars(
+              session.tenant_policy,
+            ),
           },
           factOptions,
           reviewFormats,
@@ -767,6 +788,9 @@ export function createPostgresEntryAdmissionStore({
             requirements: {
               minimumFactSelections: minimumFactSelections(context.tenant_policy),
               maximumReviewFormatsPerGeneration: 1 as const,
+              maximumCustomerAssertionChars: maximumCustomerAssertionChars(
+                context.tenant_policy,
+              ),
             },
             factOptions,
             reviewFormats,
@@ -932,10 +956,15 @@ export function createPostgresReviewerGenerationAdmissionStore({
 
   return {
     async prepare(input) {
+      const customerAssertion = input.customerAssertion?.trim();
       if (
         input.factOptionIds.length === 0 ||
         input.idempotencyKey.length === 0 ||
-        input.idempotencyKey.length > 128
+        input.idempotencyKey.length > 128 ||
+        (input.customerAssertion !== undefined &&
+          (customerAssertion === undefined ||
+            customerAssertion.length === 0 ||
+            customerAssertion.length > 5_000))
       ) {
         return { status: "rejected" };
       }
@@ -976,7 +1005,10 @@ export function createPostgresReviewerGenerationAdmissionStore({
           session === undefined ||
           !isRating(session.rating) ||
           session.selected_action !== "GENERATE" ||
-          input.factOptionIds.length < minimumFactSelections(session.tenant_policy)
+          input.factOptionIds.length < minimumFactSelections(session.tenant_policy) ||
+          (customerAssertion !== undefined &&
+            customerAssertion.length >
+              maximumCustomerAssertionChars(session.tenant_policy))
         ) {
           return { status: "rejected" } as const;
         }
@@ -984,6 +1016,7 @@ export function createPostgresReviewerGenerationAdmissionStore({
           factOptionIds: [...new Set(input.factOptionIds)],
           reviewFormatVersionId: input.reviewFormatVersionId,
           rating: session.rating,
+          ...(customerAssertion === undefined ? {} : { customerAssertion }),
         };
         if (normalizedRequest.factOptionIds.length !== input.factOptionIds.length) {
           return { status: "rejected" } as const;
@@ -1102,7 +1135,7 @@ export function createPostgresReviewerGenerationAdmissionStore({
           return { status: "rejected" } as const;
         }
 
-        const assertions = facts.map((fact) => ({
+        const factAssertions = facts.map((fact) => ({
           id: randomUUID(),
           version: `${fact.id}@${fact.version}`,
           reviewSessionId: binding.review_session_id,
@@ -1116,6 +1149,35 @@ export function createPostgresReviewerGenerationAdmissionStore({
             factOptionVersion: `${fact.id}@${fact.version}`,
           },
         }));
+        const sourceTextRevisionId =
+          customerAssertion === undefined ? undefined : randomUUID();
+        const reviewerAssertionId =
+          customerAssertion === undefined ? undefined : randomUUID();
+        const assertions = [
+          ...factAssertions,
+          ...(customerAssertion === undefined ||
+          sourceTextRevisionId === undefined ||
+          reviewerAssertionId === undefined
+            ? []
+            : [
+                {
+                  id: reviewerAssertionId,
+                  version: `${reviewerAssertionId}@1`,
+                  reviewSessionId: binding.review_session_id,
+                  semanticId: sourceTextRevisionId,
+                  proposition: customerAssertion,
+                  semanticKind: "experience-fact" as const,
+                  polarity: "neutral" as const,
+                  source: {
+                    kind: "reviewer-text" as const,
+                    sourceRevisionId: sourceTextRevisionId,
+                    start: 0,
+                    end: customerAssertion.length,
+                    quotedText: customerAssertion,
+                  },
+                },
+              ]),
+        ];
         const assertionSetHash = sha256(stableJson(assertions));
         const generationBatchId = randomUUID();
         const generationId = randomUUID();
@@ -1148,7 +1210,31 @@ export function createPostgresReviewerGenerationAdmissionStore({
           assertions,
         };
 
-        for (const [index, assertion] of assertions.entries()) {
+        if (
+          customerAssertion !== undefined &&
+          sourceTextRevisionId !== undefined &&
+          reviewerAssertionId !== undefined
+        ) {
+          await transaction.$executeRaw`
+            INSERT INTO source_text_revisions (
+              id, tenant_id, location_id, review_session_id,
+              revision, body, content_hash, created_at
+            )
+            SELECT
+              ${sourceTextRevisionId}::uuid,
+              ${binding.tenant_id}::uuid,
+              ${binding.location_id}::uuid,
+              ${binding.review_session_id}::uuid,
+              COALESCE(MAX(revision), 0) + 1,
+              ${customerAssertion},
+              ${sha256(customerAssertion)},
+              clock_timestamp()
+            FROM source_text_revisions
+            WHERE tenant_id = ${binding.tenant_id}::uuid
+              AND review_session_id = ${binding.review_session_id}::uuid
+          `;
+        }
+        for (const [index, assertion] of factAssertions.entries()) {
           await transaction.$executeRaw`
             INSERT INTO assertions (
               id, tenant_id, location_id, review_session_id, source,
@@ -1161,6 +1247,30 @@ export function createPostgresReviewerGenerationAdmissionStore({
               'FACT_OPTION',
               ${assertion.proposition},
               ${facts[index]!.id}::uuid,
+              clock_timestamp()
+            )
+          `;
+        }
+        if (
+          customerAssertion !== undefined &&
+          sourceTextRevisionId !== undefined &&
+          reviewerAssertionId !== undefined
+        ) {
+          await transaction.$executeRaw`
+            INSERT INTO assertions (
+              id, tenant_id, location_id, review_session_id, source,
+              proposition, source_text_revision_id,
+              source_span_start, source_span_end, confirmed_at
+            ) VALUES (
+              ${reviewerAssertionId}::uuid,
+              ${binding.tenant_id}::uuid,
+              ${binding.location_id}::uuid,
+              ${binding.review_session_id}::uuid,
+              'SOURCE_TEXT',
+              ${customerAssertion},
+              ${sourceTextRevisionId}::uuid,
+              0,
+              ${customerAssertion.length},
               clock_timestamp()
             )
           `;

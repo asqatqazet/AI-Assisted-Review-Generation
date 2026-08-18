@@ -90,6 +90,7 @@ describe("reviewer entry preparation", () => {
                 requirements: {
                   minimumFactSelections: 1,
                   maximumReviewFormatsPerGeneration: 1,
+                  maximumCustomerAssertionChars: 500,
                 },
                 factOptions: [],
                 reviewFormats: [],
@@ -143,6 +144,7 @@ describe("reviewer entry preparation", () => {
           requirements: {
             minimumFactSelections: 1,
             maximumReviewFormatsPerGeneration: 1,
+            maximumCustomerAssertionChars: 500,
           },
           factOptions: [],
           reviewFormats: [],

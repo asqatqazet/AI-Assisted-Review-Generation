@@ -11,6 +11,7 @@ export interface StartReviewerGenerationInput {
   readonly idempotencyKey: string;
   readonly factOptionIds: readonly string[];
   readonly reviewFormatId: string;
+  readonly customerAssertion?: string | undefined;
 }
 
 export interface GenerationClient {
@@ -104,6 +105,9 @@ export function createHttpGenerationClient(
       const command = ReviewerGenerationCommandDtoSchema.parse({
         factOptionIds: input.factOptionIds,
         reviewFormatId: input.reviewFormatId,
+        ...(input.customerAssertion === undefined
+          ? {}
+          : { customerAssertion: input.customerAssertion }),
       });
       const serializedCommand = JSON.stringify(command);
       const response = await fetchFn(

@@ -5,6 +5,7 @@ import { IdentifierDtoSchema } from "../shared/primitives.js";
 export const ReviewerGenerationCommandDtoSchema = z.strictObject({
   factOptionIds: z.array(IdentifierDtoSchema).min(1),
   reviewFormatId: IdentifierDtoSchema,
+  customerAssertion: z.string().trim().min(1).max(5_000).optional(),
 });
 
 export const ReviewerDraftDtoSchema = z.strictObject({

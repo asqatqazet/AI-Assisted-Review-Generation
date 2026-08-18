@@ -21,6 +21,7 @@ describe("US-01.3 Context Review Session application module", () => {
           requirements: {
             minimumFactSelections: 1,
             maximumReviewFormatsPerGeneration: 1,
+            maximumCustomerAssertionChars: 500,
           },
           factOptions: [],
           reviewFormats: [] as const,
@@ -47,6 +48,7 @@ describe("US-01.3 Context Review Session application module", () => {
       requirements: {
         minimumFactSelections: 1,
         maximumReviewFormatsPerGeneration: 1,
+        maximumCustomerAssertionChars: 500,
       },
       factOptions: [],
       reviewFormats: [],

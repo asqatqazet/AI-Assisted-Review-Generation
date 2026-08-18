@@ -14,6 +14,7 @@ afterEach(cleanup);
 const requirements = {
   minimumFactSelections: 1,
   maximumReviewFormatsPerGeneration: 1,
+  maximumCustomerAssertionChars: 500,
 } as const;
 
 const entryReviewFormats: EntryChallengeProjectionDto["context"]["reviewFormats"] = [
@@ -471,6 +472,10 @@ describe("reviewer application routes", () => {
     await user.click(
       await screen.findByRole("checkbox", { name: "The team was attentive" }),
     );
+    await user.type(
+      screen.getByLabelText("Something else that happened (optional)"),
+      "The reception was calm.",
+    );
     await user.click(screen.getByRole("button", { name: "Choose a format" }));
     await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
     await user.click(screen.getByRole("button", { name: "Write the draft" }));
@@ -485,6 +490,7 @@ describe("reviewer application routes", () => {
         idempotencyKey: "generation-request-a",
         factOptionIds: ["fact-attentive"],
         reviewFormatId: "format-concise-v1",
+        customerAssertion: "The reception was calm.",
       },
     ]);
   });

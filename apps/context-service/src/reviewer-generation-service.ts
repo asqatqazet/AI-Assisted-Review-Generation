@@ -107,6 +107,9 @@ export function createReviewerGenerationService({
         browserCapabilityHash: await hashCapability(input.browserCapability),
         idempotencyKey: input.idempotencyKey,
         factOptionIds: input.command.factOptionIds,
+        ...(input.command.customerAssertion === undefined
+          ? {}
+          : { customerAssertion: input.command.customerAssertion }),
         reviewFormatVersionId: input.command.reviewFormatId,
       });
       if (prepared.status !== "prepared") {

@@ -26,6 +26,28 @@ describe("reviewer Generation stream contract", () => {
     ).toBe(false);
   });
 
+  it("accepts a bounded reviewer-authored assertion without scope authority", () => {
+    expect(
+      ReviewerGenerationCommandDtoSchema.parse({
+        factOptionIds: ["fact-attentive"],
+        reviewFormatId: "format-concise-v1",
+        customerAssertion: "  The reception was calm.  ",
+      }),
+    ).toEqual({
+      factOptionIds: ["fact-attentive"],
+      reviewFormatId: "format-concise-v1",
+      customerAssertion: "The reception was calm.",
+    });
+
+    expect(
+      ReviewerGenerationCommandDtoSchema.safeParse({
+        factOptionIds: ["fact-attentive"],
+        reviewFormatId: "format-concise-v1",
+        customerAssertion: "x".repeat(5_001),
+      }).success,
+    ).toBe(false);
+  });
+
   it("exposes progress without candidate or Draft text", () => {
     expect(
       ReviewerGenerationEventDtoSchema.parse({

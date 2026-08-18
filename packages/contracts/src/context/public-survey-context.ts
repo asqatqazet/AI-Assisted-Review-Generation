@@ -11,6 +11,7 @@ export const PublicSurveyContextDtoSchema = z.strictObject({
   requirements: z.strictObject({
     minimumFactSelections: z.number().int().min(1).max(20),
     maximumReviewFormatsPerGeneration: z.number().int().min(1).max(8),
+    maximumCustomerAssertionChars: z.number().int().min(1).max(5_000),
   }),
   factOptions: z.array(
     z.strictObject({

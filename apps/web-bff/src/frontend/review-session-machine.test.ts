@@ -15,6 +15,7 @@ const projection: ReviewSessionProjectionDto = {
   requirements: {
     minimumFactSelections: 1,
     maximumReviewFormatsPerGeneration: 1,
+    maximumCustomerAssertionChars: 500,
   },
   rating: 4,
   action: "generate",
@@ -57,6 +58,7 @@ describe("Review Session transition table", () => {
           requirements: {
             minimumFactSelections: 2,
             maximumReviewFormatsPerGeneration: 1,
+            maximumCustomerAssertionChars: 500,
           },
           factOptions: [
             ...projection.factOptions,
@@ -128,6 +130,36 @@ describe("Review Session transition table", () => {
     expect(selectedFirst).toMatchObject({
       selectedFactOptionIds: ["fact-friendly", "fact-attentive"],
     });
+  });
+
+  it("retains only a reviewer assertion within the backend-projected limit", () => {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      {
+        type: "REVIEW_SESSION_LOADED",
+        projection: {
+          ...projection,
+          requirements: {
+            ...projection.requirements,
+            maximumCustomerAssertionChars: 24,
+          },
+        },
+      },
+    );
+    const asserted = transitionReviewSession(loaded, {
+      type: "CUSTOMER_ASSERTION_CHANGED",
+      value: "The reception was calm.",
+    });
+
+    expect(asserted).toMatchObject({
+      customerAssertion: "The reception was calm.",
+    });
+    expect(
+      transitionReviewSession(asserted, {
+        type: "CUSTOMER_ASSERTION_CHANGED",
+        value: "The reception was calm and especially welcoming.",
+      }),
+    ).toBe(asserted);
   });
 
   it("freezes the selected facts and Review Format for Generation", () => {

@@ -103,6 +103,7 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
         requirements: {
           minimumFactSelections: 1,
           maximumReviewFormatsPerGeneration: 1,
+          maximumCustomerAssertionChars: 500,
         },
         factOptions: [
           {
@@ -119,7 +120,7 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
             description: "One short paragraph.",
             sample: "The team was attentive.",
             targetPlatform: "google",
-            constraints: { minChars: 1, maxChars: 350 },
+          constraints: { minChars: 20, maxChars: 350 },
             availableCommands: ["generate"],
           },
         ],

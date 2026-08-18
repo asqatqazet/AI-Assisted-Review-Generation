@@ -23,6 +23,7 @@ describe("US-01.3 Review Session BFF projection", () => {
             requirements: {
               minimumFactSelections: 1,
               maximumReviewFormatsPerGeneration: 1,
+              maximumCustomerAssertionChars: 500,
             },
             factOptions: [
               {

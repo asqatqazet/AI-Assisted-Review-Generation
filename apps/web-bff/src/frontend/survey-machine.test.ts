@@ -11,7 +11,8 @@ const context: PublicSurveyContextDto = {
   ratingRequired: true,
   requirements: {
     minimumFactSelections: 1,
-    maximumReviewFormatsPerGeneration: 1,
+      maximumReviewFormatsPerGeneration: 1,
+      maximumCustomerAssertionChars: 500,
   },
   factOptions: [],
   reviewFormats: [],

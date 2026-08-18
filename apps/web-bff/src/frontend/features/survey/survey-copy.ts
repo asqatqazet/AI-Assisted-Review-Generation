@@ -30,6 +30,8 @@ export interface SurveyCopy {
   readonly factsEyebrow: string;
   readonly factsHeading: string;
   readonly factsLead: string;
+  readonly optionalFactLabel: string;
+  readonly optionalFactHelp: (maximum: number) => string;
   readonly selectionCount: (selected: number, rating: number) => string;
   readonly chooseFormat: string;
   readonly minimumFacts: (minimum: number) => string;
@@ -125,6 +127,9 @@ const english: SurveyCopy = {
   factsHeading: "What stood out?",
   factsLead:
     "Pick everything that actually happened. The order you pick them is the order they are written in.",
+  optionalFactLabel: "Something else that happened (optional)",
+  optionalFactHelp: (maximum) =>
+    `Write only a fact you personally assert is true. Maximum ${maximum} characters.`,
   selectionCount: (selected, rating) =>
     `${selected} selected · rating ${rating} of 5`,
   chooseFormat: "Choose a format",
@@ -232,6 +237,9 @@ const german: SurveyCopy = {
   factsHeading: "Was ist Ihnen aufgefallen?",
   factsLead:
     "Wählen Sie alles, was tatsächlich passiert ist. Die Reihenfolge Ihrer Auswahl ist die Reihenfolge im Text.",
+  optionalFactLabel: "Etwas anderes, das passiert ist (optional)",
+  optionalFactHelp: (maximum) =>
+    `Schreiben Sie nur einen Fakt, dessen Wahrheit Sie selbst bestätigen. Maximal ${maximum} Zeichen.`,
   selectionCount: (selected, rating) =>
     `${selected} ausgewählt · Bewertung ${rating} von 5`,
   chooseFormat: "Format wählen",

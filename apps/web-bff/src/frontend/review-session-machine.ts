@@ -18,12 +18,14 @@ export type ReviewSessionState =
       readonly reviewSessionHandle: string;
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
+      readonly customerAssertion: string;
     }
   | {
       readonly value: "format";
       readonly reviewSessionHandle: string;
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
+      readonly customerAssertion: string;
       readonly selectedReviewFormatId: string | null;
     }
   | {
@@ -31,6 +33,7 @@ export type ReviewSessionState =
       readonly reviewSessionHandle: string;
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
+      readonly customerAssertion: string;
       readonly selectedReviewFormatId: string;
       readonly idempotencyKey: string;
     }
@@ -39,6 +42,7 @@ export type ReviewSessionState =
       readonly reviewSessionHandle: string;
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
+      readonly customerAssertion: string;
       readonly selectedReviewFormatId: string;
       readonly draft: ReviewerDraft;
     }
@@ -47,6 +51,7 @@ export type ReviewSessionState =
       readonly reviewSessionHandle: string;
       readonly projection: ReviewSessionProjectionDto;
       readonly selectedFactOptionIds: readonly string[];
+      readonly customerAssertion: string;
       readonly selectedReviewFormatId: string;
       readonly code: ReviewerGenerationRejectionCodeDto;
       readonly retryable: boolean;
@@ -61,6 +66,7 @@ export type ReviewSessionEvent =
       readonly type: "FACT_OPTION_TOGGLED";
       readonly factOptionId: string;
     }
+  | { readonly type: "CUSTOMER_ASSERTION_CHANGED"; readonly value: string }
   | { readonly type: "CONTINUE_REQUESTED" }
   | {
       readonly type: "REVIEW_FORMAT_SELECTED";
@@ -104,7 +110,15 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: event.projection,
       selectedFactOptionIds: [],
+      customerAssertion: "",
     };
+  }
+
+  if (state.value === "facts" && event.type === "CUSTOMER_ASSERTION_CHANGED") {
+    return event.value.length <=
+      state.projection.requirements.maximumCustomerAssertionChars
+      ? { ...state, customerAssertion: event.value }
+      : state;
   }
 
   if (state.value === "facts" && event.type === "FACT_OPTION_TOGGLED") {
@@ -138,6 +152,7 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
       selectedReviewFormatId: null,
     };
   }
@@ -163,6 +178,7 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
       selectedReviewFormatId: state.selectedReviewFormatId,
       idempotencyKey: event.idempotencyKey,
     };
@@ -177,6 +193,7 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
       selectedReviewFormatId: state.selectedReviewFormatId,
       draft: event.draft,
     };
@@ -188,6 +205,7 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
       selectedReviewFormatId: state.selectedReviewFormatId,
       code: event.code,
       retryable: event.retryable,
@@ -204,6 +222,7 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
       selectedReviewFormatId: state.selectedReviewFormatId,
       idempotencyKey: event.idempotencyKey,
     };
@@ -218,6 +237,7 @@ export function transitionReviewSession(
       reviewSessionHandle: state.reviewSessionHandle,
       projection: state.projection,
       selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
     };
   }
 

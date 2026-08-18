@@ -68,7 +68,7 @@ VALUES (
   'de-DE',
   'open-qr',
   0,
-  '{"maxActiveGenerations":1,"minimumFactSelections":2}'::jsonb
+  '{"maxActiveGenerations":1,"minimumFactSelections":2,"maximumCustomerAssertionChars":500}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET
   slug = EXCLUDED.slug,

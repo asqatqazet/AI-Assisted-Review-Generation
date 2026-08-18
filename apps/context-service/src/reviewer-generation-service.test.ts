@@ -101,6 +101,7 @@ describe("US-03.2 Context reviewer Generation service", () => {
             browserCapabilityHash: "sha256:browser-capability-123456789",
             idempotencyKey: "request-a",
             factOptionIds: ["fact-a"],
+            customerAssertion: "The reception was calm.",
             reviewFormatVersionId: "format-a",
           });
           return {
@@ -180,7 +181,11 @@ describe("US-03.2 Context reviewer Generation service", () => {
         reviewSessionHandle: "review-session-route-a",
         browserCapability: "browser-capability-123456789",
         idempotencyKey: "request-a",
-        command: { factOptionIds: ["fact-a"], reviewFormatId: "format-a" },
+        command: {
+          factOptionIds: ["fact-a"],
+          reviewFormatId: "format-a",
+          customerAssertion: "The reception was calm.",
+        },
       }),
     ).resolves.toEqual({
       status: "prepared",

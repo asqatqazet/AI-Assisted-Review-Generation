@@ -402,6 +402,9 @@ function ReviewRoute({
             idempotencyKey: state.idempotencyKey,
             factOptionIds: state.selectedFactOptionIds,
             reviewFormatId: state.selectedReviewFormatId,
+            ...(state.customerAssertion.trim().length === 0
+              ? {}
+              : { customerAssertion: state.customerAssertion.trim() }),
           },
           abortController.signal,
         )) {
@@ -512,6 +515,38 @@ function ReviewRoute({
               </div>
             </fieldset>
           ))}
+          <div className={styles.factAssertionField}>
+            <label className={styles.fieldLabel} htmlFor="customer-assertion">
+              {copy.optionalFactLabel}
+            </label>
+            <textarea
+              className={`${styles.reviewTextarea} ${styles.factAssertionTextarea}`}
+              id="customer-assertion"
+              value={state.customerAssertion}
+              maxLength={
+                state.projection.requirements.maximumCustomerAssertionChars
+              }
+              onChange={(event) =>
+                setState((current) =>
+                  transitionReviewSession(current, {
+                    type: "CUSTOMER_ASSERTION_CHANGED",
+                    value: event.target.value,
+                  }),
+                )
+              }
+            />
+            <p className={styles.characterCount}>
+              {copy.charactersAgainstLimit(
+                state.customerAssertion.length,
+                state.projection.requirements.maximumCustomerAssertionChars,
+              )}
+            </p>
+            <p className={styles.pathHint}>
+              {copy.optionalFactHelp(
+                state.projection.requirements.maximumCustomerAssertionChars,
+              )}
+            </p>
+          </div>
           <p className={styles.selectionCount}>
             {copy.selectionCount(
               state.selectedFactOptionIds.length,

@@ -110,6 +110,7 @@ describeDatabase("US-01.3 PostgreSQL open-QR entry admission", () => {
           requirements: {
             minimumFactSelections: 1,
             maximumReviewFormatsPerGeneration: 1,
+            maximumCustomerAssertionChars: 500,
           },
           factOptions: [{ id: factOptionId }],
           reviewFormats: [{ id: reviewFormatVersionId }],

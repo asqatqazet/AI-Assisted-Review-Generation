@@ -416,6 +416,16 @@
   border-radius: var(--radius-xs);
 }
 
+.factAssertionField {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-card);
+}
+
+.factAssertionTextarea {
+  min-height: 88px;
+}
+
 .resultHeader {
   display: flex;
   align-items: flex-start;

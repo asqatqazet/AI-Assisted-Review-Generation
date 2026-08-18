@@ -20,6 +20,8 @@ declare module "*.module.css" {
     readonly factChoices: string;
     readonly factGroup: string;
     readonly factGroupTitle: string;
+    readonly factAssertionField: string;
+    readonly factAssertionTextarea: string;
     readonly header: string;
     readonly headerNote: string;
     readonly fieldLabel: string;
