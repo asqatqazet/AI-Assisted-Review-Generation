@@ -6,10 +6,29 @@ SELECT set_config('review.operator_email', :'operator_email', true);
 SELECT set_config('review.operator_issuer', :'operator_issuer', true);
 SELECT set_config('review.operator_subject', :'operator_subject', true);
 
+-- Console capabilities are the authority for role, navigation and every scoped
+-- request. Adding a role is a data change; see packages/domain/src/console.
 INSERT INTO operator_role_definitions (key, capabilities, status)
 VALUES
-  ('platform_admin', ARRAY['console:read', 'platform:admin', 'tenant:configure'], 'ACTIVE'),
-  ('tenant_admin', ARRAY['console:read', 'tenant:configure'], 'ACTIVE')
+  (
+    'platform_admin',
+    ARRAY[
+      'console:read',
+      'platform:admin',
+      'provider:manage',
+      'tenant:configure',
+      'tenant:switch',
+      'analytics:read',
+      'ai:operate'
+    ],
+    'ACTIVE'
+  ),
+  (
+    'tenant_admin',
+    ARRAY['console:read', 'tenant:configure', 'analytics:read'],
+    'ACTIVE'
+  ),
+  ('tenant_viewer', ARRAY['console:read', 'analytics:read'], 'ACTIVE')
 ON CONFLICT (key) DO UPDATE SET
   capabilities = EXCLUDED.capabilities,
   status = EXCLUDED.status;

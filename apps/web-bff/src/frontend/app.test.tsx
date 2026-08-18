@@ -8,6 +8,11 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ReviewerApplication } from "./app.js";
+import {
+  createFakeConsoleClient,
+  emptyOverview,
+  testBootstrap,
+} from "./console/console-client.test-support.js";
 
 afterEach(cleanup);
 
@@ -96,34 +101,9 @@ describe("reviewer application routes", () => {
     render(
       <MemoryRouter initialEntries={["/console"]}>
         <ReviewerApplication
-          consoleClient={{
-            readSession: async () => ({
-              status: "authorized",
-              operator: {
-                id: "00000000-0000-4000-8000-000000000301",
-                email: "owner@example.com",
-              },
-              platformGrants: [],
-              tenantGrants: [
-                {
-                  tenantId: "00000000-0000-4000-8000-000000000101",
-                  tenantSlug: "speicher-neun",
-                  tenantName: "Speicher Neun",
-                  roleKey: "tenant_admin",
-                  capabilities: ["console:read", "tenant:configure"],
-                  locations: [
-                    {
-                      locationId: "00000000-0000-4000-8000-000000000102",
-                      locationSlug: "hafencity",
-                      locationName: "Speicher Neun · HafenCity",
-                      status: "active",
-                    },
-                  ],
-                },
-              ],
-            }),
-            logout: async () => undefined,
-          }}
+          consoleClient={createFakeConsoleClient({
+            views: { bootstrap: testBootstrap, overview: emptyOverview },
+          })}
         />
       </MemoryRouter>,
     );
@@ -132,9 +112,7 @@ describe("reviewer application routes", () => {
       await screen.findByRole("heading", { name: "Overview" }),
     ).toBeVisible();
     expect(screen.getByText("owner@example.com")).toBeVisible();
-    expect(screen.getAllByText("Speicher Neun")).toHaveLength(2);
-    expect(screen.getByText("Speicher Neun · HafenCity")).toBeVisible();
-    expect(screen.queryByText("No operating data loaded")).not.toBeInTheDocument();
+    expect(screen.getByText("Speicher Neun")).toBeVisible();
   });
 
   it("renders the prepared business and rating question on the Start route", async () => {

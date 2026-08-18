@@ -3,6 +3,7 @@ import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 
 import { createAwsLambdaJsonInvoker } from "./adapters/lambda-json-invoker.js";
 import {
+  createInvokedConsolePort,
   createInvokedContextPort,
   createInvokedOperatorContextPort,
   createInvokedReviewerDispositionContextPort,
@@ -122,6 +123,7 @@ export async function createWebBffRuntime() {
       sessionSecret: operatorSessionSecret,
     }),
     operatorContextPort: createInvokedOperatorContextPort(contextInvoker),
+    consolePort: createInvokedConsolePort(contextInvoker),
     contextPort: createInvokedContextPort(contextInvoker),
     reviewerGenerationContextPort:
       createInvokedReviewerGenerationContextPort(contextInvoker),

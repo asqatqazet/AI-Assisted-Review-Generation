@@ -23,7 +23,12 @@ import {
   SettleGenerationInvocationDtoSchema,
   SettleGenerationInvocationResultDtoSchema,
 } from "@review/contracts/context";
+import {
+  ConsoleRequestInvocationDtoSchema,
+  ConsoleRequestInvocationResultDtoSchema,
+} from "@review/contracts/console";
 
+import type { ConsolePort } from "../ports/console.port.js";
 import type { ContextPort } from "../ports/context.port.js";
 import type { OperatorContextPort } from "../ports/operator-context.port.js";
 import type { ReviewerGenerationContextPort } from "../ports/reviewer-generation.port.js";
@@ -44,6 +49,23 @@ export function createInvokedOperatorContextPort(
         input: { identity },
       });
       const response = ResolveOperatorAccessInvocationResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return response.result;
+    },
+  };
+}
+
+export function createInvokedConsolePort(
+  invoker: ContextFunctionInvoker,
+): ConsolePort {
+  return {
+    async request(input) {
+      const request = ConsoleRequestInvocationDtoSchema.parse({
+        operation: "console-request",
+        input,
+      });
+      const response = ConsoleRequestInvocationResultDtoSchema.parse(
         await invoker.invoke(request),
       );
       return response.result;

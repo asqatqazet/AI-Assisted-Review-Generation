@@ -9,6 +9,7 @@
   "exports": {
     "./shared": "./src/shared/index.ts",
     "./context": "./src/context/index.ts",
-    "./generation": "./src/generation/index.ts"
+    "./generation": "./src/generation/index.ts",
+    "./console": "./src/console/index.ts"
   }
 }

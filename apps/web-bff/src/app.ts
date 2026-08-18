@@ -20,8 +20,10 @@ import type {
   ReviewerDispositionContextPort,
   ReviewerDispositionExecutionPort,
 } from "./ports/reviewer-disposition.port.js";
+import type { ConsolePort } from "./ports/console.port.js";
 import type { OperatorAuthPort } from "./ports/operator-auth.port.js";
 import type { OperatorContextPort } from "./ports/operator-context.port.js";
+import { registerConsoleRoutes } from "./console-routes.js";
 import { createReviewerGenerationCoordinator } from "./reviewer-generation.js";
 import {
   type CsrfProtector,
@@ -49,6 +51,7 @@ export interface WebBffOptions {
     | undefined;
   readonly operatorAuth?: OperatorAuthPort | undefined;
   readonly operatorContextPort?: OperatorContextPort | undefined;
+  readonly consolePort?: ConsolePort | undefined;
 }
 
 const encoder = new TextEncoder();
@@ -118,6 +121,13 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   };
 
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
+
+  registerConsoleRoutes(app, {
+    operatorAuth: options.operatorAuth,
+    consolePort: options.consolePort,
+    errorBody,
+    expectedPublicOrigin,
+  });
 
   app.get("/auth/login", async (c) => {
     if (options.operatorAuth === undefined) {
