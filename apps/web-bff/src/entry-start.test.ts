@@ -135,6 +135,7 @@ describe("reviewer entry admission", () => {
     const app = createWebBffApp({
       contextPort,
       publicOrigin: "http://localhost",
+      newRequestId: () => "request-a",
       csrfProtector: {
         issue: async () => "issued-token-with-at-least-thirty-two-characters",
         verify: async () => false,
@@ -169,6 +170,8 @@ describe("reviewer entry admission", () => {
       body: {
         code: "ENTRY_UNAVAILABLE",
         message: "This review link is unavailable.",
+        retryable: false,
+        requestId: "request-a",
       },
       advanceCalls: 0,
     });

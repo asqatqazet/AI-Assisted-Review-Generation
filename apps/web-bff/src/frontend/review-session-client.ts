@@ -3,6 +3,8 @@ import {
   type ReviewSessionProjectionDto,
 } from "@review/contracts/context";
 
+import { readBffClientError } from "./bff-error.js";
+
 export interface ReviewSessionClient {
   read(
     reviewSessionHandle: string,
@@ -23,7 +25,7 @@ export function createHttpReviewSessionClient(): ReviewSessionClient {
         },
       );
       if (!response.ok) {
-        throw new Error("REVIEW_SESSION_UNAVAILABLE");
+        throw await readBffClientError(response);
       }
       return ReviewSessionProjectionDtoSchema.parse(await response.json());
     },

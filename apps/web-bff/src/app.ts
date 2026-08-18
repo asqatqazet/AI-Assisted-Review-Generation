@@ -4,6 +4,7 @@ import {
   StartEntryRequestDtoSchema,
 } from "@review/contracts/context";
 import { ReviewerGenerationCommandDtoSchema } from "@review/contracts/generation";
+import { BffErrorDtoSchema } from "@review/contracts/shared";
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
@@ -25,6 +26,7 @@ export interface WebBffOptions {
   readonly csrfProtector?: CsrfProtector | undefined;
   readonly publicOrigin?: string | undefined;
   readonly trustedPublicOriginHeader?: string | undefined;
+  readonly newRequestId?: (() => string) | undefined;
   readonly reviewerGenerationContextPort?:
     | ReviewerGenerationContextPort
     | undefined;
@@ -60,6 +62,18 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       ? undefined
       : new URL(options.publicOrigin).origin;
   const trustedPublicOriginHeader = options.trustedPublicOriginHeader;
+  const newRequestId = options.newRequestId ?? (() => globalThis.crypto.randomUUID());
+  const errorBody = (
+    code: string,
+    message: string,
+    retryable: boolean,
+  ) =>
+    BffErrorDtoSchema.parse({
+      code,
+      message,
+      retryable,
+      requestId: newRequestId(),
+    });
   const reviewerGeneration =
     options.reviewerGenerationContextPort === undefined ||
     options.reviewerGenerationExecutionPort === undefined
@@ -109,10 +123,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
     if (preparation.status !== "prepared") {
       return c.json(
-        {
-          code: "ENTRY_UNAVAILABLE",
-          message: "This review link is unavailable.",
-        },
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -135,7 +150,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
     ) {
       return c.json(
-        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -148,7 +167,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
     if (entry.status !== "ready") {
       return c.json(
-        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -181,7 +204,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
     ) {
       return c.json(
-        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -222,7 +249,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       }))
     ) {
       return c.json(
-        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -236,7 +267,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
     if (result.status !== "admitted") {
       return c.json(
-        { code: "ENTRY_UNAVAILABLE", message: "This review link is unavailable." },
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -252,7 +287,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability)
     ) {
       return c.json(
-        { code: "REVIEW_SESSION_UNAVAILABLE", message: "This review is unavailable." },
+        errorBody(
+          "REVIEW_SESSION_UNAVAILABLE",
+          "This review is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -263,7 +302,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     });
     if (result.status !== "ready") {
       return c.json(
-        { code: "REVIEW_SESSION_UNAVAILABLE", message: "This review is unavailable." },
+        errorBody(
+          "REVIEW_SESSION_UNAVAILABLE",
+          "This review is unavailable.",
+          false,
+        ),
         404,
       );
     }
@@ -295,7 +338,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
         claimedBodyHash !== (await sha256Hex(rawBody))
       ) {
         return c.json(
-          { code: "GENERATION_UNAVAILABLE", message: "Assistance is unavailable." },
+          errorBody(
+            "GENERATION_UNAVAILABLE",
+            "Assistance is unavailable.",
+            true,
+          ),
           404,
         );
       }
@@ -309,7 +356,11 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       const command = ReviewerGenerationCommandDtoSchema.safeParse(parsedBody);
       if (!command.success) {
         return c.json(
-          { code: "GENERATION_UNAVAILABLE", message: "Assistance is unavailable." },
+          errorBody(
+            "GENERATION_UNAVAILABLE",
+            "Assistance is unavailable.",
+            false,
+          ),
           404,
         );
       }
@@ -333,6 +384,24 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       response.headers.set("Cache-Control", "private, no-store");
       return response;
     },
+  );
+
+  app.notFound((c) =>
+    c.json(
+      errorBody("NOT_FOUND", "This resource is unavailable.", false),
+      404,
+    ),
+  );
+
+  app.onError((_error, c) =>
+    c.json(
+      errorBody(
+        "INTERNAL_ERROR",
+        "The request could not be completed.",
+        true,
+      ),
+      500,
+    ),
   );
 
   return app;

@@ -4,6 +4,7 @@ import {
 } from "@review/contracts/context";
 
 import { sendPayloadBoundPost } from "./payload-bound-request.js";
+import { readBffClientError } from "./bff-error.js";
 
 export interface StartEntryInput {
   readonly entryChallengeHandle: string;
@@ -38,7 +39,7 @@ export function createHttpEntryChallengeClient(
       );
 
       if (!response.ok) {
-        throw new Error("ENTRY_UNAVAILABLE");
+        throw await readBffClientError(response);
       }
 
       return EntryChallengeProjectionDtoSchema.parse(await response.json());
@@ -61,7 +62,7 @@ export function createHttpEntryChallengeClient(
       );
 
       if (!response.ok) {
-        throw new Error("ENTRY_UNAVAILABLE");
+        throw await readBffClientError(response);
       }
       const redirectUrl = new URL(response.url);
       if (!/^\/review\/[A-Za-z0-9_-]{1,200}$/.test(redirectUrl.pathname)) {

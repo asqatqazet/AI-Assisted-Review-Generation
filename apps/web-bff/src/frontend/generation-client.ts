@@ -4,6 +4,8 @@ import {
   type ReviewerGenerationEventDto,
 } from "@review/contracts/generation";
 
+import { readBffClientError } from "./bff-error.js";
+
 export interface StartReviewerGenerationInput {
   readonly reviewSessionHandle: string;
   readonly idempotencyKey: string;
@@ -125,6 +127,9 @@ export function createHttpGenerationClient(
         throw new GenerationTransportError("EDGE_THROTTLED", true);
       }
       if (!response.ok || response.body === null) {
+        if (!response.ok) {
+          throw await readBffClientError(response);
+        }
         throw new GenerationTransportError("GENERATION_UNAVAILABLE", true);
       }
 
