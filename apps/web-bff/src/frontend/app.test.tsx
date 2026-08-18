@@ -633,6 +633,7 @@ describe("reviewer application routes", () => {
   it("copies only the terminal Draft and keeps a manual selection fallback", async () => {
     const user = userEvent.setup();
     const copied: string[] = [];
+    const dispositions: unknown[] = [];
     render(
       <MemoryRouter initialEntries={["/review/review-session-demo"]}>
         <ReviewerApplication
@@ -677,6 +678,17 @@ describe("reviewer application routes", () => {
               } as const;
             },
           }}
+          reviewerDispositionClient={{
+            record: async (input) => {
+              dispositions.push(input);
+              return {
+                status: "recorded",
+                kind: "edited",
+                revision: 2,
+                normalizedEditDistance: 0.21,
+              };
+            },
+          }}
           copyText={async (text) => {
             copied.push(text);
           }}
@@ -700,6 +712,17 @@ describe("reviewer application routes", () => {
     await user.click(screen.getByRole("button", { name: "Copy" }));
 
     expect(copied).toEqual(["The team was exceptionally attentive."]);
+    await waitFor(() =>
+      expect(dispositions).toEqual([
+        {
+          reviewSessionHandle: "review-session-demo",
+          idempotencyKey: "generation-request-a",
+          draftId: "draft-a",
+          generationId: "generation-a",
+          finalText: "The team was exceptionally attentive.",
+        },
+      ]),
+    );
     expect(
       await screen.findByRole("heading", { name: "Your review is ready" }),
     ).toBeVisible();

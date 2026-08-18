@@ -5,6 +5,7 @@ import {
   ReviewerGenerationCommandDtoSchema,
   ReviewerGenerationRejectionCodeDtoSchema,
 } from "../generation/reviewer-stream.js";
+import { ReviewerDispositionScopeDtoSchema } from "../generation/reviewer-disposition.js";
 import { IdentifierDtoSchema } from "../shared/primitives.js";
 import { PublicSurveyContextDtoSchema } from "./public-survey-context.js";
 import { ReviewSessionProjectionDtoSchema } from "./review-session.js";
@@ -51,6 +52,18 @@ export const ReadReviewSessionInvocationDtoSchema = z.strictObject({
   input: z.strictObject({
     reviewSessionHandle: IdentifierDtoSchema,
     browserCapability: BrowserCapabilityDtoSchema,
+  }),
+});
+
+export const PrepareReviewerDispositionInvocationDtoSchema = z.strictObject({
+  operation: z.literal("prepare-reviewer-disposition"),
+  input: z.strictObject({
+    reviewSessionHandle: IdentifierDtoSchema,
+    browserCapability: BrowserCapabilityDtoSchema,
+    idempotencyKey: z.string().min(1).max(200),
+    draftId: IdentifierDtoSchema,
+    generationId: IdentifierDtoSchema,
+    finalTextHash: ReviewerDispositionScopeDtoSchema.shape.finalTextHash,
   }),
 });
 
@@ -126,6 +139,7 @@ export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
     ReadEntryChallengeInvocationDtoSchema,
     AdvanceEntryInvocationDtoSchema,
     ReadReviewSessionInvocationDtoSchema,
+    PrepareReviewerDispositionInvocationDtoSchema,
     PrepareReviewerGenerationInvocationDtoSchema,
     ActivateGenerationInvocationDtoSchema,
     SettleGenerationInvocationDtoSchema,
@@ -174,6 +188,19 @@ export const ReadReviewSessionInvocationResultDtoSchema = z.strictObject({
     z.strictObject({ status: z.literal("unavailable") }),
   ]),
 });
+
+export const PrepareReviewerDispositionInvocationResultDtoSchema =
+  z.strictObject({
+    operation: z.literal("prepare-reviewer-disposition"),
+    result: z.discriminatedUnion("status", [
+      z.strictObject({
+        status: z.literal("authorized"),
+        permit: z.string().min(1),
+        scope: ReviewerDispositionScopeDtoSchema,
+      }),
+      z.strictObject({ status: z.literal("rejected") }),
+    ]),
+  });
 
 export const PrepareReviewerGenerationInvocationResultDtoSchema =
   z.strictObject({
@@ -243,6 +270,9 @@ export type AdvanceEntryInvocationDto = z.infer<
 export type ReadReviewSessionInvocationDto = z.infer<
   typeof ReadReviewSessionInvocationDtoSchema
 >;
+export type PrepareReviewerDispositionInvocationDto = z.infer<
+  typeof PrepareReviewerDispositionInvocationDtoSchema
+>;
 export type PrepareReviewerGenerationInvocationDto = z.infer<
   typeof PrepareReviewerGenerationInvocationDtoSchema
 >;
@@ -269,6 +299,9 @@ export type AdvanceEntryInvocationResultDto = z.infer<
 >;
 export type ReadReviewSessionInvocationResultDto = z.infer<
   typeof ReadReviewSessionInvocationResultDtoSchema
+>;
+export type PrepareReviewerDispositionInvocationResultDto = z.infer<
+  typeof PrepareReviewerDispositionInvocationResultDtoSchema
 >;
 export type PrepareReviewerGenerationInvocationResultDto = z.infer<
   typeof PrepareReviewerGenerationInvocationResultDtoSchema

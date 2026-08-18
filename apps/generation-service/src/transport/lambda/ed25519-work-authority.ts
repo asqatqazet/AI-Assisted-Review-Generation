@@ -1,4 +1,5 @@
 import {
+  createHash,
   createPrivateKey,
   createPublicKey,
   sign as signBytes,
@@ -7,7 +8,9 @@ import {
 } from "node:crypto";
 import {
   GenerationWorkloadBindingsDtoSchema,
+  ReviewerDispositionScopeDtoSchema,
   type GenerationWorkloadDto,
+  type ReviewerDispositionScopeDto,
 } from "@review/contracts/generation";
 
 import type {
@@ -30,6 +33,11 @@ export interface GenerationEd25519WorkAuthority
     leaseId: string,
     workload: GenerationWorkloadDto,
   ): Promise<VerifiedGenerationActivation>;
+  verifyDispositionPermit(
+    permit: string,
+    scope: ReviewerDispositionScopeDto,
+    finalText: string,
+  ): Promise<{ readonly permitJti: string }>;
 }
 
 const encode = (value: string | Uint8Array): string =>
@@ -151,6 +159,9 @@ export function createGenerationEd25519WorkAuthority({
     return payload;
   };
 
+  const finalTextHash = (value: string): string =>
+    `sha256:${createHash("sha256").update(value).digest("hex")}`;
+
   return {
     async verifyPermit(permit, workload) {
       const payload = verifyContextEvidence(
@@ -196,6 +207,35 @@ export function createGenerationEd25519WorkAuthority({
         throw new Error("GENERATION_ACTIVATION_INVALID");
       }
       return { permitJti: stringField(payload, "permitJti"), expiresAt };
+    },
+
+    async verifyDispositionPermit(permit, scope, finalText) {
+      const payload = verifyToken(permit, contextPublicKey);
+      exactKeys(payload, [
+        "kind",
+        "issuer",
+        "audience",
+        "permitJti",
+        "expiresAt",
+        "scope",
+      ]);
+      if (
+        payload["kind"] !== "reviewer-disposition-permit" ||
+        payload["issuer"] !== "context-service" ||
+        payload["audience"] !== "generation-service"
+      ) {
+        throw new Error("GENERATION_WORK_AUTHORITY_INVALID");
+      }
+      const signedScope = ReviewerDispositionScopeDtoSchema.parse(payload["scope"]);
+      const expiresAt = stringField(payload, "expiresAt");
+      if (
+        JSON.stringify(signedScope) !== JSON.stringify(scope) ||
+        signedScope.finalTextHash !== finalTextHash(finalText) ||
+        new Date(expiresAt).getTime() <= now().getTime()
+      ) {
+        throw new Error("GENERATION_WORK_AUTHORITY_INVALID");
+      }
+      return { permitJti: stringField(payload, "permitJti") };
     },
 
     async signLease(claims) {

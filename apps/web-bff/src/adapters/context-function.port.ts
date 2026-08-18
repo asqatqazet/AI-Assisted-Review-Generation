@@ -8,6 +8,8 @@ import {
   ListReconciliationCandidatesInvocationResultDtoSchema,
   PrepareEntryInvocationDtoSchema,
   PrepareEntryInvocationResultDtoSchema,
+  PrepareReviewerDispositionInvocationDtoSchema,
+  PrepareReviewerDispositionInvocationResultDtoSchema,
   PrepareReviewerGenerationInvocationDtoSchema,
   PrepareReviewerGenerationInvocationResultDtoSchema,
   ReadEntryChallengeInvocationDtoSchema,
@@ -22,6 +24,7 @@ import {
 
 import type { ContextPort } from "../ports/context.port.js";
 import type { ReviewerGenerationContextPort } from "../ports/reviewer-generation.port.js";
+import type { ReviewerDispositionContextPort } from "../ports/reviewer-disposition.port.js";
 import type { ReconciliationContextPort } from "../reconciliation.js";
 
 export interface ContextFunctionInvoker {
@@ -60,6 +63,23 @@ export function createInvokedReviewerGenerationContextPort(
         input,
       });
       const response = SettleGenerationInvocationResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return response.result;
+    },
+  };
+}
+
+export function createInvokedReviewerDispositionContextPort(
+  invoker: ContextFunctionInvoker,
+): ReviewerDispositionContextPort {
+  return {
+    async authorize(input) {
+      const request = PrepareReviewerDispositionInvocationDtoSchema.parse({
+        operation: "prepare-reviewer-disposition",
+        input,
+      });
+      const response = PrepareReviewerDispositionInvocationResultDtoSchema.parse(
         await invoker.invoke(request),
       );
       return response.result;

@@ -8,10 +8,13 @@ import {
   PrepareGenerationInvocationDtoSchema,
   PrepareGenerationResultDtoSchema,
   PrivateGenerationTerminalEventDtoSchema,
+  RecordReviewerDispositionInvocationDtoSchema,
+  RecordReviewerDispositionResultDtoSchema,
   type GenerationFunctionInvocationDto,
 } from "@review/contracts/generation";
 
 import type { ReviewerGenerationExecutionPort } from "../ports/reviewer-generation.port.js";
+import type { ReviewerDispositionExecutionPort } from "../ports/reviewer-disposition.port.js";
 import type { ReconciliationGenerationPort } from "../reconciliation.js";
 
 export interface GenerationFunctionInvoker {
@@ -93,6 +96,28 @@ export function createInvokedReviewerGenerationExecutionPort(
           elapsedSeconds: Math.floor((Date.now() - startedAt) / 1_000),
         };
       }
+    },
+  };
+}
+
+export function createInvokedReviewerDispositionExecutionPort(
+  invoker: GenerationFunctionInvoker,
+): ReviewerDispositionExecutionPort {
+  return {
+    async record(input) {
+      const request = RecordReviewerDispositionInvocationDtoSchema.parse({
+        operation: "record-reviewer-disposition",
+        ...input,
+      });
+      const response = RecordReviewerDispositionResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return {
+        status: response.status,
+        kind: response.kind,
+        revision: response.revision,
+        normalizedEditDistance: response.normalizedEditDistance,
+      };
     },
   };
 }

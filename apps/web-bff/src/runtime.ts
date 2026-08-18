@@ -4,9 +4,13 @@ import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 import { createAwsLambdaJsonInvoker } from "./adapters/lambda-json-invoker.js";
 import {
   createInvokedContextPort,
+  createInvokedReviewerDispositionContextPort,
   createInvokedReviewerGenerationContextPort,
 } from "./adapters/context-function.port.js";
-import { createInvokedReviewerGenerationExecutionPort } from "./adapters/generation-function.port.js";
+import {
+  createInvokedReviewerDispositionExecutionPort,
+  createInvokedReviewerGenerationExecutionPort,
+} from "./adapters/generation-function.port.js";
 import { createWebBffApp } from "./app.js";
 import { createHmacCsrfProtector } from "./security/csrf-protector.js";
 
@@ -54,6 +58,10 @@ export async function createWebBffRuntime() {
       createInvokedReviewerGenerationContextPort(contextInvoker),
     reviewerGenerationExecutionPort:
       createInvokedReviewerGenerationExecutionPort(generationInvoker),
+    reviewerDispositionContextPort:
+      createInvokedReviewerDispositionContextPort(contextInvoker),
+    reviewerDispositionExecutionPort:
+      createInvokedReviewerDispositionExecutionPort(generationInvoker),
     csrfProtector: createHmacCsrfProtector(csrfSecret),
     trustedPublicOriginHeader: "x-review-public-origin",
   });

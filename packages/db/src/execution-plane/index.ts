@@ -1,6 +1,8 @@
 import { PrismaClient } from "../generated/execution-plane/index.js";
 import type { Prisma } from "../generated/execution-plane/index.js";
 
+export * from "./reviewer-disposition-store.js";
+
 export interface GenerationExecutionScope {
   readonly tenantId: string;
   readonly locationId: string;

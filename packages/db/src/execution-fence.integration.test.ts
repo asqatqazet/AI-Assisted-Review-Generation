@@ -1,11 +1,12 @@
 import { execFile } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
 import {
   createPostgresGenerationLeaseJournal,
   createPostgresGenerationTerminalStore,
+  createPostgresReviewerDispositionStore,
 } from "./execution-plane/index.js";
 
 const execFileAsync = promisify(execFile);
@@ -376,10 +377,10 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
       requestPayload: { model: "fake-v1" },
     });
     const terminalStore = createPostgresGenerationTerminalStore({ databaseUrl });
+    const dispositionStore = createPostgresReviewerDispositionStore({ databaseUrl });
 
     try {
-      await expect(
-        terminalStore.complete({
+      const terminal = await terminalStore.complete({
           ...scope,
           leaseId,
           attemptId: claimed.attemptId,
@@ -398,8 +399,8 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
             outputTokens: 7,
             providerReceipt: { requestId: "fake-request-a" },
           },
-        }),
-      ).resolves.toMatchObject({
+        });
+      expect(terminal).toMatchObject({
         draft: {
           generationId: scope.generationId,
           revision: 1,
@@ -429,7 +430,41 @@ describeDatabase("US-03.2 PostgreSQL execution fence", () => {
       expect(
         await runSql(`SELECT state::text FROM execution_leases WHERE id = '${leaseId}';`),
       ).toBe("TERMINAL");
+
+      const finalText = "The team was exceptionally attentive.";
+      const dispositionInput = {
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        reviewSessionId: scope.reviewSessionId,
+        draftId: terminal.draft.id,
+        generationId: scope.generationId,
+        finalTextHash: `sha256:${createHash("sha256").update(finalText).digest("hex")}`,
+        idempotencyKey: "disposition-a",
+        permitJti: "disposition-permit-a",
+        finalText,
+        normalizedEditDistance: 0.21,
+      };
+      await expect(
+        dispositionStore.readOriginal(dispositionInput),
+      ).resolves.toEqual({ text: "The team was attentive." });
+      const recorded = await dispositionStore.record(dispositionInput);
+      await expect(dispositionStore.record(dispositionInput)).resolves.toEqual(
+        recorded,
+      );
+      expect(recorded).toMatchObject({ kind: "edited", revision: 2 });
+      expect(recorded.normalizedEditDistance).toBeGreaterThan(0);
+      expect(
+        await runSql(
+          `SELECT count(*) FROM draft_revisions WHERE draft_id = '${terminal.draft.id}';`,
+        ),
+      ).toBe("2");
+      expect(
+        await runSql(
+          `SELECT kind::text || '|' || (normalized_edit_distance > 0)::text FROM dispositions WHERE draft_id = '${terminal.draft.id}';`,
+        ),
+      ).toBe("EDITED|true");
     } finally {
+      await dispositionStore.disconnect();
       await terminalStore.disconnect();
       await journal.disconnect();
     }

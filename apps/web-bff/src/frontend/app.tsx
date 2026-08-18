@@ -20,6 +20,10 @@ import {
   type ReviewSessionClient,
 } from "./review-session-client.js";
 import {
+  createHttpReviewerDispositionClient,
+  type ReviewerDispositionClient,
+} from "./reviewer-disposition-client.js";
+import {
   createReviewSessionState,
   transitionReviewSession,
 } from "./review-session-machine.js";
@@ -35,6 +39,7 @@ const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
 const defaultGenerationClient = createHttpGenerationClient();
 const defaultReviewSessionClient = createHttpReviewSessionClient();
+const defaultReviewerDispositionClient = createHttpReviewerDispositionClient();
 const defaultNavigate = (path: string): void => globalThis.location.assign(path);
 const defaultCopyText = async (text: string): Promise<void> => {
   if (globalThis.navigator.clipboard === undefined) {
@@ -339,11 +344,13 @@ function StartRoute({
 function ReviewRoute({
   reviewSessionClient,
   generationClient,
+  reviewerDispositionClient,
   newIdempotencyKey,
   copyText,
 }: {
   readonly reviewSessionClient: ReviewSessionClient;
   readonly generationClient: GenerationClient;
+  readonly reviewerDispositionClient: ReviewerDispositionClient;
   readonly newIdempotencyKey: () => string;
   readonly copyText: (text: string) => Promise<void>;
 }): React.JSX.Element {
@@ -832,6 +839,15 @@ function ReviewRoute({
                   .then(() => {
                     setCopyStatus("copied");
                     setCompletedText(draftText);
+                    void reviewerDispositionClient
+                      .record({
+                        reviewSessionHandle: state.reviewSessionHandle,
+                        idempotencyKey: newIdempotencyKey(),
+                        draftId: state.draft.id,
+                        generationId: state.draft.generationId,
+                        finalText: draftText,
+                      })
+                      .catch(() => undefined);
                   })
                   .catch(() => setCopyStatus("manual"));
               }}
@@ -1003,6 +1019,7 @@ export interface ReviewerApplicationProps {
   readonly entryChallengeClient?: EntryChallengeClient | undefined;
   readonly reviewSessionClient?: ReviewSessionClient | undefined;
   readonly generationClient?: GenerationClient | undefined;
+  readonly reviewerDispositionClient?: ReviewerDispositionClient | undefined;
   readonly newIdempotencyKey?: (() => string) | undefined;
   readonly copyText?: ((text: string) => Promise<void>) | undefined;
   readonly navigate?: ((path: string) => void) | undefined;
@@ -1012,6 +1029,7 @@ export function ReviewerApplication({
   entryChallengeClient = defaultEntryChallengeClient,
   reviewSessionClient = defaultReviewSessionClient,
   generationClient = defaultGenerationClient,
+  reviewerDispositionClient = defaultReviewerDispositionClient,
   newIdempotencyKey = () => globalThis.crypto.randomUUID(),
   copyText = defaultCopyText,
   navigate = defaultNavigate,
@@ -1048,6 +1066,7 @@ export function ReviewerApplication({
           <ReviewRoute
             reviewSessionClient={reviewSessionClient}
             generationClient={generationClient}
+            reviewerDispositionClient={reviewerDispositionClient}
             newIdempotencyKey={newIdempotencyKey}
             copyText={copyText}
           />

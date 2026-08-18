@@ -1,4 +1,5 @@
 import {
+  createHash,
   generateKeyPairSync,
   sign as signBytes,
   verify as verifyBytes,
@@ -25,6 +26,16 @@ const bindings = {
   idempotencyKey: "request-a",
 };
 const workload = { bindings } as GenerationWorkloadDto;
+const finalText = "The team was exceptionally attentive.";
+const dispositionScope = {
+  tenantId: bindings.tenantId,
+  locationId: bindings.locationId,
+  reviewSessionId: bindings.reviewSessionId,
+  draftId: "draft-a",
+  generationId: bindings.generationId,
+  finalTextHash: `sha256:${createHash("sha256").update(finalText).digest("hex")}`,
+  idempotencyKey: "disposition-a",
+};
 const encode = (value: string | Uint8Array): string =>
   Buffer.from(value).toString("base64url");
 const signedBy = (payload: unknown, privateKey: string): string => {
@@ -64,6 +75,32 @@ describe("US-03.2 Generation Ed25519 work authority", () => {
       permitJti: "permit-a",
       expiresAt: "2026-08-17T12:01:00.000Z",
     });
+
+    const dispositionPermit = signedBy(
+      {
+        kind: "reviewer-disposition-permit",
+        issuer: "context-service",
+        audience: "generation-service",
+        permitJti: "disposition-permit-a",
+        expiresAt: "2026-08-17T12:01:00.000Z",
+        scope: dispositionScope,
+      },
+      contextKeys.privateKey,
+    );
+    await expect(
+      authority.verifyDispositionPermit(
+        dispositionPermit,
+        dispositionScope,
+        finalText,
+      ),
+    ).resolves.toEqual({ permitJti: "disposition-permit-a" });
+    await expect(
+      authority.verifyDispositionPermit(
+        dispositionPermit,
+        dispositionScope,
+        `${finalText} Invented text.`,
+      ),
+    ).rejects.toThrow("GENERATION_WORK_AUTHORITY_INVALID");
 
     const leaseReceipt = await authority.signLease({
       permitJti: "permit-a",

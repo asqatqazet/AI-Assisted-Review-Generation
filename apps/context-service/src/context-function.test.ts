@@ -17,6 +17,7 @@ describe("private Context Function", () => {
         readEntryChallenge: async () => ({ status: "unavailable" }),
         advanceEntry: async () => ({ status: "unavailable" }),
         readReviewSession: async () => ({ status: "unavailable" }),
+        prepareReviewerDisposition: async () => ({ status: "rejected" }),
         prepareReviewerGeneration: async () => ({
           status: "rejected",
           code: "GENERATION_FAILED",

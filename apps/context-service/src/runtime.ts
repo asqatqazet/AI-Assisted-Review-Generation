@@ -10,6 +10,7 @@ import { createContextEd25519GenerationAuthority } from "./ed25519-generation-au
 import { createEntryService } from "./entry-service.js";
 import { createReviewerGenerationService } from "./reviewer-generation-service.js";
 import { createReviewSessionService } from "./review-session-service.js";
+import { createReviewerDispositionService } from "./reviewer-disposition-service.js";
 import { createReconciliationService } from "./reconciliation-service.js";
 
 export function createContextRuntime({
@@ -43,6 +44,12 @@ export function createContextRuntime({
     authority,
     hashCapability,
   });
+  const reviewerDisposition = createReviewerDispositionService({
+    reader: reviewSessionReader,
+    authority,
+    hashCapability,
+    newPermitJti: () => globalThis.crypto.randomUUID(),
+  });
   const reconciliation = createReconciliationService({
     store: generationStore,
     authority,
@@ -54,6 +61,8 @@ export function createContextRuntime({
       readEntryChallenge: entry.readEntryChallenge,
       advanceEntry: entry.advanceEntry,
       readReviewSession: reviewSession.readReviewSession,
+      prepareReviewerDisposition:
+        reviewerDisposition.prepareReviewerDisposition,
       prepareReviewerGeneration:
         reviewerGeneration.prepareReviewerGeneration,
       activateGeneration: reviewerGeneration.activateGeneration,

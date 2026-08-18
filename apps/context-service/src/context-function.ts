@@ -4,6 +4,7 @@ import {
   ContextFunctionInvocationDtoSchema,
   ListReconciliationCandidatesInvocationResultDtoSchema,
   PrepareEntryInvocationResultDtoSchema,
+  PrepareReviewerDispositionInvocationResultDtoSchema,
   PrepareReviewerGenerationInvocationResultDtoSchema,
   ReadEntryChallengeInvocationResultDtoSchema,
   ReadReviewSessionInvocationResultDtoSchema,
@@ -18,6 +19,8 @@ import {
   type ListReconciliationCandidatesInvocationResultDto,
   type PrepareEntryInvocationDto,
   type PrepareEntryInvocationResultDto,
+  type PrepareReviewerDispositionInvocationDto,
+  type PrepareReviewerDispositionInvocationResultDto,
   type PrepareReviewerGenerationInvocationDto,
   type PrepareReviewerGenerationInvocationResultDto,
   type ReadEntryChallengeInvocationDto,
@@ -43,6 +46,9 @@ export interface ContextEntryService {
   readReviewSession(
     input: ReadReviewSessionInvocationDto["input"],
   ): Promise<ReadReviewSessionInvocationResultDto["result"]>;
+  prepareReviewerDisposition(
+    input: PrepareReviewerDispositionInvocationDto["input"],
+  ): Promise<PrepareReviewerDispositionInvocationResultDto["result"]>;
   prepareReviewerGeneration(
     input: PrepareReviewerGenerationInvocationDto["input"],
   ): Promise<PrepareReviewerGenerationInvocationResultDto["result"]>;
@@ -73,6 +79,7 @@ export function createContextFunctionHandler({
   | ReadEntryChallengeInvocationResultDto
   | AdvanceEntryInvocationResultDto
   | ReadReviewSessionInvocationResultDto
+  | PrepareReviewerDispositionInvocationResultDto
   | PrepareReviewerGenerationInvocationResultDto
   | ActivateGenerationInvocationResultDto
   | SettleGenerationInvocationResultDto
@@ -103,6 +110,11 @@ export function createContextFunctionHandler({
         return ReadReviewSessionInvocationResultDtoSchema.parse({
           operation: invocation.operation,
           result: await entryService.readReviewSession(invocation.input),
+        });
+      case "prepare-reviewer-disposition":
+        return PrepareReviewerDispositionInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result: await entryService.prepareReviewerDisposition(invocation.input),
         });
       case "prepare-reviewer-generation":
         return PrepareReviewerGenerationInvocationResultDtoSchema.parse({

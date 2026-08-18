@@ -4,6 +4,7 @@ import {
   StartEntryRequestDtoSchema,
 } from "@review/contracts/context";
 import { ReviewerGenerationCommandDtoSchema } from "@review/contracts/generation";
+import { ReviewerDispositionCommandDtoSchema } from "@review/contracts/generation";
 import { BffErrorDtoSchema } from "@review/contracts/shared";
 import { Hono } from "hono";
 import { getCookie } from "hono/cookie";
@@ -14,6 +15,10 @@ import type {
   ReviewerGenerationContextPort,
   ReviewerGenerationExecutionPort,
 } from "./ports/reviewer-generation.port.js";
+import type {
+  ReviewerDispositionContextPort,
+  ReviewerDispositionExecutionPort,
+} from "./ports/reviewer-disposition.port.js";
 import { createReviewerGenerationCoordinator } from "./reviewer-generation.js";
 import {
   type CsrfProtector,
@@ -32,6 +37,12 @@ export interface WebBffOptions {
     | undefined;
   readonly reviewerGenerationExecutionPort?:
     | ReviewerGenerationExecutionPort
+    | undefined;
+  readonly reviewerDispositionContextPort?:
+    | ReviewerDispositionContextPort
+    | undefined;
+  readonly reviewerDispositionExecutionPort?:
+    | ReviewerDispositionExecutionPort
     | undefined;
 }
 
@@ -383,6 +394,89 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       });
       response.headers.set("Cache-Control", "private, no-store");
       return response;
+    },
+  );
+
+  app.post(
+    "/api/v1/review-sessions/:reviewSessionHandle/dispositions",
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      const browserCapability = getCookie(c, "__Host-review_browser");
+      const idempotencyKey = c.req.header("Idempotency-Key");
+      const claimedBodyHash = c.req.header("x-amz-content-sha256");
+      const origin = c.req.header("Origin");
+      const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
+      const rawBody = await c.req.text();
+
+      if (
+        options.reviewerDispositionContextPort === undefined ||
+        options.reviewerDispositionExecutionPort === undefined ||
+        expectedOrigin === undefined ||
+        origin !== expectedOrigin ||
+        browserCapability === undefined ||
+        !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+        idempotencyKey === undefined ||
+        idempotencyKey.length < 1 ||
+        idempotencyKey.length > 200 ||
+        claimedBodyHash === undefined ||
+        claimedBodyHash !== (await sha256Hex(rawBody))
+      ) {
+        return c.json(
+          errorBody(
+            "DISPOSITION_UNAVAILABLE",
+            "The final review could not be recorded.",
+            true,
+          ),
+          404,
+        );
+      }
+
+      let rawCommand: unknown;
+      try {
+        rawCommand = JSON.parse(rawBody) as unknown;
+      } catch {
+        rawCommand = undefined;
+      }
+      const command = ReviewerDispositionCommandDtoSchema.safeParse(rawCommand);
+      if (!command.success) {
+        return c.json(
+          errorBody(
+            "DISPOSITION_UNAVAILABLE",
+            "The final review could not be recorded.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      const authorization =
+        await options.reviewerDispositionContextPort.authorize({
+          reviewSessionHandle: c.req.param("reviewSessionHandle"),
+          browserCapability,
+          idempotencyKey,
+          draftId: command.data.draftId,
+          generationId: command.data.generationId,
+          finalTextHash: `sha256:${await sha256Hex(command.data.finalText)}`,
+        });
+      if (authorization.status !== "authorized") {
+        return c.json(
+          errorBody(
+            "DISPOSITION_UNAVAILABLE",
+            "The final review could not be recorded.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      return c.json(
+        await options.reviewerDispositionExecutionPort.record({
+          permit: authorization.permit,
+          scope: authorization.scope,
+          finalText: command.data.finalText,
+        }),
+        200,
+      );
     },
   );
 

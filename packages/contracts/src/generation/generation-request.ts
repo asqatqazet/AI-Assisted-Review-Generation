@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { EffectiveConfigurationSnapshotDtoSchema } from "../shared/effective-configuration-snapshot.js";
 import { IdentifierDtoSchema, IsoDateTimeDtoSchema } from "../shared/primitives.js";
+import { RecordReviewerDispositionInvocationDtoSchema } from "./reviewer-disposition.js";
 
 const BoundHashDtoSchema = z.string().min(1).max(200);
 
@@ -250,6 +251,7 @@ export const GenerationFunctionInvocationDtoSchema = z.discriminatedUnion(
     ExecuteGenerationInvocationDtoSchema,
     GenerationStatusInvocationDtoSchema,
     CancelExpiredLeaseInvocationDtoSchema,
+    RecordReviewerDispositionInvocationDtoSchema,
   ],
 );
 

@@ -176,6 +176,7 @@ export interface PaidWorkGenerationHandlerOptions {
     readonly permitJti: string;
     readonly workload: GenerationWorkloadDto;
   }) => Promise<unknown>;
+  readonly recordDisposition?: ((event: unknown) => Promise<unknown>) | undefined;
 }
 
 export function createPaidWorkGenerationHandler({
@@ -186,9 +187,16 @@ export function createPaidWorkGenerationHandler({
   terminalStore,
   prepareAttempt,
   tailExisting,
+  recordDisposition,
 }: PaidWorkGenerationHandlerOptions): (event: unknown) => Promise<unknown> {
   return async (event) => {
     const invocation = GenerationFunctionInvocationDtoSchema.parse(event);
+    if (invocation.operation === "record-reviewer-disposition") {
+      if (recordDisposition === undefined) {
+        throw new Error("GENERATION_OPERATION_NOT_IMPLEMENTED");
+      }
+      return await recordDisposition(invocation);
+    }
     if (invocation.operation === "prepare") {
       const verifiedPermit = await permitVerifier.verify(
         invocation.permit,

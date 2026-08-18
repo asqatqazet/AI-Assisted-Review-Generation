@@ -2,6 +2,7 @@ import type { GenerationWorkloadDto } from "@review/contracts/generation";
 import {
   createPostgresGenerationLeaseJournal,
   createPostgresGenerationTerminalStore,
+  createPostgresReviewerDispositionStore,
 } from "@review/db/execution-plane";
 
 import { createPaidWorkAttemptPreparer } from "./application/paid-work-attempt.js";
@@ -14,6 +15,7 @@ import { createPaidWorkGenerationHandler } from "./transport/lambda/paid-work-ha
 import { createPersistentGenerationLeaseJournal } from "./transport/lambda/persistent-lease-journal.js";
 import { createPersistentGenerationTerminalStore } from "./transport/lambda/persistent-terminal-store.js";
 import { createPersistentTerminalTailer } from "./transport/lambda/persistent-terminal-tailer.js";
+import { createReviewerDispositionHandler } from "./transport/lambda/reviewer-disposition-handler.js";
 
 const waitFor = async (
   milliseconds: number,
@@ -101,6 +103,9 @@ export function createGenerationRuntime({
   const databaseTerminalStore = createPostgresGenerationTerminalStore({
     databaseUrl,
   });
+  const reviewerDispositionStore = createPostgresReviewerDispositionStore({
+    databaseUrl,
+  });
   const leaseJournal = createPersistentGenerationLeaseJournal(databaseJournal);
   const terminalStore = createPersistentGenerationTerminalStore(
     databaseTerminalStore,
@@ -132,6 +137,10 @@ export function createGenerationRuntime({
     tailExisting: createPersistentTerminalTailer({
       databaseStore: databaseTerminalStore,
       receiptSigner: authority,
+    }),
+    recordDisposition: createReviewerDispositionHandler({
+      verifier: authority,
+      store: reviewerDispositionStore,
     }),
   });
 }

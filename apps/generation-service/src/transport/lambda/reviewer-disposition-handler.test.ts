@@ -8,7 +8,7 @@ const scope = {
   reviewSessionId: "review-session-a",
   draftId: "draft-a",
   generationId: "generation-a",
-  finalTextHash: "sha256:final-text",
+  finalTextHash: `sha256:${"a".repeat(64)}`,
   idempotencyKey: "disposition-a",
 };
 
@@ -28,12 +28,18 @@ describe("US-03.6 Generation reviewer Disposition handler", () => {
         },
       },
       store: {
+        readOriginal: async (receivedScope) => {
+          operations.push("read");
+          expect(receivedScope).toEqual(scope);
+          return { text: "The team was attentive." };
+        },
         record: async (input) => {
           operations.push("record");
           expect(input).toEqual({
             ...scope,
             permitJti: "permit-jti-a",
             finalText: "The team was exceptionally attentive.",
+            normalizedEditDistance: expect.any(Number),
           });
           return {
             kind: "edited",
@@ -58,6 +64,6 @@ describe("US-03.6 Generation reviewer Disposition handler", () => {
       revision: 2,
       normalizedEditDistance: 0.21,
     });
-    expect(operations).toEqual(["verify", "record"]);
+    expect(operations).toEqual(["verify", "read", "record"]);
   });
 });

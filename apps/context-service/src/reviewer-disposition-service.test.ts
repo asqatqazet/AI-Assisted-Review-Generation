@@ -21,6 +21,7 @@ const storedSession = {
   reviewFormats: [],
   destinations: [],
 };
+const finalTextHash = `sha256:${"a".repeat(64)}`;
 
 describe("US-03.6 Context reviewer Disposition authorization", () => {
   it("derives scope from the browser-bound Review Session and signs exact immutable claims", async () => {
@@ -49,7 +50,7 @@ describe("US-03.6 Context reviewer Disposition authorization", () => {
         idempotencyKey: "disposition-a",
         draftId: "draft-a",
         generationId: "generation-a",
-        finalTextHash: "sha256:final-text",
+        finalTextHash,
       }),
     ).resolves.toEqual({
       status: "authorized",
@@ -60,7 +61,7 @@ describe("US-03.6 Context reviewer Disposition authorization", () => {
         reviewSessionId: "review-session-a",
         draftId: "draft-a",
         generationId: "generation-a",
-        finalTextHash: "sha256:final-text",
+        finalTextHash,
         idempotencyKey: "disposition-a",
       },
     });
@@ -73,7 +74,7 @@ describe("US-03.6 Context reviewer Disposition authorization", () => {
         reviewSessionId: "review-session-a",
         draftId: "draft-a",
         generationId: "generation-a",
-        finalTextHash: "sha256:final-text",
+        finalTextHash,
         idempotencyKey: "disposition-a",
       },
     });
@@ -83,7 +84,6 @@ describe("US-03.6 Context reviewer Disposition authorization", () => {
     const service = createReviewerDispositionService({
       reader: {
         read: async () => null,
-        disconnect: async () => undefined,
       },
       authority: {
         signDispositionPermit: async () => {
@@ -101,7 +101,7 @@ describe("US-03.6 Context reviewer Disposition authorization", () => {
         idempotencyKey: "disposition-a",
         draftId: "draft-a",
         generationId: "generation-a",
-        finalTextHash: "sha256:final-text",
+        finalTextHash,
       }),
     ).resolves.toEqual({ status: "rejected" });
   });

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  PrepareReviewerDispositionInvocationDtoSchema,
   RecordReviewerDispositionInvocationDtoSchema,
   ReviewerDispositionCommandDtoSchema,
   ReviewerDispositionScopeDtoSchema,
-} from "../index.js";
+} from "./index.js";
+import { PrepareReviewerDispositionInvocationDtoSchema } from "../context/index.js";
 
 describe("US-03.6 reviewer Draft disposition contracts", () => {
   const command = {
@@ -19,7 +19,7 @@ describe("US-03.6 reviewer Draft disposition contracts", () => {
     reviewSessionId: "review-session-a",
     draftId: "draft-a",
     generationId: "generation-a",
-    finalTextHash: "sha256:final-text",
+    finalTextHash: `sha256:${"a".repeat(64)}`,
     idempotencyKey: "disposition-a",
   };
 

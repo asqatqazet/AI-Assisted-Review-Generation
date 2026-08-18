@@ -8,6 +8,7 @@ import {
 import {
   GenerationExecutionScopeDtoSchema,
   GenerationWorkloadBindingsDtoSchema,
+  ReviewerDispositionScopeDtoSchema,
   type GenerationWorkloadDto,
 } from "@review/contracts/generation";
 
@@ -15,6 +16,7 @@ import type {
   ContextGenerationAuthority,
   ContextGenerationStatusAuthority,
 } from "./reviewer-generation-service.js";
+import type { ContextDispositionAuthority } from "./reviewer-disposition-service.js";
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
@@ -94,7 +96,9 @@ export function createContextEd25519GenerationAuthority({
   readonly contextPrivateKeyPem: string;
   readonly generationPublicKeyPem: string;
   readonly now?: () => Date;
-}): ContextGenerationAuthority & ContextGenerationStatusAuthority {
+}): ContextGenerationAuthority &
+  ContextGenerationStatusAuthority &
+  ContextDispositionAuthority {
   const contextPrivateKey = createPrivateKey(contextPrivateKeyPem);
   const generationPublicKey = createPublicKey(generationPublicKeyPem);
 
@@ -111,6 +115,23 @@ export function createContextEd25519GenerationAuthority({
           permitJti,
           expiresAt,
           bindings: workload.bindings,
+        },
+        contextPrivateKey,
+      );
+    },
+
+    async signDispositionPermit({ permitJti, expiresAt, scope }) {
+      if (new Date(expiresAt).getTime() <= now().getTime()) {
+        throw new Error("REVIEWER_DISPOSITION_PERMIT_EXPIRED");
+      }
+      return signToken(
+        {
+          kind: "reviewer-disposition-permit",
+          issuer: "context-service",
+          audience: "generation-service",
+          permitJti,
+          expiresAt,
+          scope: ReviewerDispositionScopeDtoSchema.parse(scope),
         },
         contextPrivateKey,
       );
