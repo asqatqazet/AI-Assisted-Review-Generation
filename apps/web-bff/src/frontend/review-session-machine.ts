@@ -82,7 +82,8 @@ export type ReviewSessionEvent =
   | {
       readonly type: "RETRY_REQUESTED";
       readonly idempotencyKey: string;
-    };
+    }
+  | { readonly type: "RETURN_TO_FACTS" };
 
 export function createReviewSessionState(
   reviewSessionHandle: string,
@@ -114,17 +115,15 @@ export function transitionReviewSession(
     ) {
       return state;
     }
-    const selected = new Set(state.selectedFactOptionIds);
-    if (selected.has(event.factOptionId)) {
-      selected.delete(event.factOptionId);
-    } else {
-      selected.add(event.factOptionId);
-    }
     return {
       ...state,
-      selectedFactOptionIds: state.projection.factOptions
-        .map((factOption) => factOption.id)
-        .filter((factOptionId) => selected.has(factOptionId)),
+      selectedFactOptionIds: state.selectedFactOptionIds.includes(
+        event.factOptionId,
+      )
+        ? state.selectedFactOptionIds.filter(
+            (factOptionId) => factOptionId !== event.factOptionId,
+          )
+        : [...state.selectedFactOptionIds, event.factOptionId],
     };
   }
 
@@ -207,6 +206,18 @@ export function transitionReviewSession(
       selectedFactOptionIds: state.selectedFactOptionIds,
       selectedReviewFormatId: state.selectedReviewFormatId,
       idempotencyKey: event.idempotencyKey,
+    };
+  }
+
+  if (
+    state.value === "generation-failed" &&
+    event.type === "RETURN_TO_FACTS"
+  ) {
+    return {
+      value: "facts",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
     };
   }
 

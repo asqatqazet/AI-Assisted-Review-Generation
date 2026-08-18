@@ -37,7 +37,11 @@ export function createReviewSessionService({ reader }: ReviewSessionServiceOptio
         factOptions: [...stored.factOptions],
         reviewFormats: stored.reviewFormats.map((format) => ({
           ...format,
+          constraints: { ...format.constraints },
           availableCommands: [...format.availableCommands],
+        })),
+        destinations: stored.destinations.map((destination) => ({
+          ...destination,
         })),
       };
     },

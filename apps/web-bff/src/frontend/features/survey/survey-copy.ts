@@ -37,17 +37,27 @@ export interface SurveyCopy {
   readonly formatLead: string;
   readonly formatLegend: string;
   readonly formatMeta: string;
+  readonly formatConstraints: (minimum: number, maximum: number) => string;
   readonly writeDraft: string;
   readonly chooseAFormat: string;
   readonly formatChosen: string;
   readonly generatingHeading: string;
   readonly checkingDraft: string;
+  readonly progress: (
+    phase: "queued" | "generating" | "validating" | "persisting",
+    elapsedSeconds: number,
+  ) => string;
+  readonly stopGeneration: string;
   readonly safeOutputOnly: string;
   readonly resultEyebrow: string;
   readonly resultHeading: string;
   readonly resultLead: string;
+  readonly actionLabel: (action: "generate" | "paraphrase") => string;
   readonly editLabel: string;
   readonly characters: (count: number) => string;
+  readonly charactersAgainstLimit: (count: number, maximum: number) => string;
+  readonly editedByYou: string;
+  readonly formatWarning: (minimum: number, maximum: number) => string;
   readonly provenance: (count: number) => string;
   readonly copy: string;
   readonly readyToCopy: string;
@@ -56,8 +66,27 @@ export interface SurveyCopy {
   readonly copyFootnote: string;
   readonly failureHeading: string;
   readonly failureBody: string;
+  readonly cancelledHeading: string;
+  readonly cancelledBody: string;
+  readonly rateLimitedHeading: string;
+  readonly rateLimitedBody: string;
+  readonly budgetHeading: string;
+  readonly budgetBody: string;
+  readonly groundingHeading: string;
+  readonly groundingBody: string;
+  readonly formatFailureHeading: string;
+  readonly formatFailureBody: string;
+  readonly changeFacts: string;
+  readonly manualReviewLabel: string;
   readonly retry: string;
   readonly guarded: string;
+  readonly doneEyebrow: string;
+  readonly doneHeading: string;
+  readonly doneLead: string;
+  readonly copyAgain: string;
+  readonly openDestination: (destination: string) => string;
+  readonly backToEdit: string;
+  readonly noDestination: string;
 }
 
 const english: SurveyCopy = {
@@ -105,18 +134,27 @@ const english: SurveyCopy = {
   formatLead: "Formats this business has enabled, for what you are doing.",
   formatLegend: "How should your review read?",
   formatMeta: "Review format",
+  formatConstraints: (minimum, maximum) => `${minimum}–${maximum} characters`,
   writeDraft: "Write the draft",
   chooseAFormat: "Choose at least one format.",
   formatChosen: "1 format chosen.",
   generatingHeading: "Creating your review",
   checkingDraft: "Checking your draft…",
+  progress: (phase, elapsedSeconds) =>
+    `${phase[0]?.toUpperCase()}${phase.slice(1)} · ${elapsedSeconds}s`,
+  stopGeneration: "Stop generation",
   safeOutputOnly: "Only supported wording will appear in the result.",
   resultEyebrow: "Your draft",
   resultHeading: "Here it is",
   resultLead:
     "Change anything you like. Nothing leaves this page until you copy it yourself.",
+  actionLabel: (action) => (action === "generate" ? "assisted draft" : "reworded"),
   editLabel: "Your draft — edit it freely",
   characters: (count) => `${count} characters`,
+  charactersAgainstLimit: (count, maximum) => `${count} / ${maximum} characters`,
+  editedByYou: "Edited by you",
+  formatWarning: (minimum, maximum) =>
+    `This format works best between ${minimum} and ${maximum} characters. You can still copy your own final wording.`,
   provenance: (count) =>
     `What this draft is built on (${count} facts, each traceable)`,
   copy: "Copy",
@@ -127,8 +165,33 @@ const english: SurveyCopy = {
     "Copying puts the text on your clipboard. Nothing is submitted from here.",
   failureHeading: "We couldn't create a draft",
   failureBody: "No review text was saved. You can try again or write it yourself.",
+  cancelledHeading: "Generation stopped",
+  cancelledBody: "No partial review text was saved. Your choices are still here.",
+  rateLimitedHeading: "A few too many requests",
+  rateLimitedBody:
+    "Your choices are still here. Wait a moment, then try the same request again.",
+  budgetHeading: "Writing assistance is temporarily unavailable",
+  budgetBody:
+    "You can still write, copy and post your review yourself. Account or billing details are never shown here.",
+  groundingHeading: "We need a little more detail",
+  groundingBody:
+    "The assistant could not support a safe draft from the selected facts. Add or change your facts and try again.",
+  formatFailureHeading: "The selected format could not be satisfied",
+  formatFailureBody:
+    "Your choices are still here. Choose different wording or try again later.",
+  changeFacts: "Change my facts",
+  manualReviewLabel: "Write your review yourself",
   retry: "Try again",
   guarded: "grounded",
+  doneEyebrow: "Ready to post",
+  doneHeading: "Your review is ready",
+  doneLead:
+    "The text is on your clipboard. Open the review platform and submit it yourself when you are ready.",
+  copyAgain: "Copy again",
+  openDestination: (destination) => `Open ${destination}`,
+  backToEdit: "Back to edit",
+  noDestination:
+    "This location has no posting destination for the selected format. Your review remains available to copy.",
 };
 
 const german: SurveyCopy = {
@@ -178,18 +241,35 @@ const german: SurveyCopy = {
   formatLead: "Formate, die dieses Haus für diese Aktion freigegeben hat.",
   formatLegend: "Wie soll Ihre Bewertung klingen?",
   formatMeta: "Bewertungsformat",
+  formatConstraints: (minimum, maximum) => `${minimum}–${maximum} Zeichen`,
   writeDraft: "Entwurf schreiben",
   chooseAFormat: "Wählen Sie mindestens ein Format.",
   formatChosen: "1 Format ausgewählt.",
   generatingHeading: "Ihre Bewertung wird erstellt",
   checkingDraft: "Entwurf wird geprüft…",
+  progress: (phase, elapsedSeconds) => {
+    const phases = {
+      queued: "Wartet",
+      generating: "Wird erstellt",
+      validating: "Wird geprüft",
+      persisting: "Wird gespeichert",
+    } as const;
+    return `${phases[phase]} · ${elapsedSeconds}s`;
+  },
+  stopGeneration: "Erstellung stoppen",
   safeOutputOnly: "Im Ergebnis erscheinen nur belegte Formulierungen.",
   resultEyebrow: "Ihr Entwurf",
   resultHeading: "Hier ist er",
   resultLead:
     "Ändern Sie alles, was Sie möchten. Nichts verlässt diese Seite, bis Sie es selbst kopieren.",
+  actionLabel: (action) =>
+    action === "generate" ? "Schreibentwurf" : "neu formuliert",
   editLabel: "Ihr Entwurf — frei bearbeitbar",
   characters: (count) => `${count} Zeichen`,
+  charactersAgainstLimit: (count, maximum) => `${count} / ${maximum} Zeichen`,
+  editedByYou: "Von Ihnen bearbeitet",
+  formatWarning: (minimum, maximum) =>
+    `Dieses Format funktioniert am besten mit ${minimum} bis ${maximum} Zeichen. Ihren eigenen finalen Text können Sie trotzdem kopieren.`,
   provenance: (count) =>
     `Worauf dieser Entwurf beruht (${count} belegte Fakten)`,
   copy: "Kopieren",
@@ -201,8 +281,34 @@ const german: SurveyCopy = {
   failureHeading: "Der Entwurf konnte nicht erstellt werden",
   failureBody:
     "Es wurde kein Bewertungstext gespeichert. Sie können es erneut versuchen oder selbst schreiben.",
+  cancelledHeading: "Erstellung gestoppt",
+  cancelledBody:
+    "Es wurde kein unvollständiger Bewertungstext gespeichert. Ihre Auswahl bleibt erhalten.",
+  rateLimitedHeading: "Zu viele Anfragen in kurzer Zeit",
+  rateLimitedBody:
+    "Ihre Auswahl bleibt erhalten. Warten Sie einen Moment und versuchen Sie dieselbe Anfrage erneut.",
+  budgetHeading: "Die Schreibhilfe ist vorübergehend nicht verfügbar",
+  budgetBody:
+    "Sie können Ihre Bewertung weiterhin selbst schreiben, kopieren und veröffentlichen. Konto- oder Abrechnungsdetails werden hier nicht angezeigt.",
+  groundingHeading: "Wir brauchen etwas mehr Information",
+  groundingBody:
+    "Aus den ausgewählten Fakten konnte kein sicher belegter Entwurf entstehen. Ergänzen oder ändern Sie Ihre Fakten und versuchen Sie es erneut.",
+  formatFailureHeading: "Das ausgewählte Format konnte nicht erfüllt werden",
+  formatFailureBody:
+    "Ihre Auswahl bleibt erhalten. Wählen Sie eine andere Formulierung oder versuchen Sie es später erneut.",
+  changeFacts: "Fakten ändern",
+  manualReviewLabel: "Bewertung selbst schreiben",
   retry: "Erneut versuchen",
   guarded: "belegt",
+  doneEyebrow: "Bereit zum Veröffentlichen",
+  doneHeading: "Ihre Bewertung ist bereit",
+  doneLead:
+    "Der Text ist in Ihrer Zwischenablage. Öffnen Sie die Bewertungsplattform und veröffentlichen Sie ihn selbst, wenn Sie bereit sind.",
+  copyAgain: "Erneut kopieren",
+  openDestination: (destination) => `${destination} öffnen`,
+  backToEdit: "Weiter bearbeiten",
+  noDestination:
+    "Für das ausgewählte Format ist an diesem Standort kein Ziel hinterlegt. Ihre Bewertung kann weiterhin kopiert werden.",
 };
 
 export function getSurveyCopy(locale: string): SurveyCopy {

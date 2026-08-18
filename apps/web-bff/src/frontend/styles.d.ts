@@ -24,6 +24,7 @@ declare module "*.module.css" {
     readonly headerNote: string;
     readonly fieldLabel: string;
     readonly formatCard: string;
+    readonly formatConstraint: string;
     readonly formatBody: string;
     readonly formatDescription: string;
     readonly formatMeta: string;
@@ -50,6 +51,7 @@ declare module "*.module.css" {
     readonly primaryButton: string;
     readonly progressBar: string;
     readonly progressCard: string;
+    readonly progressMeta: string;
     readonly progressTitle: string;
     readonly progressTrack: string;
     readonly ratingButton: string;
@@ -62,11 +64,16 @@ declare module "*.module.css" {
     readonly resultMeta: string;
     readonly resultTitle: string;
     readonly characterCount: string;
+    readonly constraintWarning: string;
     readonly copyButton: string;
+    readonly destinationButton: string;
+    readonly editedState: string;
+    readonly finalReviewText: string;
     readonly provenance: string;
     readonly reviewForm: string;
     readonly reviewTextarea: string;
     readonly sectionTitle: string;
+    readonly secondaryButton: string;
     readonly selectionCount: string;
     readonly scopeBar: string;
     readonly scopeBadge: string;
@@ -81,6 +88,7 @@ declare module "*.module.css" {
     readonly status: string;
     readonly surveyMain: string;
     readonly title: string;
+    readonly textButton: string;
     readonly trustCopy: string;
     readonly trustNote: string;
     readonly visuallyHidden: string;

@@ -93,6 +93,7 @@ describe("reviewer entry preparation", () => {
                 },
                 factOptions: [],
                 reviewFormats: [],
+                destinations: [],
               },
             }
           : { status: "unavailable" },
@@ -145,6 +146,7 @@ describe("reviewer entry preparation", () => {
           },
           factOptions: [],
           reviewFormats: [],
+          destinations: [],
         },
       },
     });

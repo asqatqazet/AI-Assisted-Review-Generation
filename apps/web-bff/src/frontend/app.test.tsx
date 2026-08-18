@@ -22,7 +22,17 @@ const entryReviewFormats: EntryChallengeProjectionDto["context"]["reviewFormats"
     displayName: "Concise blurb",
     description: "One concise paragraph.",
     sample: "The team was attentive.",
+    targetPlatform: "google",
+    constraints: { minChars: 20, maxChars: 420 },
     availableCommands: ["generate", "paraphrase"],
+  },
+];
+
+const destinations: EntryChallengeProjectionDto["context"]["destinations"] = [
+  {
+    targetPlatform: "google",
+    displayName: "Google Maps",
+    targetUrl: "https://example.test/review",
   },
 ];
 
@@ -79,6 +89,7 @@ describe("reviewer application routes", () => {
                 requirements,
                 factOptions: [],
                 reviewFormats: entryReviewFormats,
+                destinations,
               },
             }),
           }}
@@ -114,6 +125,7 @@ describe("reviewer application routes", () => {
                 requirements,
                 factOptions: [],
                 reviewFormats: entryReviewFormats,
+                destinations,
               },
             }),
           }}
@@ -147,6 +159,7 @@ describe("reviewer application routes", () => {
                 requirements,
                 factOptions: [],
                 reviewFormats: entryReviewFormats,
+                destinations,
               },
             }),
           }}
@@ -189,6 +202,7 @@ describe("reviewer application routes", () => {
                     availableCommands: ["generate"],
                   },
                 ],
+                destinations,
               },
             }),
           }}
@@ -232,6 +246,7 @@ describe("reviewer application routes", () => {
                 requirements,
                 factOptions: [],
                 reviewFormats: entryReviewFormats,
+                destinations,
               },
             }),
           }}
@@ -274,6 +289,7 @@ describe("reviewer application routes", () => {
                 requirements,
                 factOptions: [],
                 reviewFormats: entryReviewFormats,
+                destinations,
               },
             }),
           }}
@@ -325,6 +341,7 @@ describe("reviewer application routes", () => {
                 },
               ],
               reviewFormats: [],
+              destinations,
             }),
           }}
         />
@@ -366,13 +383,11 @@ describe("reviewer application routes", () => {
               ],
               reviewFormats: [
                 {
-                  id: "format-concise-v1",
-                  displayName: "Concise blurb",
-                  description: "One concise paragraph.",
-                  sample: "The team was attentive.",
+                  ...entryReviewFormats[0]!,
                   availableCommands: ["generate"],
                 },
               ],
+              destinations,
             }),
           }}
         />
@@ -420,13 +435,11 @@ describe("reviewer application routes", () => {
               ],
               reviewFormats: [
                 {
-                  id: "format-concise-v1",
-                  displayName: "Concise blurb",
-                  description: "One concise paragraph.",
-                  sample: "The team was attentive.",
+                  ...entryReviewFormats[0]!,
                   availableCommands: ["generate"],
                 },
               ],
+              destinations,
             }),
           }}
           generationClient={{
@@ -501,13 +514,11 @@ describe("reviewer application routes", () => {
               ],
               reviewFormats: [
                 {
-                  id: "format-concise-v1",
-                  displayName: "Concise blurb",
-                  description: "One concise paragraph.",
-                  sample: "The team was attentive.",
+                  ...entryReviewFormats[0]!,
                   availableCommands: ["generate"],
                 },
               ],
+              destinations,
             }),
           }}
           generationClient={{
@@ -539,6 +550,80 @@ describe("reviewer application routes", () => {
     expect(screen.getByText(/write it yourself/i)).toBeVisible();
   });
 
+  it("preserves a usable manual review path when assisted budget is unavailable", async () => {
+    const user = userEvent.setup();
+    const copied: string[] = [];
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              requirements,
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  ...entryReviewFormats[0]!,
+                  availableCommands: ["generate"],
+                },
+              ],
+              destinations,
+            }),
+          }}
+          generationClient={{
+            async *start() {
+              yield {
+                type: "terminal",
+                status: "rejected",
+                code: "BUDGET_EXCEEDED",
+                retryable: false,
+              } as const;
+            },
+          }}
+          copyText={async (text) => {
+            copied.push(text);
+          }}
+          newIdempotencyKey={() => "generation-request-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Writing assistance is temporarily unavailable",
+      }),
+    ).toBeVisible();
+    const manual = screen.getByLabelText("Write your review yourself");
+    await user.type(manual, "The team was attentive.");
+    await user.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(copied).toEqual(["The team was attentive."]);
+    expect(screen.getByRole("link", { name: "Open Google Maps" })).toHaveAttribute(
+      "href",
+      "https://example.test/review",
+    );
+  });
+
   it("copies only the terminal Draft and keeps a manual selection fallback", async () => {
     const user = userEvent.setup();
     const copied: string[] = [];
@@ -565,13 +650,11 @@ describe("reviewer application routes", () => {
               ],
               reviewFormats: [
                 {
-                  id: "format-concise-v1",
-                  displayName: "Concise blurb",
-                  description: "One concise paragraph.",
-                  sample: "The team was attentive.",
+                  ...entryReviewFormats[0]!,
                   availableCommands: ["generate"],
                 },
               ],
+              destinations,
             }),
           }}
           generationClient={{
@@ -611,9 +694,154 @@ describe("reviewer application routes", () => {
     await user.click(screen.getByRole("button", { name: "Copy" }));
 
     expect(copied).toEqual(["The team was exceptionally attentive."]);
-    expect(draft).toHaveValue(
-      "The team was exceptionally attentive.",
+    expect(
+      await screen.findByRole("heading", { name: "Your review is ready" }),
+    ).toBeVisible();
+    expect(screen.getByText("The team was exceptionally attentive.")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Google Maps" })).toHaveAttribute(
+      "href",
+      "https://example.test/review",
     );
-    expect(screen.getByRole("status")).toHaveTextContent("Copied");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("shows backend format limits and marks manual edits without blocking copy", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              requirements,
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  ...entryReviewFormats[0]!,
+                  constraints: { minChars: 20, maxChars: 30 },
+                  availableCommands: ["generate"],
+                },
+              ],
+              destinations,
+            }),
+          }}
+          generationClient={{
+            async *start() {
+              yield {
+                type: "terminal",
+                status: "completed",
+                draft: {
+                  id: "draft-a",
+                  generationId: "generation-a",
+                  revision: 1,
+                  text: "The team was attentive.",
+                },
+              } as const;
+            },
+          }}
+          newIdempotencyKey={() => "generation-request-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
+    expect(screen.getByText("20–30 characters")).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
+
+    const draft = await screen.findByRole("textbox", {
+      name: "Your draft — edit it freely",
+    });
+    await user.type(draft, " This is now deliberately too long.");
+
+    expect(screen.getByText("Edited by you")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This format works best between 20 and 30 characters",
+    );
+    expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled();
+  });
+
+  it("lets the reviewer abort generation without exposing partial text", async () => {
+    const user = userEvent.setup();
+    let observedSignal: AbortSignal | undefined;
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              requirements,
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                {
+                  ...entryReviewFormats[0]!,
+                  availableCommands: ["generate"],
+                },
+              ],
+              destinations,
+            }),
+          }}
+          generationClient={{
+            async *start(_input, signal) {
+              observedSignal = signal;
+              yield {
+                type: "progress",
+                phase: "generating",
+                elapsedSeconds: 7,
+              } as const;
+              await new Promise<void>((resolve) => {
+                signal.addEventListener("abort", () => resolve(), { once: true });
+              });
+            },
+          }}
+          newIdempotencyKey={() => "generation-request-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
+
+    expect(await screen.findByText("Generating · 7s")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Stop generation" }));
+
+    expect(observedSignal?.aborted).toBe(true);
+    expect(
+      await screen.findByRole("heading", { name: "Generation stopped" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 });

@@ -30,6 +30,7 @@ describe("US-01.3 persisted Context entry service", () => {
               },
               factOptions: [],
               reviewFormats: [],
+              destinations: [],
             },
           };
         },

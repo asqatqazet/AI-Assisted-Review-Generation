@@ -33,6 +33,7 @@ describe("US-01.3 Review Session BFF projection", () => {
               },
             ],
             reviewFormats: [],
+            destinations: [],
           };
         },
       },

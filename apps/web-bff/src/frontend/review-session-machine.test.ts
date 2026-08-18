@@ -32,7 +32,16 @@ const projection: ReviewSessionProjectionDto = {
       displayName: "Concise blurb",
       description: "One concise paragraph.",
       sample: "The team was attentive.",
+      targetPlatform: "google",
+      constraints: { minChars: 20, maxChars: 420 },
       availableCommands: ["generate"],
+    },
+  ],
+  destinations: [
+    {
+      targetPlatform: "google",
+      displayName: "Google Maps",
+      targetUrl: "https://example.test/review",
     },
   ],
 };
@@ -87,6 +96,37 @@ describe("Review Session transition table", () => {
       value: "format",
       selectedFactOptionIds: ["fact-attentive"],
       selectedReviewFormatId: null,
+    });
+  });
+
+  it("preserves the reviewer's Fact Option selection order", () => {
+    const secondFact = {
+      id: "fact-friendly",
+      label: "The team was friendly",
+      categoryLabel: "Service",
+      polarity: "positive" as const,
+    };
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      {
+        type: "REVIEW_SESSION_LOADED",
+        projection: {
+          ...projection,
+          factOptions: [...projection.factOptions, secondFact],
+        },
+      },
+    );
+    const selectedSecond = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: secondFact.id,
+    });
+    const selectedFirst = transitionReviewSession(selectedSecond, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+
+    expect(selectedFirst).toMatchObject({
+      selectedFactOptionIds: ["fact-friendly", "fact-attentive"],
     });
   });
 
@@ -202,6 +242,40 @@ describe("Review Session transition table", () => {
     ).toMatchObject({
       value: "generating",
       idempotencyKey: "generation-request-b",
+    });
+  });
+
+  it("returns a grounded rejection to the retained Fact choices", () => {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      { type: "REVIEW_SESSION_LOADED", projection },
+    );
+    const selectedFact = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+    const format = transitionReviewSession(selectedFact, {
+      type: "CONTINUE_REQUESTED",
+    });
+    const selectedFormat = transitionReviewSession(format, {
+      type: "REVIEW_FORMAT_SELECTED",
+      reviewFormatId: "format-concise-v1",
+    });
+    const generating = transitionReviewSession(selectedFormat, {
+      type: "GENERATION_REQUESTED",
+      idempotencyKey: "generation-request-a",
+    });
+    const failed = transitionReviewSession(generating, {
+      type: "GENERATION_FAILED",
+      code: "GROUNDING_REJECTED",
+      retryable: false,
+    });
+
+    expect(
+      transitionReviewSession(failed, { type: "RETURN_TO_FACTS" }),
+    ).toMatchObject({
+      value: "facts",
+      selectedFactOptionIds: ["fact-attentive"],
     });
   });
 });

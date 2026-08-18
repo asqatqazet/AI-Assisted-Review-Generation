@@ -19,6 +19,11 @@ export interface ReviewSessionFormatProjection {
   readonly displayName: string;
   readonly description: string;
   readonly sample: string;
+  readonly targetPlatform: string;
+  readonly constraints: {
+    readonly minChars: number;
+    readonly maxChars: number;
+  };
   readonly availableCommands: readonly (
     | "generate"
     | "paraphrase"
@@ -27,6 +32,12 @@ export interface ReviewSessionFormatProjection {
     | "expand"
     | "revise-wording"
   )[];
+}
+
+export interface ReviewSessionDestinationProjection {
+  readonly targetPlatform: string;
+  readonly displayName: string;
+  readonly targetUrl: string;
 }
 
 export interface StoredReviewSessionProjection {
@@ -44,6 +55,7 @@ export interface StoredReviewSessionProjection {
   };
   readonly factOptions: readonly ReviewSessionFactProjection[];
   readonly reviewFormats: readonly ReviewSessionFormatProjection[];
+  readonly destinations: readonly ReviewSessionDestinationProjection[];
 }
 
 export interface PostgresReviewSessionReader {
@@ -167,6 +179,7 @@ export interface PostgresEntryAdmissionStore {
           };
           readonly factOptions: readonly ReviewSessionFactProjection[];
           readonly reviewFormats: readonly ReviewSessionFormatProjection[];
+          readonly destinations: readonly ReviewSessionDestinationProjection[];
         };
       }
     | { readonly status: "unavailable" }
@@ -218,7 +231,15 @@ interface ReviewFormatRow {
   readonly display_name: string | null;
   readonly description: string | null;
   readonly sample: string | null;
+  readonly target_platform: string;
+  readonly constraints: unknown;
   readonly allowed_actions: string[];
+}
+
+interface DestinationRow {
+  readonly target_platform: string;
+  readonly display_name: string;
+  readonly target_url: string;
 }
 
 interface AdmissionSessionRow {
@@ -293,6 +314,26 @@ const minimumFactSelections = (policy: unknown): number => {
   return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 20
     ? value
     : 1;
+};
+
+const formatConstraints = (
+  value: unknown,
+): { readonly minChars: number; readonly maxChars: number } | undefined => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Readonly<Record<string, unknown>>;
+  const minChars = record["minChars"];
+  const maxChars = record["maxChars"];
+  return typeof minChars === "number" &&
+    Number.isInteger(minChars) &&
+    minChars >= 0 &&
+    typeof maxChars === "number" &&
+    Number.isInteger(maxChars) &&
+    maxChars > 0 &&
+    minChars <= maxChars
+    ? { minChars, maxChars }
+    : undefined;
 };
 
 const toAction = (value: string): "generate" | "paraphrase" | undefined =>
@@ -450,6 +491,8 @@ export function createPostgresReviewSessionReader({
               format.localized_text -> 'sample' ->> ${session.locale},
               format.localized_text -> 'sample' ->> 'en-GB'
             ) AS sample,
+            format.target_platform,
+            format.constraints,
             enablement.allowed_actions::text[]
           FROM review_format_enablements AS enablement
           JOIN review_format_versions AS format
@@ -466,10 +509,12 @@ export function createPostgresReviewSessionReader({
         `;
         const reviewFormats: ReviewSessionFormatProjection[] = [];
         for (const format of formatRows) {
+          const constraints = formatConstraints(format.constraints);
           if (
             format.display_name === null ||
             format.description === null ||
-            format.sample === null
+            format.sample === null ||
+            constraints === undefined
           ) {
             continue;
           }
@@ -478,12 +523,32 @@ export function createPostgresReviewSessionReader({
             displayName: format.display_name,
             description: format.description,
             sample: format.sample,
+            targetPlatform: format.target_platform,
+            constraints,
             availableCommands: format.allowed_actions.flatMap((action) => {
               const command = toAvailableCommand(action);
               return command === undefined ? [] : [command];
             }),
           });
         }
+
+        const destinations = await transaction.$queryRaw<DestinationRow[]>`
+          SELECT
+            destination_type.key AS target_platform,
+            COALESCE(
+              destination_type.external_id_schema ->> 'displayName',
+              destination_type.key
+            ) AS display_name,
+            destination_binding.target_url
+          FROM posting_destination_bindings AS destination_binding
+          JOIN posting_destination_types AS destination_type
+            ON destination_type.id = destination_binding.destination_type_id
+          WHERE destination_binding.tenant_id = ${binding.tenant_id}::uuid
+            AND destination_binding.location_id = ${binding.location_id}::uuid
+            AND destination_binding.enabled = true
+            AND destination_type.status = 'ACTIVE'
+          ORDER BY destination_type.key, destination_binding.id
+        `;
 
         return {
           reviewSessionId: session.review_session_id,
@@ -500,6 +565,11 @@ export function createPostgresReviewSessionReader({
           },
           factOptions,
           reviewFormats,
+          destinations: destinations.map((destination) => ({
+            targetPlatform: destination.target_platform,
+            displayName: destination.display_name,
+            targetUrl: destination.target_url,
+          })),
         };
       });
     },
@@ -633,6 +703,8 @@ export function createPostgresEntryAdmissionStore({
               format.localized_text -> 'sample' ->> ${context.locale},
               format.localized_text -> 'sample' ->> 'en-GB'
             ) AS sample,
+            format.target_platform,
+            format.constraints,
             enablement.allowed_actions::text[]
           FROM review_format_enablements AS enablement
           JOIN review_format_versions AS format
@@ -643,24 +715,47 @@ export function createPostgresEntryAdmissionStore({
             AND format.locale IN (${context.locale}, 'any')
           ORDER BY enablement.sort_order, format.id
         `;
-        const reviewFormats = formats.flatMap((format) =>
-          format.display_name === null ||
-          format.description === null ||
-          format.sample === null
-            ? []
-            : [
-                {
-                  id: format.id,
-                  displayName: format.display_name,
-                  description: format.description,
-                  sample: format.sample,
-                  availableCommands: format.allowed_actions.flatMap((action) => {
-                    const command = toAvailableCommand(action);
-                    return command === undefined ? [] : [command];
-                  }),
-                },
-              ],
-        );
+        const reviewFormats: ReviewSessionFormatProjection[] = [];
+        for (const format of formats) {
+          const constraints = formatConstraints(format.constraints);
+          if (
+            format.display_name === null ||
+            format.description === null ||
+            format.sample === null ||
+            constraints === undefined
+          ) {
+            continue;
+          }
+          reviewFormats.push({
+            id: format.id,
+            displayName: format.display_name,
+            description: format.description,
+            sample: format.sample,
+            targetPlatform: format.target_platform,
+            constraints,
+            availableCommands: format.allowed_actions.flatMap((action) => {
+              const command = toAvailableCommand(action);
+              return command === undefined ? [] : [command];
+            }),
+          });
+        }
+        const destinations = await transaction.$queryRaw<DestinationRow[]>`
+          SELECT
+            destination_type.key AS target_platform,
+            COALESCE(
+              destination_type.external_id_schema ->> 'displayName',
+              destination_type.key
+            ) AS display_name,
+            destination_binding.target_url
+          FROM posting_destination_bindings AS destination_binding
+          JOIN posting_destination_types AS destination_type
+            ON destination_type.id = destination_binding.destination_type_id
+          WHERE destination_binding.tenant_id = ${scope.tenant_id}::uuid
+            AND destination_binding.location_id = ${scope.location_id}::uuid
+            AND destination_binding.enabled = true
+            AND destination_type.status = 'ACTIVE'
+          ORDER BY destination_type.key, destination_binding.id
+        `;
         return {
           status: "ready" as const,
           context: {
@@ -675,6 +770,11 @@ export function createPostgresEntryAdmissionStore({
             },
             factOptions,
             reviewFormats,
+            destinations: destinations.map((destination) => ({
+              targetPlatform: destination.target_platform,
+              displayName: destination.display_name,
+              targetUrl: destination.target_url,
+            })),
           },
         };
       });

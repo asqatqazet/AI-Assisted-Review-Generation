@@ -3,7 +3,7 @@ import {
   QueryClientProvider,
   useMutation,
 } from "@tanstack/react-query";
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Route, Routes, useParams } from "react-router-dom";
 
 import {
@@ -12,6 +12,7 @@ import {
 } from "./entry-challenge-client.js";
 import {
   createHttpGenerationClient,
+  GenerationTransportError,
   type GenerationClient,
 } from "./generation-client.js";
 import {
@@ -354,6 +355,12 @@ function ReviewRoute({
     "idle" | "copied" | "manual"
   >("idle");
   const [draftText, setDraftText] = useState("");
+  const [completedText, setCompletedText] = useState<string | null>(null);
+  const [generationProgress, setGenerationProgress] = useState<{
+    readonly phase: "queued" | "generating" | "validating" | "persisting";
+    readonly elapsedSeconds: number;
+  }>({ phase: "queued", elapsedSeconds: 0 });
+  const generationAbortRef = useRef<AbortController | null>(null);
   const reviewSessionQuery = useReviewSession(
     reviewSessionClient,
     reviewSessionHandle,
@@ -363,6 +370,8 @@ function ReviewRoute({
     setState(createReviewSessionState(reviewSessionHandle));
     setCopyStatus("idle");
     setDraftText("");
+    setCompletedText(null);
+    setGenerationProgress({ phase: "queued", elapsedSeconds: 0 });
   }, [reviewSessionHandle]);
 
   useEffect(() => {
@@ -383,6 +392,8 @@ function ReviewRoute({
     }
 
     const abortController = new AbortController();
+    generationAbortRef.current = abortController;
+    setGenerationProgress({ phase: "queued", elapsedSeconds: 0 });
     void (async () => {
       try {
         for await (const event of generationClient.start(
@@ -394,6 +405,18 @@ function ReviewRoute({
           },
           abortController.signal,
         )) {
+          if (event.type === "progress") {
+            setGenerationProgress({
+              phase: event.phase,
+              elapsedSeconds: event.elapsedSeconds,
+            });
+          }
+          if (event.type === "heartbeat") {
+            setGenerationProgress((current) => ({
+              ...current,
+              elapsedSeconds: event.elapsedSeconds,
+            }));
+          }
           if (event.type === "terminal" && event.status === "completed") {
             setDraftText(event.draft.text);
             setState((current) =>
@@ -415,12 +438,16 @@ function ReviewRoute({
             return;
           }
         }
-      } catch {
+      } catch (error) {
         if (!abortController.signal.aborted) {
           setState((current) =>
             transitionReviewSession(current, {
               type: "GENERATION_FAILED",
-              code: "GENERATION_FAILED",
+              code:
+                error instanceof GenerationTransportError &&
+                error.code === "EDGE_THROTTLED"
+                  ? "RATE_LIMITED"
+                  : "GENERATION_FAILED",
               retryable: true,
             }),
           );
@@ -428,7 +455,12 @@ function ReviewRoute({
       }
     })();
 
-    return () => abortController.abort();
+    return () => {
+      abortController.abort();
+      if (generationAbortRef.current === abortController) {
+        generationAbortRef.current = null;
+      }
+    };
   }, [generationClient, state]);
 
   if (state.value === "facts") {
@@ -555,6 +587,12 @@ function ReviewRoute({
                   <span className={styles.formatName}>{format.displayName}</span>
                   <span className={styles.formatDescription}>{format.description}</span>
                   <span className={styles.formatMeta}>{copy.formatMeta}</span>
+                  <span className={styles.formatConstraint}>
+                    {copy.formatConstraints(
+                      format.constraints.minChars,
+                      format.constraints.maxChars,
+                    )}
+                  </span>
                   <span className={styles.formatSample}>{format.sample}</span>
                 </span>
               </label>
@@ -598,12 +636,35 @@ function ReviewRoute({
         <h1 className={styles.title}>{copy.generatingHeading}</h1>
         <section className={styles.progressCard} aria-live="polite">
           <p className={styles.progressTitle}>{copy.checkingDraft}</p>
+          <p className={styles.progressMeta}>
+            {copy.progress(
+              generationProgress.phase,
+              generationProgress.elapsedSeconds,
+            )}
+          </p>
           <div className={styles.progressTrack} aria-hidden="true">
             <span className={styles.progressBar} />
           </div>
           <p className={styles.status} role="status">
             {copy.safeOutputOnly}
           </p>
+          <button
+            className={styles.secondaryButton}
+            type="button"
+            onClick={() => {
+              generationAbortRef.current?.abort();
+              generationAbortRef.current = null;
+              setState((current) =>
+                transitionReviewSession(current, {
+                  type: "GENERATION_FAILED",
+                  code: "CANCELLED",
+                  retryable: true,
+                }),
+              );
+            }}
+          >
+            {copy.stopGeneration}
+          </button>
         </section>
       </SurveyScreen>
     );
@@ -611,6 +672,70 @@ function ReviewRoute({
 
   if (state.value === "results") {
     const copy = getSurveyCopy(state.projection.locale);
+    const selectedFormat = state.projection.reviewFormats.find(
+      (format) => format.id === state.selectedReviewFormatId,
+    );
+    const destination = state.projection.destinations.find(
+      (candidate) => candidate.targetPlatform === selectedFormat?.targetPlatform,
+    );
+    const dirty = draftText !== state.draft.text;
+    const violatesFormat =
+      selectedFormat !== undefined &&
+      (draftText.length < selectedFormat.constraints.minChars ||
+        draftText.length > selectedFormat.constraints.maxChars);
+
+    if (completedText !== null) {
+      return (
+        <SurveyScreen
+          brand={state.projection.tenantDisplayName}
+          location={state.projection.locationDisplayName}
+          locale={state.projection.locale}
+        >
+          <p className={styles.eyebrow}>{copy.doneEyebrow}</p>
+          <h1 className={styles.title}>{copy.doneHeading}</h1>
+          <p className={styles.lead}>{copy.doneLead}</p>
+          <section className={styles.resultCard}>
+            <p className={styles.finalReviewText}>{completedText}</p>
+            <div className={styles.resultActions}>
+              <button
+                className={styles.copyButton}
+                type="button"
+                onClick={() => {
+                  void copyText(completedText)
+                    .then(() => setCopyStatus("copied"))
+                    .catch(() => setCopyStatus("manual"));
+                }}
+              >
+                {copy.copyAgain}
+              </button>
+              {destination === undefined ? null : (
+                <a
+                  className={styles.destinationButton}
+                  href={destination.targetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {copy.openDestination(destination.displayName)}
+                </a>
+              )}
+            </div>
+            {destination === undefined ? (
+              <p className={styles.status} role="status">
+                {copy.noDestination}
+              </p>
+            ) : null}
+            <button
+              className={styles.textButton}
+              type="button"
+              onClick={() => setCompletedText(null)}
+            >
+              {copy.backToEdit}
+            </button>
+          </section>
+        </SurveyScreen>
+      );
+    }
+
     return (
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
@@ -623,12 +748,10 @@ function ReviewRoute({
         <section className={styles.resultCard}>
           <header className={styles.resultHeader}>
             <h2 className={styles.resultTitle}>
-              {state.projection.reviewFormats.find(
-                (format) => format.id === state.selectedReviewFormatId,
-              )?.displayName ?? "Review"}
+              {selectedFormat?.displayName ?? "Review"}
             </h2>
             <span className={styles.resultMeta}>
-              {state.projection.action} · {copy.guarded}
+              {copy.actionLabel(state.projection.action)} · {copy.guarded}
             </span>
           </header>
           <label className={styles.fieldLabel} htmlFor="review-text">
@@ -642,8 +765,26 @@ function ReviewRoute({
             onChange={(event) => setDraftText(event.target.value)}
           />
           <p className={styles.characterCount}>
-            {copy.characters(draftText.length)}
+            {selectedFormat === undefined
+              ? copy.characters(draftText.length)
+              : copy.charactersAgainstLimit(
+                  draftText.length,
+                  selectedFormat.constraints.maxChars,
+                )}
           </p>
+          {dirty ? (
+            <p className={styles.editedState} role="status">
+              {copy.editedByYou}
+            </p>
+          ) : null}
+          {violatesFormat && selectedFormat !== undefined ? (
+            <p className={styles.constraintWarning} role="alert">
+              {copy.formatWarning(
+                selectedFormat.constraints.minChars,
+                selectedFormat.constraints.maxChars,
+              )}
+            </p>
+          ) : null}
           <details className={styles.provenance}>
             <summary>{copy.provenance(state.selectedFactOptionIds.length)}</summary>
           </details>
@@ -653,7 +794,10 @@ function ReviewRoute({
               type="button"
               onClick={() => {
                 void copyText(draftText)
-                  .then(() => setCopyStatus("copied"))
+                  .then(() => {
+                    setCopyStatus("copied");
+                    setCompletedText(draftText);
+                  })
                   .catch(() => setCopyStatus("manual"));
               }}
             >
@@ -677,14 +821,108 @@ function ReviewRoute({
 
   if (state.value === "generation-failed") {
     const copy = getSurveyCopy(state.projection.locale);
+    const cancelled = state.code === "CANCELLED";
+    const rateLimited = state.code === "RATE_LIMITED";
+    const budgetUnavailable = state.code === "BUDGET_EXCEEDED";
+    const groundingRejected = state.code === "GROUNDING_REJECTED";
+    const formatRejected =
+      state.code === "FORMAT_REJECTED" || state.code === "POLICY_REJECTED";
+    const selectedFormat = state.projection.reviewFormats.find(
+      (format) => format.id === state.selectedReviewFormatId,
+    );
+    const destination = state.projection.destinations.find(
+      (candidate) => candidate.targetPlatform === selectedFormat?.targetPlatform,
+    );
+    const heading = cancelled
+      ? copy.cancelledHeading
+      : rateLimited
+        ? copy.rateLimitedHeading
+        : budgetUnavailable
+          ? copy.budgetHeading
+          : groundingRejected
+            ? copy.groundingHeading
+            : formatRejected
+              ? copy.formatFailureHeading
+              : copy.failureHeading;
+    const body = cancelled
+      ? copy.cancelledBody
+      : rateLimited
+        ? copy.rateLimitedBody
+        : budgetUnavailable
+          ? copy.budgetBody
+          : groundingRejected
+            ? copy.groundingBody
+            : formatRejected
+              ? copy.formatFailureBody
+              : copy.failureBody;
     return (
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
         locale={state.projection.locale}
       >
-        <h1 className={styles.title}>{copy.failureHeading}</h1>
-        <p className={styles.lead} role="alert">{copy.failureBody}</p>
+        <h1 className={styles.title}>{heading}</h1>
+        <p className={styles.lead} role="alert">{body}</p>
+        {budgetUnavailable ? (
+          <section className={styles.resultCard}>
+            <label className={styles.fieldLabel} htmlFor="manual-review-text">
+              {copy.manualReviewLabel}
+            </label>
+            <textarea
+              className={styles.reviewTextarea}
+              id="manual-review-text"
+              value={draftText}
+              onChange={(event) => setDraftText(event.target.value)}
+            />
+            <p className={styles.characterCount}>
+              {copy.characters(draftText.length)}
+            </p>
+            <div className={styles.resultActions}>
+              <button
+                className={styles.copyButton}
+                type="button"
+                disabled={draftText.trim().length === 0}
+                onClick={() => {
+                  void copyText(draftText)
+                    .then(() => setCopyStatus("copied"))
+                    .catch(() => setCopyStatus("manual"));
+                }}
+              >
+                {copy.copy}
+              </button>
+              {destination === undefined ? null : (
+                <a
+                  className={styles.destinationButton}
+                  href={destination.targetUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {copy.openDestination(destination.displayName)}
+                </a>
+              )}
+            </div>
+            <p className={styles.status} role="status" aria-live="polite">
+              {copyStatus === "copied"
+                ? copy.copied
+                : copyStatus === "manual"
+                  ? copy.manualCopy
+                  : copy.readyToCopy}
+            </p>
+          </section>
+        ) : null}
+        {groundingRejected || formatRejected ? (
+          <button
+            className={styles.primaryButton}
+            type="button"
+            onClick={() =>
+              setState((current) =>
+                transitionReviewSession(current, { type: "RETURN_TO_FACTS" }),
+              )
+            }
+          >
+            {copy.changeFacts}
+          </button>
+        ) : null}
         {state.retryable ? (
           <button
             className={styles.primaryButton}

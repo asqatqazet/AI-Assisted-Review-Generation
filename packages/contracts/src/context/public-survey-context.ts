@@ -26,6 +26,13 @@ export const PublicSurveyContextDtoSchema = z.strictObject({
       displayName: z.string().min(1),
       description: z.string().min(1),
       sample: z.string().min(1),
+      targetPlatform: z.string().min(1),
+      constraints: z.strictObject({
+        minChars: z.number().int().nonnegative(),
+        maxChars: z.number().int().positive(),
+      }).refine((constraints) => constraints.minChars <= constraints.maxChars, {
+        message: "minChars must not exceed maxChars",
+      }),
       availableCommands: z.array(
         z.enum([
           "generate",
@@ -36,6 +43,13 @@ export const PublicSurveyContextDtoSchema = z.strictObject({
           "revise-wording",
         ]),
       ),
+    }),
+  ),
+  destinations: z.array(
+    z.strictObject({
+      targetPlatform: z.string().min(1),
+      displayName: z.string().min(1),
+      targetUrl: z.string().url(),
     }),
   ),
 });

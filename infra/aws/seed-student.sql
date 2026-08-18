@@ -89,6 +89,57 @@ ON CONFLICT (id) DO UPDATE SET
   slug = EXCLUDED.slug,
   name = EXCLUDED.name;
 
+INSERT INTO posting_destination_types (id, key, external_id_schema, status)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000140',
+    'google',
+    '{"displayName":"Google Maps","identifier":"placeQuery"}'::jsonb,
+    'ACTIVE'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000141',
+    'tripadvisor',
+    '{"displayName":"Tripadvisor","identifier":"locationQuery"}'::jsonb,
+    'ACTIVE'
+  )
+ON CONFLICT (key) DO UPDATE SET
+  external_id_schema = EXCLUDED.external_id_schema,
+  status = EXCLUDED.status;
+
+INSERT INTO posting_destination_bindings (
+  id,
+  tenant_id,
+  location_id,
+  destination_type_id,
+  external_id,
+  target_url,
+  enabled
+)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000142',
+    '00000000-0000-4000-8000-000000000101',
+    '00000000-0000-4000-8000-000000000102',
+    (SELECT id FROM posting_destination_types WHERE key = 'google'),
+    'Speicher Neun HafenCity',
+    'https://www.google.com/maps/search/?api=1&query=Speicher%20Neun%20HafenCity',
+    true
+  ),
+  (
+    '00000000-0000-4000-8000-000000000143',
+    '00000000-0000-4000-8000-000000000101',
+    '00000000-0000-4000-8000-000000000102',
+    (SELECT id FROM posting_destination_types WHERE key = 'tripadvisor'),
+    'Speicher Neun HafenCity',
+    'https://www.tripadvisor.com/Search?q=Speicher%20Neun%20HafenCity',
+    true
+  )
+ON CONFLICT (tenant_id, location_id, destination_type_id) DO UPDATE SET
+  external_id = EXCLUDED.external_id,
+  target_url = EXCLUDED.target_url,
+  enabled = EXCLUDED.enabled;
+
 -- Preserve historical catalogue versions from earlier releases. They may be
 -- referenced by immutable Generations, so retire/disable them instead of
 -- rewriting their versioned content.

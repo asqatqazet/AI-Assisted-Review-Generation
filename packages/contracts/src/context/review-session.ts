@@ -20,6 +20,7 @@ export const ReviewSessionProjectionDtoSchema = z.strictObject({
   requirements: PublicSurveyContextDtoSchema.shape.requirements,
   factOptions: PublicSurveyContextDtoSchema.shape.factOptions,
   reviewFormats: PublicSurveyContextDtoSchema.shape.reviewFormats,
+  destinations: PublicSurveyContextDtoSchema.shape.destinations,
 });
 
 export type ReviewSessionProjectionDto = z.infer<

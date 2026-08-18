@@ -18,6 +18,7 @@ const publicProjection = {
     },
     factOptions: [],
     reviewFormats: [],
+    destinations: [],
   },
 } as const;
 

@@ -15,6 +15,7 @@ const context: PublicSurveyContextDto = {
   },
   factOptions: [],
   reviewFormats: [],
+  destinations: [],
 };
 
 describe("Survey transition table", () => {

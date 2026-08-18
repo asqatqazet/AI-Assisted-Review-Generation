@@ -118,9 +118,12 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
             displayName: "Concise review",
             description: "One short paragraph.",
             sample: "The team was attentive.",
+            targetPlatform: "google",
+            constraints: { minChars: 1, maxChars: 350 },
             availableCommands: ["generate"],
           },
         ],
+        destinations: [],
       });
     } finally {
       await reader.disconnect();

@@ -24,6 +24,7 @@ describe("US-01.3 Context Review Session application module", () => {
           },
           factOptions: [],
           reviewFormats: [] as const,
+          destinations: [] as const,
         };
       },
       disconnect: async () => undefined,
@@ -49,6 +50,7 @@ describe("US-01.3 Context Review Session application module", () => {
       },
       factOptions: [],
       reviewFormats: [],
+      destinations: [],
     });
     expect(received).toEqual({
       routeHandleHash:

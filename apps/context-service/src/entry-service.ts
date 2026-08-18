@@ -70,7 +70,11 @@ export function createEntryService({
               factOptions: [...stored.context.factOptions],
               reviewFormats: stored.context.reviewFormats.map((format) => ({
                 ...format,
+                constraints: { ...format.constraints },
                 availableCommands: [...format.availableCommands],
+              })),
+              destinations: stored.context.destinations.map((destination) => ({
+                ...destination,
               })),
             },
           };
