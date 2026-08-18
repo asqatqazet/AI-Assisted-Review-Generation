@@ -63,9 +63,16 @@
         "command": "vitest run --config vitest.integration.config.ts"
       }
     },
-    "build": {
+    "browser": {
       "executor": "nx:run-commands",
       "dependsOn": ["integration"],
+      "options": {
+        "command": "playwright test"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["browser"],
       "options": {
         "command": "nx run-many -t build --all --exclude=workspace"
       }

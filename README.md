@@ -1,6 +1,6 @@
 # Assisted Review Generation
 
-![verify](https://github.com/asihati/AI-Assited-Review-Generation/actions/workflows/verify.yml/badge.svg)
+![verify](https://github.com/asqatqazet/AI-Assisted-Review-Generation/actions/workflows/verify.yml/badge.svg)
 
 An assisted review-writing system that turns only reviewer-confirmed assertions into grounded drafts.
 
@@ -25,9 +25,11 @@ pnpm dev
 
 The walking skeleton exposes:
 
-- web + BFF: `http://localhost:3000/health`
-- Context: `http://localhost:3001/health`
-- Generation: `http://localhost:3002/health`
+- browser UI: `http://127.0.0.1:5173/`
+- synthetic review entry: `http://127.0.0.1:5173/s/demo-tenant/demo-location`
+- BFF health: `http://127.0.0.1:3000/health`
+- Context health: `http://127.0.0.1:3001/health`
+- Generation health: `http://127.0.0.1:3002/health`
 
 Run the same non-advisory gate used in CI:
 
@@ -35,4 +37,4 @@ Run the same non-advisory gate used in CI:
 pnpm verify
 ```
 
-Nx orders the gate as lint → typecheck → dependency-cruiser → unit → integration → build.
+Nx orders the gate as lint → typecheck → dependency-cruiser → unit → integration → browser → build.
