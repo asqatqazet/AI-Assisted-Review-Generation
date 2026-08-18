@@ -25,9 +25,9 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer:
-    remoteBaseUrl === undefined
-      ? {
+  ...(remoteBaseUrl === undefined
+    ? {
+        webServer: {
           command: "pnpm dev",
           url: `${localBaseUrl}/health`,
           timeout: 120_000,
@@ -41,6 +41,7 @@ export default defineConfig({
             REVIEW_LOCAL_CONTEXT_PORT: "3001",
             REVIEW_LOCAL_GENERATION_PORT: "3002",
           },
-        }
-      : undefined,
+        },
+      }
+    : {}),
 });
