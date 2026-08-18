@@ -194,6 +194,76 @@ test("the operator console renders only its BFF-granted 1024px scope", async ({
       }),
     });
   });
+  // Role, Tenants and capabilities arrive as one authorized projection; the
+  // browser derives no scope of its own.
+  await page.route("**/api/v1/console/views/bootstrap*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        view: "bootstrap",
+        data: {
+          user: {
+            id: "00000000-0000-4000-8000-000000000301",
+            displayName: "owner@example.com",
+          },
+          role: "platform_admin",
+          tenants: [
+            {
+              id: "00000000-0000-4000-8000-000000000101",
+              slug: "speicher-neun",
+              name: "Speicher Neun",
+              locations: [
+                {
+                  id: "00000000-0000-4000-8000-000000000102",
+                  slug: "hafencity",
+                  name: "Speicher Neun · HafenCity",
+                  active: true,
+                },
+              ],
+            },
+          ],
+          activeContext: { tenantId: null, locationId: null },
+          capabilities: {
+            canAccessPlatform: true,
+            canSwitchTenant: true,
+            canManageLocations: true,
+            canManageConfiguration: true,
+            canViewAnalytics: true,
+            canManageAiOperations: false,
+            canManageProviders: true,
+          },
+        },
+      }),
+    });
+  });
+  await page.route("**/api/v1/console/views/overview*", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        view: "overview",
+        data: {
+          scope: { type: "platform" },
+          window: {
+            from: "2026-07-19T00:00:00.000Z",
+            to: "2026-08-18T00:00:00.000Z",
+          },
+          metrics: {
+            generations: 0,
+            accepted: 0,
+            acceptanceRate: 0,
+            totalCost: { amountMicros: 0, currency: "EUR" },
+            costPerAccepted: null,
+          },
+          byAction: [],
+          byLocation: [],
+          byTenant: [],
+          experiment: null,
+          providerHealth: [],
+          alerts: [],
+        },
+      }),
+    });
+  });
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto("/console");
 
@@ -202,10 +272,21 @@ test("the operator console renders only its BFF-granted 1024px scope", async ({
   ).toBeVisible();
   const scopeBar = page.getByRole("banner");
   await expect(scopeBar).toContainText("Platform");
-  await expect(scopeBar).toContainText("Speicher Neun");
   await expect(scopeBar).toContainText("owner@example.com");
-  await expect(page.getByText("Speicher Neun · HafenCity")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
+
+  // Only the granted Tenant is offered, and its Locations become selectable
+  // only once that Tenant is the current scope.
+  const account = page.getByLabel("Account");
+  await expect(account.locator("option")).toHaveText([
+    "Platform",
+    "Speicher Neun",
+  ]);
+  await account.selectOption("00000000-0000-4000-8000-000000000101");
+  await expect(page.getByLabel("Location").locator("option")).toHaveText([
+    "All locations",
+    "Speicher Neun · HafenCity",
+  ]);
 
   const rendering = await page.evaluate(() => {
     const navigation = document
