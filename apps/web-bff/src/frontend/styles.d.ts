@@ -1,11 +1,15 @@
 declare module "*.module.css" {
   const classes: {
+    readonly accessCopy: string;
+    readonly accessPage: string;
+    readonly banner: string;
     readonly brand: string;
     readonly card: string;
     readonly cardCopy: string;
     readonly cardEyebrow: string;
     readonly cardLabel: string;
     readonly cardText: string;
+    readonly cardValue: string;
     readonly emptyCopy: string;
     readonly emptyTable: string;
     readonly cardTitle: string;
@@ -34,6 +38,8 @@ declare module "*.module.css" {
     readonly formatSample: string;
     readonly lead: string;
     readonly layout: string;
+    readonly locationSection: string;
+    readonly logout: string;
     readonly main: string;
     readonly meta: string;
     readonly navigation: string;
@@ -51,6 +57,7 @@ declare module "*.module.css" {
     readonly pathHint: string;
     readonly pathSection: string;
     readonly primaryButton: string;
+    readonly primaryAction: string;
     readonly progressBar: string;
     readonly progressCard: string;
     readonly progressMeta: string;
@@ -89,6 +96,8 @@ declare module "*.module.css" {
     readonly metric: string;
     readonly status: string;
     readonly surveyMain: string;
+    readonly table: string;
+    readonly tableWrap: string;
     readonly title: string;
     readonly textButton: string;
     readonly trustCopy: string;

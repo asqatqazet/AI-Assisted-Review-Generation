@@ -3,6 +3,7 @@ import {
   createPostgresReviewerGenerationAdmissionStore,
   createPostgresReviewSessionReader,
 } from "@review/db/admission";
+import { createPostgresOperatorAccessStore } from "@review/db/control-plane";
 
 import { hashCapability } from "./capability-hash.js";
 import { createContextFunctionHandler } from "./context-function.js";
@@ -27,6 +28,7 @@ export function createContextRuntime({
   const generationStore = createPostgresReviewerGenerationAdmissionStore({
     databaseUrl,
   });
+  const operatorAccessStore = createPostgresOperatorAccessStore({ databaseUrl });
   const entry = createEntryService({
     store: entryStore,
     newHandle: () => globalThis.crypto.randomUUID(),
@@ -56,6 +58,10 @@ export function createContextRuntime({
   });
 
   return createContextFunctionHandler({
+    operatorService: {
+      resolveAccess: async ({ identity }) =>
+        await operatorAccessStore.resolveAccess(identity),
+    },
     entryService: {
       prepareEntry: entry.prepareEntry,
       readEntryChallenge: entry.readEntryChallenge,

@@ -1,5 +1,6 @@
 import {
   EntryChallengeProjectionDtoSchema,
+  OperatorAccessProjectionDtoSchema,
   ReviewSessionProjectionDtoSchema,
   StartEntryRequestDtoSchema,
 } from "@review/contracts/context";
@@ -19,6 +20,8 @@ import type {
   ReviewerDispositionContextPort,
   ReviewerDispositionExecutionPort,
 } from "./ports/reviewer-disposition.port.js";
+import type { OperatorAuthPort } from "./ports/operator-auth.port.js";
+import type { OperatorContextPort } from "./ports/operator-context.port.js";
 import { createReviewerGenerationCoordinator } from "./reviewer-generation.js";
 import {
   type CsrfProtector,
@@ -44,6 +47,8 @@ export interface WebBffOptions {
   readonly reviewerDispositionExecutionPort?:
     | ReviewerDispositionExecutionPort
     | undefined;
+  readonly operatorAuth?: OperatorAuthPort | undefined;
+  readonly operatorContextPort?: OperatorContextPort | undefined;
 }
 
 const encoder = new TextEncoder();
@@ -113,6 +118,128 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   };
 
   app.get("/health", (c) => c.json({ status: "ok", service: "web-bff" }));
+
+  app.get("/auth/login", async (c) => {
+    if (options.operatorAuth === undefined) {
+      return c.json(
+        errorBody("OPERATOR_AUTH_UNAVAILABLE", "Sign in is unavailable.", true),
+        503,
+      );
+    }
+    const requestedReturnTo = c.req.query("returnTo");
+    const returnTo =
+      requestedReturnTo !== undefined &&
+      requestedReturnTo.startsWith("/console") &&
+      !requestedReturnTo.startsWith("//")
+        ? requestedReturnTo
+        : "/console";
+    const login = await options.operatorAuth.begin({ returnTo });
+    c.header(
+      "Set-Cookie",
+      `__Host-operator_oidc=${login.transactionCookie}; Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`,
+    );
+    c.header("Cache-Control", "private, no-store");
+    return c.redirect(login.authorizationUrl, 303);
+  });
+
+  app.get("/auth/callback", async (c) => {
+    const transactionCookie = getCookie(c, "__Host-operator_oidc");
+    const code = c.req.query("code");
+    const state = c.req.query("state");
+    if (
+      options.operatorAuth === undefined ||
+      transactionCookie === undefined ||
+      code === undefined ||
+      state === undefined
+    ) {
+      return c.json(
+        errorBody("OPERATOR_AUTH_FAILED", "Sign in could not be completed.", false),
+        400,
+      );
+    }
+    let result;
+    try {
+      result = await options.operatorAuth.complete({
+        code,
+        state,
+        transactionCookie,
+      });
+    } catch {
+      c.header(
+        "Set-Cookie",
+        "__Host-operator_oidc=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+      );
+      c.header("Cache-Control", "private, no-store");
+      return c.json(
+        errorBody(
+          "OPERATOR_AUTH_FAILED",
+          "Sign in could not be completed.",
+          false,
+        ),
+        400,
+      );
+    }
+    c.header(
+      "Set-Cookie",
+      `__Host-operator_session=${result.sessionCookie}; Max-Age=3600; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      { append: true },
+    );
+    c.header(
+      "Set-Cookie",
+      "__Host-operator_oidc=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+      { append: true },
+    );
+    c.header("Cache-Control", "private, no-store");
+    return c.redirect(result.returnTo, 303);
+  });
+
+  app.get("/api/v1/console/session", async (c) => {
+    c.header("Cache-Control", "private, no-store");
+    c.header("Vary", "Cookie");
+    const sessionCookie = getCookie(c, "__Host-operator_session");
+    if (
+      options.operatorAuth === undefined ||
+      options.operatorContextPort === undefined ||
+      sessionCookie === undefined
+    ) {
+      return c.json(
+        errorBody("OPERATOR_UNAUTHENTICATED", "Sign in is required.", false),
+        401,
+      );
+    }
+    const identity = await options.operatorAuth.readSession({ sessionCookie });
+    if (identity === null) {
+      return c.json(
+        errorBody("OPERATOR_UNAUTHENTICATED", "Sign in is required.", false),
+        401,
+      );
+    }
+    const access = await options.operatorContextPort.resolveAccess(identity);
+    if (access.status !== "authorized") {
+      return c.json(
+        errorBody("OPERATOR_FORBIDDEN", "Console access is unavailable.", false),
+        403,
+      );
+    }
+    return c.json(OperatorAccessProjectionDtoSchema.parse(access), 200);
+  });
+
+  app.post("/auth/logout", (c) => {
+    const origin = c.req.header("Origin");
+    const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
+    if (expectedOrigin === undefined || origin !== expectedOrigin) {
+      return c.json(
+        errorBody("NOT_FOUND", "This resource is unavailable.", false),
+        404,
+      );
+    }
+    c.header(
+      "Set-Cookie",
+      "__Host-operator_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+    c.header("Cache-Control", "private, no-store");
+    return c.body(null, 204);
+  });
 
   app.get("/s/:tenantSlug/:locationSlug", async (c) => {
     const existingBrowserCapability = getCookie(c, "__Host-review_browser");

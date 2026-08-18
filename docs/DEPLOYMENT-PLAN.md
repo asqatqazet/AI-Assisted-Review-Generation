@@ -22,7 +22,7 @@ The four delivery gates now have executable evidence:
 | Production composition | BFF, Context and Generation Lambda entrypoints load only their permitted ports and secrets | Implemented and tested |
 | Persisted Generate vertical | admission, immutable snapshot, execution fence, grounding, terminal Draft and cost settlement cross the real service ports | Implemented and tested |
 | Real database acceptance | success, provider failure and a 60-second progress-only stream cross all three deployables and PostgreSQL | Implemented and tested locally/CI |
-| Student AWS release | Terraform, OIDC workflow, immutable artifacts, aliases, synthetic seed, edge/direct-origin smoke and coordinated rollback | Implemented; no AWS deployment has been run |
+| Cost-controlled AWS release | Terraform, GitHub OIDC delivery, Cognito Operator OIDC, immutable artifacts, aliases, seeds, edge/direct-origin smoke and coordinated rollback | Implemented; rerun deployment to apply the Cognito/Console increment |
 
 ## Hard stop before any deployment
 
@@ -68,14 +68,16 @@ Follow the exact console paths, immutable OIDC subject and verification commands
 
 1. Push the verified commits to `main` and require the `verify` workflow to pass.
 2. Run `deploy-student` manually with capacity profile `student-low-quota`, a teardown date before the AWS
-   Free-plan expiry, and acknowledgement of the FakeProvider-only release. Use `reserved-concurrency` only
+   Free-plan expiry, the initial Operator email, and acknowledgement of the FakeProvider-only release. Use `reserved-concurrency` only
    after the regional account/unreserved quota is at least 113.
 3. The workflow verifies against disposable PostgreSQL, builds once, hashes the three deployment artifacts,
    migrates Neon, installs the idempotent `speicher-neun/hafencity` fixture, runs the AWS/free-tier
-   preflight, plans and applies Terraform, then publishes that exact UI build.
+   preflight, plans and applies Terraform, creates the Cognito Operator, binds its issuer/subject to the
+   initial Platform/Tenant Access Grants, publishes the OIDC runtime configuration, then publishes that exact UI build.
 4. Treat the run as successful only if the workflow proves all of the following:
    - `GET /health` and the UI succeed through CloudFront;
    - `GET /s/speicher-neun/hafencity` returns the expected entry redirect;
+   - `GET /auth/login?returnTo=%2Fconsole` redirects to Cognito and unauthenticated `GET /api/v1/console/session` returns `401`;
    - direct fast and streaming Function URL requests return `403`;
    - the release artifact contains checksums, Terraform outputs and five numeric Lambda alias versions.
 5. During the restricted assessment window, run one browser Generate journey and retain evidence that the
@@ -99,7 +101,7 @@ Do not describe this release as customer-ready until all of these are complete:
 
 - the rate-limit policy is enforced by a shared PostgreSQL admission path across Lambda instances, not only
   by pure/in-memory code and reserved concurrency;
-- Cognito/OIDC operator login, Access Grant enforcement and the operator console are deployed and tested;
+- Console configuration publishing, operational projections and privileged audit views beyond the minimal authorized scope page are implemented;
 - a real cloud 60-second generation and rollback drill have produced retained evidence;
 - live provider adapters have funded accounts, contract/evaluation evidence and atomic provider-specific
   spend caps. OpenAI and Gemini remain disabled in the strict-zero public release;

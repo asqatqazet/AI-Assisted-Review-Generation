@@ -34,12 +34,17 @@ import {
 } from "./features/survey/survey-queries.js";
 import { createSurveyState, transition, type SurveyState } from "./survey-machine.js";
 import styles from "./app.module.css";
+import {
+  createHttpConsoleClient,
+  type ConsoleClient,
+} from "./console/console-client.js";
 
 const OperatorConsole = lazy(() => import("./console/operator-console.js"));
 const defaultEntryChallengeClient = createHttpEntryChallengeClient();
 const defaultGenerationClient = createHttpGenerationClient();
 const defaultReviewSessionClient = createHttpReviewSessionClient();
 const defaultReviewerDispositionClient = createHttpReviewerDispositionClient();
+const defaultConsoleClient = createHttpConsoleClient();
 const defaultNavigate = (path: string): void => globalThis.location.assign(path);
 const defaultCopyText = async (text: string): Promise<void> => {
   if (globalThis.navigator.clipboard === undefined) {
@@ -1076,6 +1081,7 @@ export interface ReviewerApplicationProps {
   readonly newIdempotencyKey?: (() => string) | undefined;
   readonly copyText?: ((text: string) => Promise<void>) | undefined;
   readonly navigate?: ((path: string) => void) | undefined;
+  readonly consoleClient?: ConsoleClient | undefined;
 }
 
 export function ReviewerApplication({
@@ -1086,6 +1092,7 @@ export function ReviewerApplication({
   newIdempotencyKey = () => globalThis.crypto.randomUUID(),
   copyText = defaultCopyText,
   navigate = defaultNavigate,
+  consoleClient = defaultConsoleClient,
 }: ReviewerApplicationProps = {}): React.JSX.Element {
   const [queryClient] = useState(
     () =>
@@ -1130,7 +1137,7 @@ export function ReviewerApplication({
         path="/console/*"
         element={
           <Suspense fallback={<p role="status">Loading operator console…</p>}>
-            <OperatorConsole />
+            <OperatorConsole client={consoleClient} />
           </Suspense>
         }
       />

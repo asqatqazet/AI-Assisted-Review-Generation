@@ -10,6 +10,8 @@
 - GitHub `verify` 通过；
 - `deploy-student` 所有步骤通过；
 - CloudFront `/health` 和 UI 可访问；
+- `/auth/login` 跳转到 Cognito，未登录的 `/api/v1/console/session` 返回 `401`；
+- 受邀 Operator 可登录 `/console`，且只看到 Context 根据当前 Access Grants 返回的 Tenant/Location；
 - `/s/speicher-neun/hafencity` 返回 reviewer entry redirect；
 - 直接访问两个 Lambda Function URL 都返回 `403`；
 - release artifact 中存在 checksums、Terraform outputs 和五个数字化 Lambda alias version；
@@ -164,8 +166,13 @@ gh run list --workflow verify.yml --branch main --limit 3
 1. 选择 **Run workflow**，branch 必须是 `main`；
 2. `teardown_date` 填 AWS Free plan 到期日前的日期；
 3. `deployment_profile` 保持默认的 `student-low-quota`；
-4. 勾选 `acknowledge_fake_provider_only`；
-5. 开始运行。
+4. `operator_email` 填写首位 Console 管理员的真实邮箱；
+5. 勾选 `acknowledge_fake_provider_only`；
+6. 开始运行。
+
+首次 apply 会创建 Cognito 用户并发送临时密码邮件。该邮箱同时被绑定到不可变的 Cognito issuer/subject，workflow
+随后幂等写入 `platform_admin` Platform Access Grant 和示例 Tenant 的 `tenant_admin` Access Grant。不要通过改浏览器
+query、cookie 或前端状态来切换权限；每次 Console session 都由 Context 重新读取当前、未撤销且未过期的 Grants。
 
 workflow 会主动拒绝以下情况：不是 OIDC assumed role、不是 Active Free plan、credits 已耗尽、日期不安全、
 Region 不是 `eu-central-1`，或所选 capacity profile 与实际 Lambda quota 不匹配。`student-low-quota`
@@ -194,8 +201,14 @@ shasum -a 256 -c "$EVIDENCE_DIR/checksums.sha256"
 DOMAIN="$(jq -r '.cloudfront_domain_name.value' "$EVIDENCE_DIR/deployment-outputs.json")"
 curl --fail-with-body "https://$DOMAIN/health"
 curl -I "https://$DOMAIN/s/speicher-neun/hafencity"
+open "https://$DOMAIN/console"
 open "https://$DOMAIN/s/speicher-neun/hafencity"
 ```
+
+Operator Portal 的固定入口是 `https://$DOMAIN/console`。点击 **Sign in** 后使用 workflow 的 `operator_email` 和
+Cognito 邀请邮件中的临时密码；首次登录按 Cognito 页面要求设置新密码和可选 TOTP。成功后浏览器只持有 BFF
+签发的 1 小时 `HttpOnly; Secure; SameSite=Lax` session cookie，OIDC token 不下发给 React。若页面显示
+“Console access unavailable”，先检查该身份对应的 Access Grant 是否为 `ACTIVE` 且未过期，而不是在前端选择 Tenant。
 
 在浏览器完成合成旅程并确认：
 
@@ -230,6 +243,7 @@ open "https://$DOMAIN/s/speicher-neun/hafencity"
 
 ## 10. 仍然不是生产就绪
 
-首次 assessment 部署成功后，以下工作仍未完成：跨 Lambda 的 PostgreSQL admission rate limit、Cognito operator
-登录/Access Grant、自动化云端 60 秒测试、自动 destroy、WAF/abuse 决策，以及受预算保护的 OpenAI/Gemini live
-evidence。不要把这套 topology 宣称为 customer production topology。
+首次 assessment 部署成功后，以下工作仍未完成：跨 Lambda 的 PostgreSQL admission rate limit、Console 的配置
+发布/运营页面、自动化云端 60 秒测试、自动 destroy、WAF/abuse 决策，以及受预算保护的 OpenAI/Gemini live
+evidence。Cognito 登录、Operator Session、当前 Access Grant 解析和最小 Console scope 页面已经落地；不要把这些
+已完成的身份边界误写成完整的运营后台。

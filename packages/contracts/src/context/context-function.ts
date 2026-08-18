@@ -9,6 +9,9 @@ import { ReviewerDispositionScopeDtoSchema } from "../generation/reviewer-dispos
 import { IdentifierDtoSchema } from "../shared/primitives.js";
 import { PublicSurveyContextDtoSchema } from "./public-survey-context.js";
 import { ReviewSessionProjectionDtoSchema } from "./review-session.js";
+import {
+  ResolveOperatorAccessInvocationDtoSchema,
+} from "./operator-access.js";
 
 const BrowserCapabilityDtoSchema = z.string().regex(/^[A-Za-z0-9_-]{20,128}$/);
 
@@ -145,6 +148,7 @@ export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
     SettleGenerationInvocationDtoSchema,
     ListReconciliationCandidatesInvocationDtoSchema,
     ReleaseReconciledGenerationInvocationDtoSchema,
+    ResolveOperatorAccessInvocationDtoSchema,
   ],
 );
 
@@ -258,6 +262,7 @@ export const ReleaseReconciledGenerationInvocationResultDtoSchema =
 export type ContextFunctionInvocationDto = z.infer<
   typeof ContextFunctionInvocationDtoSchema
 >;
+
 export type PrepareEntryInvocationDto = z.infer<
   typeof PrepareEntryInvocationDtoSchema
 >;

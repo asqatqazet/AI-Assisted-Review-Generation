@@ -18,17 +18,37 @@ import {
   ReadReviewSessionInvocationResultDtoSchema,
   ReleaseReconciledGenerationInvocationDtoSchema,
   ReleaseReconciledGenerationInvocationResultDtoSchema,
+  ResolveOperatorAccessInvocationDtoSchema,
+  ResolveOperatorAccessInvocationResultDtoSchema,
   SettleGenerationInvocationDtoSchema,
   SettleGenerationInvocationResultDtoSchema,
 } from "@review/contracts/context";
 
 import type { ContextPort } from "../ports/context.port.js";
+import type { OperatorContextPort } from "../ports/operator-context.port.js";
 import type { ReviewerGenerationContextPort } from "../ports/reviewer-generation.port.js";
 import type { ReviewerDispositionContextPort } from "../ports/reviewer-disposition.port.js";
 import type { ReconciliationContextPort } from "../reconciliation.js";
 
 export interface ContextFunctionInvoker {
   invoke(request: ContextFunctionInvocationDto): Promise<unknown>;
+}
+
+export function createInvokedOperatorContextPort(
+  invoker: ContextFunctionInvoker,
+): OperatorContextPort {
+  return {
+    async resolveAccess(identity) {
+      const request = ResolveOperatorAccessInvocationDtoSchema.parse({
+        operation: "resolve-operator-access",
+        input: { identity },
+      });
+      const response = ResolveOperatorAccessInvocationResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return response.result;
+    },
+  };
 }
 
 export function createInvokedReviewerGenerationContextPort(

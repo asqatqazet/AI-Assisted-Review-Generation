@@ -1,7 +1,30 @@
 .page {
-  min-width: 1024px;
   min-height: 100vh;
   background: var(--surface-page);
+}
+
+.accessPage {
+  width: min(560px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 96px 0;
+}
+
+.accessCopy {
+  max-width: 55ch;
+  color: var(--text-body);
+  font: var(--type-body);
+}
+
+.primaryAction {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  margin-top: 20px;
+  padding: 10px 18px;
+  color: var(--surface-card);
+  text-decoration: none;
+  background: var(--maue-black);
+  border-radius: var(--radius-xs);
 }
 
 .scopeBar {
@@ -58,6 +81,23 @@
 
 .operator {
   margin-left: auto;
+  text-transform: none;
+}
+
+.logout {
+  min-height: 40px;
+  padding: 7px 12px;
+  color: var(--text-body);
+  background: transparent;
+  border: 1px solid var(--border-rule);
+  border-radius: var(--radius-xs);
+}
+
+.banner {
+  margin: 0;
+  padding: 10px 20px;
+  color: var(--text-body);
+  background: var(--surface-wash-lilac);
 }
 
 .layout {
@@ -219,6 +259,12 @@
   letter-spacing: -1px;
 }
 
+.cardValue {
+  margin: 10px 0 0;
+  color: var(--text-heading);
+  font: 400 24px/1.15 var(--font-display);
+}
+
 .overviewGrid {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(240px, 1fr);
@@ -258,4 +304,64 @@
   margin: 0;
   color: var(--text-muted);
   font: var(--type-caption);
+}
+
+.locationSection {
+  margin-top: 32px;
+}
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text-body);
+  font: var(--type-caption);
+}
+
+.table th,
+.table td {
+  padding: 12px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border-card);
+}
+
+.table thead th {
+  color: var(--text-tertiary);
+  font: var(--type-micro);
+  font-family: var(--font-mono);
+  letter-spacing: var(--track-mono-label);
+  text-transform: uppercase;
+}
+
+@media (max-width: 800px) {
+  .scopeBar {
+    flex-wrap: wrap;
+  }
+
+  .operator {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .layout {
+    display: block;
+  }
+
+  .navigation {
+    width: auto;
+    padding-bottom: 20px;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-card);
+  }
+
+  .cards {
+    grid-template-columns: 1fr;
+  }
+
+  .main {
+    padding: 24px 20px 64px;
+  }
 }

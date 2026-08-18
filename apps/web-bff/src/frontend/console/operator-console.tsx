@@ -1,131 +1,178 @@
-import styles from "./operator-console.module.css";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 
-const navigation = [
-  {
-    label: "Platform",
-    items: ["Tenants", "Providers", "Style catalogue", "Platform settings"],
-  },
-  {
-    label: "Operate",
-    items: ["Overview", "Bench", "Analytics", "Generation detail"],
-  },
-  {
-    label: "Tenant",
-    items: [
-      "Business context",
-      "Keywords",
-      "Style enablement",
-      "Actions",
-      "Tenant settings",
-    ],
-  },
-  {
-    label: "Location",
-    items: ["Locations", "Distribution", "Location settings"],
-  },
-  { label: "Model", items: ["Prompts", "Experiments"] },
-] as const;
+import {
+  ConsoleAccessError,
+  type ConsoleClient,
+} from "./console-client.js";
+import styles from "./operator-console.module.css";
 
 function ScopeBadge({ children }: { readonly children: React.ReactNode }): React.JSX.Element {
   return <span className={styles.scopeBadge}>{children}</span>;
 }
 
-export default function OperatorConsole(): React.JSX.Element {
+function ConsoleUnavailable({ error }: { readonly error: Error }): React.JSX.Element {
+  const unauthenticated =
+    error instanceof ConsoleAccessError && error.code === "unauthenticated";
+  const forbidden = error instanceof ConsoleAccessError && error.code === "forbidden";
+  return (
+    <main className={styles.accessPage}>
+      <p className={styles.eyebrow}>Operator Console</p>
+      <h1 className={styles.title}>
+        {unauthenticated ? "Sign in to Console" : "Console access unavailable"}
+      </h1>
+      <p className={styles.accessCopy} role={forbidden ? "alert" : undefined}>
+        {unauthenticated
+          ? "Use your authorized operator account. Your Tenant scope is resolved after sign-in."
+          : forbidden
+            ? "Your identity has no current Console Access Grant."
+            : "The authorized Console projection could not be loaded."}
+      </p>
+      {unauthenticated ? (
+        <a className={styles.primaryAction} href="/auth/login?returnTo=%2Fconsole">
+          Sign in
+        </a>
+      ) : null}
+    </main>
+  );
+}
+
+export default function OperatorConsole({
+  client,
+}: {
+  readonly client: ConsoleClient;
+}): React.JSX.Element {
+  const session = useQuery({
+    queryKey: ["operator-console-session"],
+    queryFn: ({ signal }) => client.readSession(signal),
+  });
+  const [selectedTenantId, setSelectedTenantId] = useState<string>();
+  const [logoutFailed, setLogoutFailed] = useState(false);
+
+  if (session.isPending) {
+    return (
+      <main className={styles.accessPage} aria-busy="true">
+        <h1 className={styles.title}>Operator Console</h1>
+        <p role="status">Loading authorized scope…</p>
+      </main>
+    );
+  }
+  if (session.isError) {
+    return <ConsoleUnavailable error={session.error} />;
+  }
+
+  const selectedTenant =
+    session.data.tenantGrants.find(
+      (grant) => grant.tenantId === selectedTenantId,
+    ) ?? session.data.tenantGrants[0];
+  const platformRole = session.data.platformGrants[0];
+
   return (
     <div className={styles.page}>
       <header className={styles.scopeBar}>
         <span className={styles.brand}>Review assistant</span>
-        <ScopeBadge>Platform</ScopeBadge>
-        <span className={styles.scopeLink}>All granted tenants</span>
-        <span className={styles.scopeSeparator}>›</span>
-        <ScopeBadge>Tenant</ScopeBadge>
-        <span className={styles.scopeValue}>Authenticated tenant</span>
-        <span className={styles.scopeSeparator}>›</span>
-        <ScopeBadge>Location</ScopeBadge>
-        <span className={styles.scopeValue}>Authenticated location</span>
-        <span className={styles.operator}>Operator · server authorized</span>
+        <ScopeBadge>{platformRole === undefined ? "Tenant" : "Platform"}</ScopeBadge>
+        {selectedTenant === undefined ? null : (
+          <span className={styles.scopeValue}>{selectedTenant.tenantName}</span>
+        )}
+        <span className={styles.operator}>{session.data.operator.email}</span>
+        <button
+          className={styles.logout}
+          type="button"
+          onClick={() => {
+            setLogoutFailed(false);
+            void client.logout().then(
+              () => globalThis.location.assign("/console"),
+              () => setLogoutFailed(true),
+            );
+          }}
+        >
+          Sign out
+        </button>
       </header>
+      {logoutFailed ? <p className={styles.banner} role="alert">Sign out failed. Try again.</p> : null}
       <div className={styles.layout}>
         <nav className={styles.navigation} aria-label="Console">
           <p className={styles.navigationHeading}>Authorized workspace</p>
-          <p className={styles.navigationMeta}>Bound at sign-in</p>
-          {navigation.map((section) => (
-            <section className={styles.navigationSection} key={section.label}>
-              <h2 className={styles.navigationLabel}>{section.label}</h2>
-              <ul className={styles.navigationList}>
-                {section.items.map((item) => (
-                  <li key={item}>
-                    <span
-                      className={styles.navigationItem}
-                      aria-current={item === "Overview" ? "page" : undefined}
-                    >
-                      {item}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
+          <p className={styles.navigationMeta}>Resolved from current Grants</p>
+          <section className={styles.navigationSection}>
+            <h2 className={styles.navigationLabel}>Operate</h2>
+            <ul className={styles.navigationList}>
+              <li><span className={styles.navigationItem} aria-current="page">Overview</span></li>
+              <li><span className={styles.navigationItem}>Locations</span></li>
+            </ul>
+          </section>
         </nav>
         <main className={styles.main}>
           <header className={styles.viewHeader}>
             <div>
-              <p className={styles.eyebrow}>Today</p>
+              <p className={styles.eyebrow}>Authorized scope</p>
               <h1 className={styles.title}>Overview</h1>
             </div>
-            <p className={styles.meta}>Server-authorized scope</p>
+            <p className={styles.meta}>Server-authorized · current Grants</p>
           </header>
 
-          <div className={styles.scopeControl}>
-            <span>Scope</span>
-            <span className={styles.scopeValue}>This tenant</span>
-            <span className={styles.scopeHelp}>
-              Live totals appear only after the operator projection is authorized.
-            </span>
-          </div>
+          {session.data.tenantGrants.length > 1 ? (
+            <label className={styles.scopeControl}>
+              Tenant
+              <select
+                value={selectedTenant?.tenantId ?? ""}
+                onChange={(event) => setSelectedTenantId(event.target.value)}
+              >
+                {session.data.tenantGrants.map((grant) => (
+                  <option key={grant.tenantId} value={grant.tenantId}>
+                    {grant.tenantName}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
-          <section className={styles.cards} aria-label="Console readiness">
-            <article className={styles.card}>
-              <p className={styles.cardLabel}>Generations · last 30 days</p>
-              <p className={styles.metric}>—</p>
-              <p className={styles.cardText}>No operating data loaded</p>
-            </article>
-            <article className={styles.card}>
-              <p className={styles.cardLabel}>Acceptance rate</p>
-              <p className={styles.metric}>—</p>
-              <p className={styles.cardText}>Awaiting authorized projection</p>
-            </article>
-            <article className={styles.card}>
-              <p className={styles.cardLabel}>Month-to-date cost</p>
-              <p className={styles.metric}>—</p>
-              <p className={styles.cardText}>No fabricated totals</p>
-            </article>
-          </section>
+          {selectedTenant === undefined ? (
+            <p className={styles.accessCopy}>No Tenant Grant is assigned to this operator.</p>
+          ) : (
+            <>
+              <section className={styles.cards} aria-label="Granted scope summary">
+                <article className={styles.card}>
+                  <p className={styles.cardLabel}>Tenant</p>
+                  <p className={styles.cardValue}>{selectedTenant.tenantName}</p>
+                  <p className={styles.cardText}>{selectedTenant.tenantSlug}</p>
+                </article>
+                <article className={styles.card}>
+                  <p className={styles.cardLabel}>Access role</p>
+                  <p className={styles.cardValue}>{selectedTenant.roleKey}</p>
+                  <p className={styles.cardText}>{selectedTenant.capabilities.length} capabilities</p>
+                </article>
+                <article className={styles.card}>
+                  <p className={styles.cardLabel}>Locations</p>
+                  <p className={styles.metric}>{selectedTenant.locations.length}</p>
+                  <p className={styles.cardText}>Visible in this granted Tenant</p>
+                </article>
+              </section>
 
-          <div className={styles.overviewGrid}>
-            <section aria-labelledby="by-location-title">
-              <h2 className={styles.sectionLabel} id="by-location-title">
-                By location
-              </h2>
-              <div className={styles.emptyTable}>
-                Tenant-scoped location metrics will appear here.
-              </div>
-              <h2 className={styles.sectionLabel}>Cost by action</h2>
-              <div className={styles.emptyTable}>
-                Action totals are unavailable until the projection endpoint is connected.
-              </div>
-            </section>
-            <aside className={styles.sideColumn}>
-              <section>
-                <h2 className={styles.sectionLabel}>Experiment</h2>
-                <p className={styles.emptyCopy}>No experiment projection loaded.</p>
+              <section className={styles.locationSection} aria-labelledby="locations-title">
+                <h2 className={styles.sectionLabel} id="locations-title">Locations</h2>
+                {selectedTenant.locations.length === 0 ? (
+                  <p className={styles.emptyCopy}>No authorized Locations.</p>
+                ) : (
+                  <div className={styles.tableWrap}>
+                    <table className={styles.table}>
+                      <thead><tr><th scope="col">Location</th><th scope="col">Slug</th><th scope="col">Status</th></tr></thead>
+                      <tbody>
+                        {selectedTenant.locations.map((location) => (
+                          <tr key={location.locationId}>
+                            <th scope="row">{location.locationName}</th>
+                            <td>{location.locationSlug}</td>
+                            <td>{location.status}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </section>
-              <section>
-                <h2 className={styles.sectionLabel}>Providers</h2>
-                <p className={styles.emptyCopy}>Provider health comes from runtime evidence.</p>
-              </section>
-            </aside>
-          </div>
+            </>
+          )}
         </main>
       </div>
     </div>

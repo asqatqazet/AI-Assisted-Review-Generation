@@ -47,6 +47,8 @@ locals {
     context_database_url        = "/review-gen/student/context-database-url"
     generation_database_url     = "/review-gen/student/generation-database-url"
     review_csrf_secret          = "/review-gen/student/review-csrf-secret"
+    operator_session_secret     = "/review-gen/student/operator-session-secret"
+    operator_oidc_config        = "/review-gen/student/operator-oidc-config"
     context_work_private_key    = "/review-gen/student/context-work-private-key"
     context_work_public_key     = "/review-gen/student/context-work-public-key"
     generation_work_private_key = "/review-gen/student/generation-work-private-key"
@@ -75,6 +77,59 @@ resource "aws_budgets_budget" "student_cost_limit" {
     threshold_type             = "PERCENTAGE"
     notification_type          = "FORECASTED"
     subscriber_email_addresses = [var.alert_email]
+  }
+}
+
+resource "aws_cognito_user_pool" "operators" {
+  name                     = "review-operators-student"
+  user_pool_tier           = "LITE"
+  username_attributes      = ["email"]
+  auto_verified_attributes = ["email"]
+  mfa_configuration        = "OPTIONAL"
+  deletion_protection      = "INACTIVE"
+
+  password_policy {
+    minimum_length                   = 12
+    require_lowercase                = true
+    require_numbers                  = true
+    require_symbols                  = true
+    require_uppercase                = true
+    temporary_password_validity_days = 7
+  }
+
+  admin_create_user_config {
+    allow_admin_create_user_only = true
+  }
+
+  account_recovery_setting {
+    recovery_mechanism {
+      name     = "verified_email"
+      priority = 1
+    }
+  }
+
+  software_token_mfa_configuration {
+    enabled = true
+  }
+
+  user_attribute_update_settings {
+    attributes_require_verification_before_update = ["email"]
+  }
+}
+
+resource "aws_cognito_user_pool_domain" "operators" {
+  domain                = "review-operators-${data.aws_caller_identity.current.account_id}"
+  user_pool_id          = aws_cognito_user_pool.operators.id
+  managed_login_version = 2
+}
+
+resource "aws_cognito_user" "initial_operator" {
+  user_pool_id             = aws_cognito_user_pool.operators.id
+  username                 = var.operator_email
+  desired_delivery_mediums = ["EMAIL"]
+  attributes = {
+    email          = var.operator_email
+    email_verified = "true"
   }
 }
 
@@ -173,6 +228,8 @@ data "aws_iam_policy_document" "web_bff_parameters" {
     actions = ["ssm:GetParameter"]
     resources = [
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.review_csrf_secret}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.operator_session_secret}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.operator_oidc_config}",
     ]
   }
 }
@@ -315,9 +372,11 @@ resource "aws_lambda_alias" "generation_service_live" {
 
 locals {
   web_bff_environment = {
-    CONTEXT_FUNCTION_ALIAS_ARN    = aws_lambda_alias.context_service_live.arn
-    GENERATION_FUNCTION_ALIAS_ARN = aws_lambda_alias.generation_service_live.arn
-    REVIEW_CSRF_SECRET_PARAMETER  = local.parameter_names.review_csrf_secret
+    CONTEXT_FUNCTION_ALIAS_ARN        = aws_lambda_alias.context_service_live.arn
+    GENERATION_FUNCTION_ALIAS_ARN     = aws_lambda_alias.generation_service_live.arn
+    REVIEW_CSRF_SECRET_PARAMETER      = local.parameter_names.review_csrf_secret
+    OPERATOR_SESSION_SECRET_PARAMETER = local.parameter_names.operator_session_secret
+    OPERATOR_OIDC_CONFIG_PARAMETER    = local.parameter_names.operator_oidc_config
   }
 }
 
@@ -470,6 +529,21 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   ordered_cache_behavior {
+    path_pattern             = "/auth/*"
+    target_origin_id         = "web-bff-fast"
+    viewer_protocol_policy   = "https-only"
+    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods           = ["GET", "HEAD"]
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    compress                 = false
+    function_association {
+      event_type   = "viewer-request"
+      function_arn = aws_cloudfront_function.api_origin.arn
+    }
+  }
+
+  ordered_cache_behavior {
     path_pattern             = "/api/v1/review-sessions/*/generations"
     target_origin_id         = "web-bff-stream"
     viewer_protocol_policy   = "https-only"
@@ -617,4 +691,30 @@ resource "aws_lambda_permission" "eventbridge_reconcile" {
   qualifier     = aws_lambda_alias.web_bff_reconcile_live.name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.reconcile.arn
+}
+
+resource "aws_cognito_user_pool_client" "operator_console" {
+  name         = "review-operator-console-student"
+  user_pool_id = aws_cognito_user_pool.operators.id
+
+  generate_secret                      = false
+  allowed_oauth_flows_user_pool_client = true
+  allowed_oauth_flows                  = ["code"]
+  allowed_oauth_scopes                 = ["openid", "email", "profile"]
+  supported_identity_providers         = ["COGNITO"]
+  callback_urls                        = ["https://${aws_cloudfront_distribution.student.domain_name}/auth/callback"]
+  logout_urls                          = ["https://${aws_cloudfront_distribution.student.domain_name}/console"]
+  prevent_user_existence_errors        = "ENABLED"
+  enable_token_revocation              = true
+  id_token_validity                    = 60
+  access_token_validity                = 60
+  refresh_token_validity               = 1
+
+  token_validity_units {
+    id_token      = "minutes"
+    access_token  = "minutes"
+    refresh_token = "days"
+  }
+
+  depends_on = [aws_cognito_user_pool_domain.operators]
 }

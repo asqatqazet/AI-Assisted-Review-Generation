@@ -9,6 +9,7 @@ import {
   ReadEntryChallengeInvocationResultDtoSchema,
   ReadReviewSessionInvocationResultDtoSchema,
   ReleaseReconciledGenerationInvocationResultDtoSchema,
+  ResolveOperatorAccessInvocationResultDtoSchema,
   SettleGenerationInvocationResultDtoSchema,
   type ActivateGenerationInvocationDto,
   type ActivateGenerationInvocationResultDto,
@@ -29,6 +30,8 @@ import {
   type ReadReviewSessionInvocationResultDto,
   type ReleaseReconciledGenerationInvocationDto,
   type ReleaseReconciledGenerationInvocationResultDto,
+  type ResolveOperatorAccessInvocationDto,
+  type ResolveOperatorAccessInvocationResultDto,
   type SettleGenerationInvocationDto,
   type SettleGenerationInvocationResultDto,
 } from "@review/contracts/context";
@@ -68,10 +71,18 @@ export interface ContextEntryService {
 
 export interface ContextFunctionOptions {
   readonly entryService: ContextEntryService;
+  readonly operatorService?: ContextOperatorService | undefined;
+}
+
+export interface ContextOperatorService {
+  resolveAccess(
+    input: ResolveOperatorAccessInvocationDto["input"],
+  ): Promise<ResolveOperatorAccessInvocationResultDto["result"]>;
 }
 
 export function createContextFunctionHandler({
   entryService,
+  operatorService,
 }: ContextFunctionOptions): (
   event: unknown,
 ) => Promise<
@@ -85,6 +96,7 @@ export function createContextFunctionHandler({
   | SettleGenerationInvocationResultDto
   | ListReconciliationCandidatesInvocationResultDto
   | ReleaseReconciledGenerationInvocationResultDto
+  | ResolveOperatorAccessInvocationResultDto
 > {
   return async (event) => {
     const invocation: ContextFunctionInvocationDto =
@@ -144,6 +156,14 @@ export function createContextFunctionHandler({
           result: await entryService.releaseReconciledGeneration(
             invocation.input,
           ),
+        });
+      case "resolve-operator-access":
+        return ResolveOperatorAccessInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result:
+            operatorService === undefined
+              ? { status: "unauthorized" }
+              : await operatorService.resolveAccess(invocation.input),
         });
     }
   };

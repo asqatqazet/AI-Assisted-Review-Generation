@@ -47,3 +47,27 @@ output "web_bff_fast_function_url" {
 output "web_bff_stream_function_url" {
   value = aws_lambda_function_url.web_bff_stream.function_url
 }
+
+output "operator_oidc_issuer" {
+  value       = "https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.operators.id}"
+  description = "Trusted issuer validated by the BFF"
+}
+
+output "operator_oidc_domain" {
+  value       = "https://${aws_cognito_user_pool_domain.operators.domain}.auth.${var.aws_region}.amazoncognito.com"
+  description = "Cognito managed-login origin"
+}
+
+output "operator_oidc_client_id" {
+  value       = aws_cognito_user_pool_client.operator_console.id
+  description = "Public PKCE client identifier; no client secret exists"
+}
+
+output "operator_subject" {
+  value       = aws_cognito_user.initial_operator.sub
+  description = "Immutable Cognito subject bound to the initial Operator"
+}
+
+output "operator_email" {
+  value = var.operator_email
+}
