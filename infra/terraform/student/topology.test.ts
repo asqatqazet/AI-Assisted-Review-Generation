@@ -270,6 +270,8 @@ describe("student AWS topology invariants", () => {
 
     expect(terraform).toContain('resource "aws_cognito_user_pool" "operators"');
     expect(terraform).toMatch(/user_pool_tier\s*=\s*"LITE"/);
+    expect(terraform).toMatch(/managed_login_version\s*=\s*1/);
+    expect(terraform).not.toMatch(/managed_login_version\s*=\s*2/);
     expect(terraform).toContain(
       'resource "aws_cognito_user_pool_client" "operator_console"',
     );

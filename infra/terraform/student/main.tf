@@ -120,7 +120,7 @@ resource "aws_cognito_user_pool" "operators" {
 resource "aws_cognito_user_pool_domain" "operators" {
   domain                = "review-operators-${data.aws_caller_identity.current.account_id}"
   user_pool_id          = aws_cognito_user_pool.operators.id
-  managed_login_version = 2
+  managed_login_version = 1
 }
 
 resource "aws_cognito_user" "initial_operator" {
