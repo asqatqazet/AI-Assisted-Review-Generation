@@ -24,7 +24,7 @@ test("the reviewer entry is rendered with the Maue mobile layout", async ({
   });
   await expect(heading).toBeVisible();
   await expect(page.getByRole("banner")).toContainText("Student Demo");
-  await expect(page.getByRole("banner")).toContainText("Review assistant");
+  await expect(page.getByRole("banner")).toContainText("Open visit");
 
   const rendering = await page.evaluate(() => {
     const body = getComputedStyle(document.body);
@@ -93,7 +93,8 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
   expect(phoneRendering.factHeight).toBeGreaterThanOrEqual(44);
   expect(phoneRendering.continueHeight).toBeGreaterThanOrEqual(44);
 
-  await factChoice.check();
+  await factChoice.press("Space");
+  await expect(factChoice).toBeChecked();
   await page.getByRole("button", { name: "Choose a format" }).click();
   await page.setViewportSize({ width: 768, height: 900 });
 
@@ -110,7 +111,8 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
   expect(tabletRendering.mainWidth).toBe(560);
   expect(tabletRendering.choiceHeight).toBeGreaterThanOrEqual(72);
 
-  await formatChoice.check();
+  await formatChoice.press("Space");
+  await expect(formatChoice).toBeChecked();
   await page.getByRole("button", { name: "Write the draft" }).click();
   const reviewText = page.getByLabel("Review text");
   await expect(reviewText).toHaveValue("The team was attentive.");
@@ -137,9 +139,10 @@ test("the operator console keeps its 1024px working layout", async ({ page }) =>
   await expect(
     page.getByRole("heading", { name: "Overview" }),
   ).toBeVisible();
-  await expect(page.getByRole("banner")).toContainText(
-    "Platform › Tenant › Location",
-  );
+  const scopeBar = page.getByRole("banner");
+  await expect(scopeBar).toContainText("Platform");
+  await expect(scopeBar).toContainText("Tenant");
+  await expect(scopeBar).toContainText("Location");
   await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
 
   const rendering = await page.evaluate(() => {
@@ -168,7 +171,6 @@ test("the browser binds the exact Start payload to its SHA-256 header", async ({
 }) => {
   await page.goto("/s/demo-tenant/demo-location");
   await page.getByRole("button", { name: "5, Very good" }).click();
-  await page.getByRole("button", { name: "Pick what to mention" }).click();
 
   const startRequestPromise = page.waitForRequest((request) => {
     const path = new URL(request.url()).pathname;
@@ -177,6 +179,7 @@ test("the browser binds the exact Start payload to its SHA-256 header", async ({
       /^\/api\/v1\/entry-challenges\/[A-Za-z0-9_-]+\/start$/.test(path)
     );
   });
+  await page.getByRole("button", { name: "Pick what to mention" }).click();
   const startRequest = await startRequestPromise;
   const payload = startRequest.postData();
 
@@ -208,9 +211,13 @@ test("a reviewer receives a grounded Draft from the local FakeProvider compositi
   await page.getByRole("button", { name: "Pick what to mention" }).click();
 
   await expect(page).toHaveURL(/\/review\/[A-Za-z0-9_-]+$/);
-  await page.getByLabel("The team was attentive").check();
+  const factChoice = page.getByLabel("The team was attentive");
+  await factChoice.press("Space");
+  await expect(factChoice).toBeChecked();
   await page.getByRole("button", { name: "Choose a format" }).click();
-  await page.getByLabel("Concise review").check();
+  const formatChoice = page.getByLabel("Concise review");
+  await formatChoice.press("Space");
+  await expect(formatChoice).toBeChecked();
   await page.getByRole("button", { name: "Write the draft" }).click();
 
   await expect(page.getByRole("heading", { name: "Here it is" })).toBeVisible();
