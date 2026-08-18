@@ -126,15 +126,21 @@ function LandingRoute(): React.JSX.Element {
 function StartRoute({
   entryChallengeClient,
   navigate,
+  copyText,
 }: {
   readonly entryChallengeClient: EntryChallengeClient;
   readonly navigate: (path: string) => void;
+  readonly copyText: (text: string) => Promise<void>;
 }): React.JSX.Element {
   const { entryChallengeHandle = "" } = useParams();
   const [state, setState] = useState<SurveyState>(() =>
     createSurveyState(entryChallengeHandle),
   );
   const [csrfToken, setCsrfToken] = useState("");
+  const [manualReview, setManualReview] = useState("");
+  const [manualCopyStatus, setManualCopyStatus] = useState<
+    "idle" | "copied" | "manual"
+  >("idle");
   const entryChallengeQuery = useEntryChallenge(
     entryChallengeClient,
     entryChallengeHandle,
@@ -159,6 +165,8 @@ function StartRoute({
   useEffect(() => {
     setState(createSurveyState(entryChallengeHandle));
     setCsrfToken("");
+    setManualReview("");
+    setManualCopyStatus("idle");
   }, [entryChallengeHandle]);
 
   useEffect(() => {
@@ -322,13 +330,58 @@ function StartRoute({
 
   if (entryChallengeQuery.isError) {
     return (
-      <main>
-        <h1>Review link unavailable</h1>
-        <p role="alert">This review link could not be opened.</p>
-        <button type="button" onClick={() => void entryChallengeQuery.refetch()}>
-          Try again
-        </button>
-      </main>
+      <div className={styles.page}>
+        <SurveyHeader brand="Review assistant" />
+        <main className={styles.surveyMain}>
+          <h1 className={styles.title}>Review link unavailable</h1>
+          <p className={styles.lead} role="alert">
+            This review link could not be opened. You can still write and copy
+            your own review here.
+          </p>
+          <section className={styles.resultCard}>
+            <label className={styles.fieldLabel} htmlFor="unavailable-review-text">
+              Write your review yourself
+            </label>
+            <textarea
+              className={styles.reviewTextarea}
+              id="unavailable-review-text"
+              value={manualReview}
+              onChange={(event) => setManualReview(event.target.value)}
+            />
+            <p className={styles.characterCount}>
+              {manualReview.length} characters
+            </p>
+            <div className={styles.resultActions}>
+              <button
+                className={styles.copyButton}
+                type="button"
+                disabled={manualReview.trim().length === 0}
+                onClick={() => {
+                  void copyText(manualReview)
+                    .then(() => setManualCopyStatus("copied"))
+                    .catch(() => setManualCopyStatus("manual"));
+                }}
+              >
+                Copy
+              </button>
+              <button
+                className={styles.textButton}
+                type="button"
+                onClick={() => void entryChallengeQuery.refetch()}
+              >
+                Try link again
+              </button>
+            </div>
+            <p className={styles.status} role="status" aria-live="polite">
+              {manualCopyStatus === "copied"
+                ? "Copied"
+                : manualCopyStatus === "manual"
+                  ? "Select the review text and copy it manually."
+                  : "Nothing is sent or posted from this page."}
+            </p>
+          </section>
+        </main>
+      </div>
     );
   }
 
@@ -1057,6 +1110,7 @@ export function ReviewerApplication({
           <StartRoute
             entryChallengeClient={entryChallengeClient}
             navigate={navigate}
+            copyText={copyText}
           />
         }
       />
