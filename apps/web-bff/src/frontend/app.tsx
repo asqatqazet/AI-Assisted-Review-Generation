@@ -1,3 +1,8 @@
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+} from "@tanstack/react-query";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Route, Routes, useParams } from "react-router-dom";
 
@@ -17,6 +22,11 @@ import {
   createReviewSessionState,
   transitionReviewSession,
 } from "./review-session-machine.js";
+import { getSurveyCopy } from "./features/survey/survey-copy.js";
+import {
+  useEntryChallenge,
+  useReviewSession,
+} from "./features/survey/survey-queries.js";
 import { createSurveyState, transition, type SurveyState } from "./survey-machine.js";
 import styles from "./app.module.css";
 
@@ -32,40 +42,53 @@ const defaultCopyText = async (text: string): Promise<void> => {
   await globalThis.navigator.clipboard.writeText(text);
 };
 const ratings = [
-  { value: 1, label: "Poor" },
-  { value: 2, label: "Not good" },
-  { value: 3, label: "Mixed" },
-  { value: 4, label: "Good" },
-  { value: 5, label: "Very good" },
+  { value: 1 },
+  { value: 2 },
+  { value: 3 },
+  { value: 4 },
+  { value: 5 },
 ] as const;
 
-function SurveyHeader({ brand }: { readonly brand: string }): React.JSX.Element {
+function SurveyHeader({
+  brand,
+  locale = "en-GB",
+}: {
+  readonly brand: string;
+  readonly locale?: string | undefined;
+}): React.JSX.Element {
+  const copy = getSurveyCopy(locale);
   return (
     <header className={styles.header}>
       <span className={styles.brand}>{brand}</span>
-      <span className={styles.headerNote}>Review assistant</span>
+      <span className={styles.headerNote}>{copy.assistantLabel}</span>
     </header>
   );
 }
 
-function entryHeaderNote(entryMode: "invite" | "open-qr" | "both"): string {
-  return entryMode === "open-qr" ? "Open visit" : "Invited visit";
+function entryHeaderNote(
+  entryMode: "invite" | "open-qr" | "both",
+  locale: string,
+): string {
+  const copy = getSurveyCopy(locale);
+  return entryMode === "open-qr" ? copy.openVisit : copy.invitedVisit;
 }
 
 function SurveyScreen({
   brand,
   location,
+  locale,
   busy = false,
   children,
 }: {
   readonly brand: string;
   readonly location: string;
+  readonly locale: string;
   readonly busy?: boolean | undefined;
   readonly children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <div className={styles.page}>
-      <SurveyHeader brand={brand} />
+      <SurveyHeader brand={brand} locale={locale} />
       <main
         className={styles.surveyMain}
         aria-busy={busy ? "true" : undefined}
@@ -106,44 +129,67 @@ function StartRoute({
     createSurveyState(entryChallengeHandle),
   );
   const [csrfToken, setCsrfToken] = useState("");
+  const entryChallengeQuery = useEntryChallenge(
+    entryChallengeClient,
+    entryChallengeHandle,
+  );
+  const startMutation = useMutation({
+    mutationKey: ["start-review-session", entryChallengeHandle],
+    mutationFn: (input: {
+      readonly rating: 1 | 2 | 3 | 4 | 5;
+      readonly action: "generate" | "paraphrase";
+    }) =>
+      entryChallengeClient.start(
+        { entryChallengeHandle, csrfToken, ...input },
+        new AbortController().signal,
+      ),
+    onSuccess: ({ redirectTo }) => navigate(redirectTo),
+    onError: () =>
+      setState((current) =>
+        transition(current, { type: "START_FAILED" }),
+      ),
+  });
 
   useEffect(() => {
-    const abortController = new AbortController();
+    setState(createSurveyState(entryChallengeHandle));
+    setCsrfToken("");
+  }, [entryChallengeHandle]);
 
-    void entryChallengeClient
-      .read(entryChallengeHandle, abortController.signal)
-      .then((projection) => {
-        setCsrfToken(projection.csrfToken);
-        setState((current) =>
-          transition(current, {
-            type: "ENTRY_PREPARED",
-            context: projection.context,
-          }),
-        );
-      })
-      .catch(() => undefined);
-
-    return () => abortController.abort();
-  }, [entryChallengeClient, entryChallengeHandle]);
+  useEffect(() => {
+    if (entryChallengeQuery.data === undefined) {
+      return;
+    }
+    setCsrfToken(entryChallengeQuery.data.csrfToken);
+    setState((current) =>
+      transition(current, {
+        type: "ENTRY_PREPARED",
+        context: entryChallengeQuery.data.context,
+      }),
+    );
+  }, [entryChallengeQuery.data]);
 
   if (state.value === "entry") {
+    const copy = getSurveyCopy(state.context.locale);
+    const availableActions = new Set(
+      state.context.reviewFormats.flatMap((format) => format.availableCommands),
+    );
     return (
       <div className={styles.page}>
         <header className={styles.header}>
           <span className={styles.brand}>{state.context.tenantDisplayName}</span>
           <span className={styles.headerNote}>
-            {entryHeaderNote(state.context.entryMode)}
+            {entryHeaderNote(state.context.entryMode, state.context.locale)}
           </span>
         </header>
         <main className={styles.surveyMain}>
         <p className={styles.eyebrow}>
-          Review · {state.context.locationDisplayName}
+          {copy.reviewLabel} · {state.context.locationDisplayName}
         </p>
         <h1 className={`${styles.title} ${styles.entryTitle}`}>
-          Write your review of {state.context.tenantDisplayName}
+          {copy.ask(state.context.tenantDisplayName)}
         </h1>
         <p className={styles.lead}>
-          Thanks for visiting {state.context.locationDisplayName}.
+          {copy.acknowledgement(state.context.locationDisplayName)}
         </p>
         <form
           onSubmit={(event) => {
@@ -157,19 +203,7 @@ function StartRoute({
             if (state.rating === null || action === null) {
               return;
             }
-            const abortController = new AbortController();
-            void entryChallengeClient
-              .start(
-                {
-                  entryChallengeHandle,
-                  rating: state.rating,
-                  action,
-                  csrfToken,
-                },
-                abortController.signal,
-              )
-              .then(({ redirectTo }) => navigate(redirectTo))
-              .catch(() => undefined);
+            startMutation.mutate({ rating: state.rating, action });
             setState((current) => {
               const selected = transition(current, {
                 type: "ACTION_SELECTED",
@@ -184,19 +218,19 @@ function StartRoute({
             aria-labelledby="rating-question"
           >
             <h2 className={styles.sectionTitle} id="rating-question">
-              How was it?
+              {copy.ratingAsk}
             </h2>
             <div
               className={styles.ratingGroup}
               role="group"
-              aria-label="Rating, 1 to 5"
+              aria-label={copy.ratingGroupLabel}
             >
               {ratings.map((rating) => (
                 <button
                   className={styles.ratingButton}
                   key={rating.value}
                   type="button"
-                  aria-label={`${rating.value}, ${rating.label}`}
+                  aria-label={`${rating.value}, ${copy.ratingWords[rating.value - 1]}`}
                   aria-pressed={state.rating === rating.value}
                   onClick={() =>
                     setState((current) =>
@@ -213,61 +247,82 @@ function StartRoute({
             </div>
             <p className={styles.visuallyHidden} aria-live="polite">
               {state.rating === null
-                ? "Choose a rating to continue."
-                : ratings[state.rating - 1]?.label}
+                ? copy.chooseRating
+                : copy.ratingWords[state.rating - 1]}
             </p>
           </section>
           <aside className={styles.trustNote}>
             <p className={styles.trustCopy}>
-              You supply the facts. Everything on the next screens is a draft
-              you read, change and copy yourself. Nothing is posted anywhere
-              for you.
+              {copy.trust}
             </p>
           </aside>
-          <section className={styles.pathSection} aria-label="Writing path">
-            <div className={styles.pathCard}>
-              <p className={styles.cardEyebrow}>Path one</p>
-              <h3 className={styles.cardTitle}>Help me write one</h3>
-              <p className={styles.cardCopy}>
-                Choose the things that actually happened. The draft is built
-                only from those.
-              </p>
-            <button
-              className={styles.pathButton}
-              type="submit"
-              name="action"
-              value="generate"
-              disabled={state.rating === null}
-            >
-              Pick what to mention
-            </button>
-            </div>
-            <div className={styles.pathCard}>
-              <p className={styles.cardEyebrow}>Path two</p>
-              <h3 className={styles.cardTitle}>I have written one</h3>
-              <p className={styles.cardCopy}>
-                Paste your own review. Your facts stay exactly as you wrote
-                them; only the wording changes.
-              </p>
-            <button
-              className={styles.pathButton}
-              type="submit"
-              name="action"
-              value="paraphrase"
-              disabled={state.rating === null}
-            >
-              Improve my wording
-            </button>
-            </div>
+          <section
+            className={styles.pathSection}
+            aria-label={copy.writingPathLabel}
+          >
+            {availableActions.has("generate") ? (
+              <div className={styles.pathCard}>
+                <p className={styles.cardEyebrow}>{copy.generatePath.eyebrow}</p>
+                <h3 className={styles.cardTitle}>{copy.generatePath.title}</h3>
+                <p className={styles.cardCopy}>{copy.generatePath.body}</p>
+                <button
+                  className={styles.pathButton}
+                  type="submit"
+                  name="action"
+                  value="generate"
+                  disabled={state.rating === null}
+                >
+                  {copy.generatePath.cta}
+                </button>
+              </div>
+            ) : null}
+            {availableActions.has("paraphrase") ? (
+              <div className={styles.pathCard}>
+                <p className={styles.cardEyebrow}>{copy.paraphrasePath.eyebrow}</p>
+                <h3 className={styles.cardTitle}>{copy.paraphrasePath.title}</h3>
+                <p className={styles.cardCopy}>{copy.paraphrasePath.body}</p>
+                <button
+                  className={styles.pathButton}
+                  type="submit"
+                  name="action"
+                  value="paraphrase"
+                  disabled={state.rating === null}
+                >
+                  {copy.paraphrasePath.cta}
+                </button>
+              </div>
+            ) : null}
           </section>
+          {availableActions.size === 0 ? (
+            <p className={styles.status} role="alert">
+              {copy.assistanceUnavailable}
+            </p>
+          ) : null}
           <p className={styles.pathHint}>
             {state.rating === null
-              ? "Choose a rating first. It sets the register of the draft, and it is the one thing the assistant will not decide for you."
-              : "Choose either path to continue."}
+              ? copy.needRating
+              : copy.choosePath}
           </p>
+          {startMutation.isError ? (
+            <p className={styles.status} role="alert">
+              {copy.startFailed}
+            </p>
+          ) : null}
         </form>
         </main>
       </div>
+    );
+  }
+
+  if (entryChallengeQuery.isError) {
+    return (
+      <main>
+        <h1>Review link unavailable</h1>
+        <p role="alert">This review link could not be opened.</p>
+        <button type="button" onClick={() => void entryChallengeQuery.refetch()}>
+          Try again
+        </button>
+      </main>
     );
   }
 
@@ -299,22 +354,28 @@ function ReviewRoute({
     "idle" | "copied" | "manual"
   >("idle");
   const [draftText, setDraftText] = useState("");
+  const reviewSessionQuery = useReviewSession(
+    reviewSessionClient,
+    reviewSessionHandle,
+  );
 
   useEffect(() => {
-    const abortController = new AbortController();
-    void reviewSessionClient
-      .read(reviewSessionHandle, abortController.signal)
-      .then((projection) => {
-        setState((current) =>
-          transitionReviewSession(current, {
-            type: "REVIEW_SESSION_LOADED",
-            projection,
-          }),
-        );
-      })
-      .catch(() => undefined);
-    return () => abortController.abort();
-  }, [reviewSessionClient, reviewSessionHandle]);
+    setState(createReviewSessionState(reviewSessionHandle));
+    setCopyStatus("idle");
+    setDraftText("");
+  }, [reviewSessionHandle]);
+
+  useEffect(() => {
+    if (reviewSessionQuery.data === undefined) {
+      return;
+    }
+    setState((current) =>
+      transitionReviewSession(current, {
+        type: "REVIEW_SESSION_LOADED",
+        projection: reviewSessionQuery.data,
+      }),
+    );
+  }, [reviewSessionQuery.data]);
 
   useEffect(() => {
     if (state.value !== "generating") {
@@ -371,6 +432,7 @@ function ReviewRoute({
   }, [generationClient, state]);
 
   if (state.value === "facts") {
+    const copy = getSurveyCopy(state.projection.locale);
     const groupedFacts = new Map<
       string,
       (typeof state.projection.factOptions)[number][]
@@ -385,13 +447,11 @@ function ReviewRoute({
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
+        locale={state.projection.locale}
       >
-        <p className={styles.eyebrow}>What happened</p>
-        <h1 className={styles.title}>What stood out?</h1>
-        <p className={styles.lead}>
-          Pick everything that actually happened. The order you pick them is
-          the order they are written in.
-        </p>
+        <p className={styles.eyebrow}>{copy.factsEyebrow}</p>
+        <h1 className={styles.title}>{copy.factsHeading}</h1>
+        <p className={styles.lead}>{copy.factsLead}</p>
         <form className={styles.reviewForm}>
           {factGroups.map(([categoryLabel, factOptions]) => (
             <fieldset className={styles.factGroup} key={categoryLabel}>
@@ -421,12 +481,18 @@ function ReviewRoute({
             </fieldset>
           ))}
           <p className={styles.selectionCount}>
-            {state.selectedFactOptionIds.length} selected · rating {state.projection.rating} of 5
+            {copy.selectionCount(
+              state.selectedFactOptionIds.length,
+              state.projection.rating,
+            )}
           </p>
           <button
             className={styles.primaryButton}
             type="button"
-            disabled={state.selectedFactOptionIds.length === 0}
+            disabled={
+              state.selectedFactOptionIds.length <
+              state.projection.requirements.minimumFactSelections
+            }
             onClick={() =>
               setState((current) =>
                 transitionReviewSession(current, {
@@ -435,10 +501,12 @@ function ReviewRoute({
               )
             }
           >
-            Choose a format
+            {copy.chooseFormat}
           </button>
           <p className={styles.pathHint}>
-            Pick at least one thing. The assistant will not invent the rest.
+            {copy.minimumFacts(
+              state.projection.requirements.minimumFactSelections,
+            )}
           </p>
         </form>
       </SurveyScreen>
@@ -446,6 +514,7 @@ function ReviewRoute({
   }
 
   if (state.value === "format") {
+    const copy = getSurveyCopy(state.projection.locale);
     const compatibleFormats = state.projection.reviewFormats.filter((format) =>
       format.availableCommands.includes(state.projection.action),
     );
@@ -453,16 +522,15 @@ function ReviewRoute({
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
+        locale={state.projection.locale}
       >
-        <p className={styles.eyebrow}>What happened</p>
-        <h1 className={styles.title}>Pick a format</h1>
-        <p className={styles.lead}>
-          Formats this business has enabled, for what you are doing.
-        </p>
+        <p className={styles.eyebrow}>{copy.factsEyebrow}</p>
+        <h1 className={styles.title}>{copy.formatHeading}</h1>
+        <p className={styles.lead}>{copy.formatLead}</p>
         <form className={styles.reviewForm}>
           <fieldset className={styles.choiceFieldset}>
             <legend className={styles.sectionTitle}>
-              How should your review read?
+              {copy.formatLegend}
             </legend>
             <div className={styles.choiceList}>
             {compatibleFormats.map((format) => (
@@ -486,7 +554,7 @@ function ReviewRoute({
                 <span className={styles.formatBody}>
                   <span className={styles.formatName}>{format.displayName}</span>
                   <span className={styles.formatDescription}>{format.description}</span>
-                  <span className={styles.formatMeta}>Review format · no emoji</span>
+                  <span className={styles.formatMeta}>{copy.formatMeta}</span>
                   <span className={styles.formatSample}>{format.sample}</span>
                 </span>
               </label>
@@ -506,12 +574,12 @@ function ReviewRoute({
               )
             }
           >
-            Write the draft
+            {copy.writeDraft}
           </button>
           <p className={styles.pathHint}>
             {state.selectedReviewFormatId === null
-              ? "Choose at least one format."
-              : "1 format chosen."}
+              ? copy.chooseAFormat
+              : copy.formatChosen}
           </p>
         </form>
       </SurveyScreen>
@@ -519,20 +587,22 @@ function ReviewRoute({
   }
 
   if (state.value === "generating") {
+    const copy = getSurveyCopy(state.projection.locale);
     return (
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
+        locale={state.projection.locale}
         busy
       >
-        <h1 className={styles.title}>Creating your review</h1>
+        <h1 className={styles.title}>{copy.generatingHeading}</h1>
         <section className={styles.progressCard} aria-live="polite">
-          <p className={styles.progressTitle}>Checking your draft…</p>
+          <p className={styles.progressTitle}>{copy.checkingDraft}</p>
           <div className={styles.progressTrack} aria-hidden="true">
             <span className={styles.progressBar} />
           </div>
           <p className={styles.status} role="status">
-            Only supported wording will appear in the result.
+            {copy.safeOutputOnly}
           </p>
         </section>
       </SurveyScreen>
@@ -540,17 +610,16 @@ function ReviewRoute({
   }
 
   if (state.value === "results") {
+    const copy = getSurveyCopy(state.projection.locale);
     return (
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
+        locale={state.projection.locale}
       >
-        <p className={styles.eyebrow}>Your draft</p>
-        <h1 className={styles.title}>Here it is</h1>
-        <p className={styles.lead}>
-          Change anything you like. Nothing leaves this page until you copy it
-          yourself.
-        </p>
+        <p className={styles.eyebrow}>{copy.resultEyebrow}</p>
+        <h1 className={styles.title}>{copy.resultHeading}</h1>
+        <p className={styles.lead}>{copy.resultLead}</p>
         <section className={styles.resultCard}>
           <header className={styles.resultHeader}>
             <h2 className={styles.resultTitle}>
@@ -559,24 +628,24 @@ function ReviewRoute({
               )?.displayName ?? "Review"}
             </h2>
             <span className={styles.resultMeta}>
-              {state.projection.action} · guarded
+              {state.projection.action} · {copy.guarded}
             </span>
           </header>
           <label className={styles.fieldLabel} htmlFor="review-text">
-            Your draft — edit it freely
+            {copy.editLabel}
           </label>
           <textarea
             className={styles.reviewTextarea}
             id="review-text"
-            aria-label="Review text"
+            aria-label={copy.editLabel}
             value={draftText}
             onChange={(event) => setDraftText(event.target.value)}
           />
-          <p className={styles.characterCount}>{draftText.length} characters</p>
+          <p className={styles.characterCount}>
+            {copy.characters(draftText.length)}
+          </p>
           <details className={styles.provenance}>
-            <summary>
-              What this draft is built on ({state.selectedFactOptionIds.length} facts, each traceable)
-            </summary>
+            <summary>{copy.provenance(state.selectedFactOptionIds.length)}</summary>
           </details>
           <div className={styles.resultActions}>
             <button
@@ -588,34 +657,34 @@ function ReviewRoute({
                   .catch(() => setCopyStatus("manual"));
               }}
             >
-              Copy
+              {copy.copy}
             </button>
           </div>
           <p className={styles.status} role="status" aria-live="polite">
             {copyStatus === "copied"
-              ? "Copied"
+              ? copy.copied
               : copyStatus === "manual"
-                ? "Select the review text and copy it manually."
-                : "Ready to copy."}
+                ? copy.manualCopy
+                : copy.readyToCopy}
           </p>
         </section>
         <p className={styles.resultFootnote}>
-          Copying puts the text on your clipboard. Nothing is submitted from here.
+          {copy.copyFootnote}
         </p>
       </SurveyScreen>
     );
   }
 
   if (state.value === "generation-failed") {
+    const copy = getSurveyCopy(state.projection.locale);
     return (
       <SurveyScreen
         brand={state.projection.tenantDisplayName}
         location={state.projection.locationDisplayName}
+        locale={state.projection.locale}
       >
-        <h1 className={styles.title}>We couldn't create a draft</h1>
-        <p className={styles.lead} role="alert">
-          No review text was saved. You can try again or write it yourself.
-        </p>
+        <h1 className={styles.title}>{copy.failureHeading}</h1>
+        <p className={styles.lead} role="alert">{copy.failureBody}</p>
         {state.retryable ? (
           <button
             className={styles.primaryButton}
@@ -629,10 +698,22 @@ function ReviewRoute({
               )
             }
           >
-            Try again
+            {copy.retry}
           </button>
         ) : null}
       </SurveyScreen>
+    );
+  }
+
+  if (reviewSessionQuery.isError) {
+    return (
+      <main>
+        <h1>Review unavailable</h1>
+        <p role="alert">This review could not be resumed.</p>
+        <button type="button" onClick={() => void reviewSessionQuery.refetch()}>
+          Try again
+        </button>
+      </main>
     );
   }
 
@@ -662,8 +743,22 @@ export function ReviewerApplication({
   copyText = defaultCopyText,
   navigate = defaultNavigate,
 }: ReviewerApplicationProps = {}): React.JSX.Element {
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: false,
+            refetchOnWindowFocus: false,
+          },
+          mutations: { retry: false },
+        },
+      }),
+  );
+
   return (
-    <Routes>
+    <QueryClientProvider client={queryClient}>
+      <Routes>
       <Route path="/" element={<LandingRoute />} />
       <Route
         path="/start/:entryChallengeHandle"
@@ -693,6 +788,7 @@ export function ReviewerApplication({
           </Suspense>
         }
       />
-    </Routes>
+      </Routes>
+    </QueryClientProvider>
   );
 }

@@ -24,6 +24,10 @@ describe("US-01.3 persisted Context entry service", () => {
               locale: "en-GB",
               entryMode: "open-qr",
               ratingRequired: true,
+              requirements: {
+                minimumFactSelections: 1,
+                maximumReviewFormatsPerGeneration: 1,
+              },
               factOptions: [],
               reviewFormats: [],
             },

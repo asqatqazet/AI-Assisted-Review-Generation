@@ -131,7 +131,8 @@ export function transitionReviewSession(
   if (
     state.value === "facts" &&
     event.type === "CONTINUE_REQUESTED" &&
-    state.selectedFactOptionIds.length > 0
+    state.selectedFactOptionIds.length >=
+      state.projection.requirements.minimumFactSelections
   ) {
     return {
       value: "format",

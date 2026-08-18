@@ -107,10 +107,26 @@ describeDatabase("US-01.3 PostgreSQL open-QR entry admission", () => {
           locationDisplayName: "Central Clinic",
           locale: "en-GB",
           entryMode: "open-qr",
+          requirements: {
+            minimumFactSelections: 1,
+            maximumReviewFormatsPerGeneration: 1,
+          },
           factOptions: [{ id: factOptionId }],
           reviewFormats: [{ id: reviewFormatVersionId }],
         },
       });
+      await expect(
+        entryStore.advance({
+          routeHandleHash: entryRouteHash,
+          browserCapabilityHash: browserHash,
+          reviewSessionRouteHandleHash: `sha256:review-${randomUUID()}`,
+          rating: 4,
+          action: "PARAPHRASE",
+          reviewSessionExpiresAt: new Date(
+            Date.now() + 60 * 60_000,
+          ).toISOString(),
+        }),
+      ).resolves.toEqual({ status: "unavailable" });
       const admitted = await entryStore.advance({
         routeHandleHash: entryRouteHash,
         browserCapabilityHash: browserHash,

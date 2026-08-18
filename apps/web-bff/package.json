@@ -9,6 +9,7 @@
     "@hono/node-server": "^2.1.0",
     "@review/contracts": "workspace:*",
     "@review/observability": "workspace:*",
+    "@tanstack/react-query": "^5.101.4",
     "hono": "^4.13.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

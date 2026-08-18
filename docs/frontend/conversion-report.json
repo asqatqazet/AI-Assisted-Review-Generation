@@ -1,10 +1,16 @@
 {
   "generatedAt": "2026-08-18",
-  "strategy": "direct-design-component-source-to-react",
+  "strategy": "offline-bundle-extraction-to-typed-react-bff-shell",
   "input": {
-    "format": "Maue Design Component source",
-    "bundledOfflineWrapper": false,
+    "format": "Maue Gallery offline bundle with embedded Design Component documents",
+    "bundledOfflineWrapper": true,
     "files": [
+      {
+        "path": "/Users/macbook/Downloads/Maue Gallery (offline).html",
+        "sha256": "39cc45d25101abe1b7cd17960066b01aa1a2425123b64c4327c6bd480c2f7a1e",
+        "bytes": 4827789,
+        "role": "authoritative supplied offline bundle"
+      },
       {
         "path": "prototypes/Survey.dc.html",
         "sha256": "9e7cd5a390650ca57edaa35ab6ae3ec8fd07b301d62713a1cc663ab01fa8656c",
@@ -34,10 +40,12 @@
     ]
   },
   "bundleMilestones": {
-    "manifestExtraction": "not-applicable",
-    "resourceDecoding": "not-applicable",
-    "blobPageReconstruction": "not-applicable",
-    "reason": "The checked-in inputs are already unbundled .dc.html source documents."
+    "manifestExtraction": "complete; 8 root manifest entries classified",
+    "resourceDecoding": "complete; Survey/Admin documents and runtime assets fingerprinted",
+    "blobPageReconstruction": "complete; embedded Survey/Admin templates compared with checked-in .dc.html sources",
+    "surveyTemplateSha256": "d7e55ca69cc7c46d24b31f4b385af88e572b4d43f3f5f31f567a25636276f1c6",
+    "adminTemplateSha256": "ead8413b24a171d4b4cf11c9f07655128a62808860546df26c32e81c6002564d",
+    "decision": "The bundle is the visual/interaction authority; meaningful Tenant, Location, Fact Option, Review Format, capability and operational data must come from BFF projections."
   },
   "reactBaseline": {
     "framework": "React 19 + TypeScript + Vite",
@@ -95,8 +103,8 @@
     "MarketingPage.dc.html is not part of this product."
   ],
   "verification": {
-    "unit": "pass-364",
-    "browser": "pass-6-ci-postgresql",
+    "unit": "pass-367",
+    "browser": "pending updated PostgreSQL-backed CI run",
     "typescript": "pass",
     "eslint": "pass",
     "build": "pass",

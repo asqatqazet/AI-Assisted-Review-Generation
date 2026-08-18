@@ -38,6 +38,10 @@ export interface StoredReviewSessionProjection {
   readonly locale: "en-GB" | "de-DE";
   readonly rating: 1 | 2 | 3 | 4 | 5;
   readonly action: "generate" | "paraphrase";
+  readonly requirements: {
+    readonly minimumFactSelections: number;
+    readonly maximumReviewFormatsPerGeneration: 1;
+  };
   readonly factOptions: readonly ReviewSessionFactProjection[];
   readonly reviewFormats: readonly ReviewSessionFormatProjection[];
 }
@@ -157,6 +161,10 @@ export interface PostgresEntryAdmissionStore {
           readonly locale: "en-GB" | "de-DE";
           readonly entryMode: "open-qr";
           readonly ratingRequired: true;
+          readonly requirements: {
+            readonly minimumFactSelections: number;
+            readonly maximumReviewFormatsPerGeneration: 1;
+          };
           readonly factOptions: readonly ReviewSessionFactProjection[];
           readonly reviewFormats: readonly ReviewSessionFormatProjection[];
         };
@@ -195,6 +203,7 @@ interface SessionRow {
   readonly locale: string;
   readonly rating: number;
   readonly selected_action: string;
+  readonly tenant_policy: unknown;
 }
 
 interface FactRow {
@@ -215,6 +224,7 @@ interface ReviewFormatRow {
 interface AdmissionSessionRow {
   readonly rating: number;
   readonly selected_action: string;
+  readonly tenant_policy: unknown;
 }
 
 interface AdmissionFactRow {
@@ -264,6 +274,7 @@ interface EntryContextRow {
   readonly tenant_name: string;
   readonly location_name: string;
   readonly locale: string;
+  readonly tenant_policy: unknown;
 }
 
 const isLocale = (value: string): value is "en-GB" | "de-DE" =>
@@ -271,6 +282,18 @@ const isLocale = (value: string): value is "en-GB" | "de-DE" =>
 
 const isRating = (value: number): value is 1 | 2 | 3 | 4 | 5 =>
   Number.isInteger(value) && value >= 1 && value <= 5;
+
+const minimumFactSelections = (policy: unknown): number => {
+  if (typeof policy !== "object" || policy === null || Array.isArray(policy)) {
+    return 1;
+  }
+  const value = (policy as Readonly<Record<string, unknown>>)[
+    "minimumFactSelections"
+  ];
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 20
+    ? value
+    : 1;
+};
 
 const toAction = (value: string): "generate" | "paraphrase" | undefined =>
   value === "GENERATE"
@@ -358,7 +381,8 @@ export function createPostgresReviewSessionReader({
             location.name AS location_name,
             tenant.locale,
             session.rating,
-            session.selected_action::text
+            session.selected_action::text,
+            tenant.policy AS tenant_policy
           FROM review_sessions AS session
           JOIN tenants AS tenant ON tenant.id = session.tenant_id
           JOIN locations AS location
@@ -470,6 +494,10 @@ export function createPostgresReviewSessionReader({
           locale: session.locale,
           rating: session.rating,
           action,
+          requirements: {
+            minimumFactSelections: minimumFactSelections(session.tenant_policy),
+            maximumReviewFormatsPerGeneration: 1 as const,
+          },
           factOptions,
           reviewFormats,
         };
@@ -544,7 +572,8 @@ export function createPostgresEntryAdmissionStore({
           SELECT
             tenant.name AS tenant_name,
             location.name AS location_name,
-            tenant.locale
+            tenant.locale,
+            tenant.policy AS tenant_policy
           FROM tenants AS tenant
           JOIN locations AS location
             ON location.tenant_id = tenant.id
@@ -640,6 +669,10 @@ export function createPostgresEntryAdmissionStore({
             locale: context.locale,
             entryMode: "open-qr" as const,
             ratingRequired: true as const,
+            requirements: {
+              minimumFactSelections: minimumFactSelections(context.tenant_policy),
+              maximumReviewFormatsPerGeneration: 1 as const,
+            },
             factOptions,
             reviewFormats,
           },
@@ -663,6 +696,25 @@ export function createPostgresEntryAdmissionStore({
         await transaction.$executeRaw`
           SELECT set_config('app.tenant_id', ${scope.tenant_id}, true)
         `;
+        const compatibleFormats = await transaction.$queryRaw<
+          { readonly id: string }[]
+        >`
+          SELECT format.id
+          FROM review_format_enablements AS enablement
+          JOIN review_format_versions AS format
+            ON format.id = enablement.review_format_version_id
+          WHERE enablement.tenant_id = ${scope.tenant_id}::uuid
+            AND enablement.enabled = true
+            AND enablement.allowed_actions @>
+              ARRAY[${input.action}::generation_action]
+            AND format.status = 'ACTIVE'
+            AND format.supported_actions @>
+              ARRAY[${input.action}::generation_action]
+          LIMIT 1
+        `;
+        if (compatibleFormats[0] === undefined) {
+          return { status: "unavailable" } as const;
+        }
         const consumed = await transaction.$queryRaw<{ readonly id: string }[]>`
           UPDATE entry_challenges
           SET consumed_at = clock_timestamp()
@@ -806,20 +858,25 @@ export function createPostgresReviewerGenerationAdmissionStore({
           SELECT set_config('app.tenant_id', ${binding.tenant_id}, true)
         `;
         const sessions = await transaction.$queryRaw<AdmissionSessionRow[]>`
-          SELECT rating, selected_action::text
-          FROM review_sessions
-          WHERE id = ${binding.review_session_id}::uuid
-            AND tenant_id = ${binding.tenant_id}::uuid
-            AND location_id = ${binding.location_id}::uuid
-            AND status = 'OPEN'
-            AND expires_at > clock_timestamp()
+          SELECT
+            session.rating,
+            session.selected_action::text,
+            tenant.policy AS tenant_policy
+          FROM review_sessions AS session
+          JOIN tenants AS tenant ON tenant.id = session.tenant_id
+          WHERE session.id = ${binding.review_session_id}::uuid
+            AND session.tenant_id = ${binding.tenant_id}::uuid
+            AND session.location_id = ${binding.location_id}::uuid
+            AND session.status = 'OPEN'
+            AND session.expires_at > clock_timestamp()
           FOR UPDATE
         `;
         const session = sessions[0];
         if (
           session === undefined ||
           !isRating(session.rating) ||
-          session.selected_action !== "GENERATE"
+          session.selected_action !== "GENERATE" ||
+          input.factOptionIds.length < minimumFactSelections(session.tenant_policy)
         ) {
           return { status: "rejected" } as const;
         }

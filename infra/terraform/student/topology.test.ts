@@ -61,7 +61,7 @@ describe("student AWS topology invariants", () => {
     expect(workflow).toContain("actions/upload-artifact");
     expect(workflow).toContain("aws cloudfront create-invalidation");
     expect(workflow).toContain("curl --fail-with-body");
-    expect(workflow).toContain("/s/demo-tenant/demo-location");
+    expect(workflow).toContain("/s/speicher-neun/hafencity");
     expect(workflow).toContain("shasum -a 256");
     expect(workflow).not.toMatch(/AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY/);
   });
@@ -115,14 +115,15 @@ describe("student AWS topology invariants", () => {
     );
   });
 
-  it("ships only a synthetic FakeProvider assessment fixture", () => {
+  it("ships the prototype-aligned Speicher Neun fixture on FakeProvider", () => {
     const seed = fs.readFileSync(
       path.join(__dirname, "../../aws/seed-student.sql"),
       "utf8",
     );
 
-    expect(seed).toContain("demo-tenant");
-    expect(seed).toContain("demo-location");
+    expect(seed).toContain("speicher-neun");
+    expect(seed).toContain("hafencity");
+    expect(seed).toContain("Frischer Fisch");
     expect(seed).toContain("fake-v1");
     expect(seed).not.toMatch(/openai|gemini/i);
   });

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import "@testing-library/jest-dom/vitest";
+import type { EntryChallengeProjectionDto } from "@review/contracts/context";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
@@ -9,6 +10,21 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ReviewerApplication } from "./app.js";
 
 afterEach(cleanup);
+
+const requirements = {
+  minimumFactSelections: 1,
+  maximumReviewFormatsPerGeneration: 1,
+} as const;
+
+const entryReviewFormats: EntryChallengeProjectionDto["context"]["reviewFormats"] = [
+  {
+    id: "format-concise-v1",
+    displayName: "Concise blurb",
+    description: "One concise paragraph.",
+    sample: "The team was attentive.",
+    availableCommands: ["generate", "paraphrase"],
+  },
+];
 
 describe("reviewer application routes", () => {
   it("shows an accessible loading projection while a clean Start route is prepared", () => {
@@ -60,8 +76,9 @@ describe("reviewer application routes", () => {
                 locale: "en-GB",
                 entryMode: "invite",
                 ratingRequired: true,
+                requirements,
                 factOptions: [],
-                reviewFormats: [],
+                reviewFormats: entryReviewFormats,
               },
             }),
           }}
@@ -94,8 +111,9 @@ describe("reviewer application routes", () => {
                 locale: "en-GB",
                 entryMode: "invite",
                 ratingRequired: true,
+                requirements,
                 factOptions: [],
-                reviewFormats: [],
+                reviewFormats: entryReviewFormats,
               },
             }),
           }}
@@ -126,8 +144,9 @@ describe("reviewer application routes", () => {
                 locale: "en-GB",
                 entryMode: "invite",
                 ratingRequired: true,
+                requirements,
                 factOptions: [],
-                reviewFormats: [],
+                reviewFormats: entryReviewFormats,
               },
             }),
           }}
@@ -143,6 +162,50 @@ describe("reviewer application routes", () => {
     await user.click(screen.getByRole("button", { name: "4, Good" }));
 
     expect(generate).toBeEnabled();
+  });
+
+  it("renders only Actions authorized by the backend projection", async () => {
+    render(
+      <MemoryRouter initialEntries={["/start/entry-challenge-demo"]}>
+        <ReviewerApplication
+          entryChallengeClient={{
+            start: async () => ({ redirectTo: "/review/review-session-demo" }),
+            read: async () => ({
+              status: "ready",
+              entryChallengeHandle: "entry-challenge-demo",
+              csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+              context: {
+                tenantDisplayName: "Speicher Neun",
+                locationDisplayName: "Speicher Neun · HafenCity",
+                locale: "de-DE",
+                entryMode: "open-qr",
+                ratingRequired: true,
+                requirements,
+                factOptions: [],
+                reviewFormats: [
+                  {
+                    ...entryReviewFormats[0]!,
+                    displayName: "Kurzer Text",
+                    availableCommands: ["generate"],
+                  },
+                ],
+              },
+            }),
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Auswählen, was erwähnt wird",
+      }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", {
+        name: "Meine Formulierung verbessern",
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("uses each prototype path card as the explicit Start action", async () => {
@@ -166,8 +229,9 @@ describe("reviewer application routes", () => {
                 locale: "en-GB",
                 entryMode: "invite",
                 ratingRequired: true,
+                requirements,
                 factOptions: [],
-                reviewFormats: [],
+                reviewFormats: entryReviewFormats,
               },
             }),
           }}
@@ -207,8 +271,9 @@ describe("reviewer application routes", () => {
                 locale: "en-GB",
                 entryMode: "invite",
                 ratingRequired: true,
+                requirements,
                 factOptions: [],
-                reviewFormats: [],
+                reviewFormats: entryReviewFormats,
               },
             }),
           }}
@@ -250,6 +315,7 @@ describe("reviewer application routes", () => {
               locale: "en-GB",
               rating: 4,
               action: "generate",
+              requirements,
               factOptions: [
                 {
                   id: "fact-attentive",
@@ -289,6 +355,7 @@ describe("reviewer application routes", () => {
               locale: "en-GB",
               rating: 4,
               action: "generate",
+              requirements,
               factOptions: [
                 {
                   id: "fact-attentive",
@@ -342,6 +409,7 @@ describe("reviewer application routes", () => {
               locale: "en-GB",
               rating: 4,
               action: "generate",
+              requirements,
               factOptions: [
                 {
                   id: "fact-attentive",
@@ -422,6 +490,7 @@ describe("reviewer application routes", () => {
               locale: "en-GB",
               rating: 4,
               action: "generate",
+              requirements,
               factOptions: [
                 {
                   id: "fact-attentive",
@@ -485,6 +554,7 @@ describe("reviewer application routes", () => {
               locale: "en-GB",
               rating: 4,
               action: "generate",
+              requirements,
               factOptions: [
                 {
                   id: "fact-attentive",
@@ -533,7 +603,9 @@ describe("reviewer application routes", () => {
     await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
     await user.click(screen.getByRole("button", { name: "Write the draft" }));
 
-    const draft = await screen.findByRole("textbox", { name: "Review text" });
+    const draft = await screen.findByRole("textbox", {
+      name: "Your draft — edit it freely",
+    });
     await user.clear(draft);
     await user.type(draft, "The team was exceptionally attentive.");
     await user.click(screen.getByRole("button", { name: "Copy" }));

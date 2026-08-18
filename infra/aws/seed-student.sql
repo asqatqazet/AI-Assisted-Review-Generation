@@ -8,10 +8,12 @@ INSERT INTO providers (id, key, display_name, credential_reference)
 VALUES (
   '00000000-0000-4000-8000-000000000201',
   'fake',
-  'Synthetic Provider',
-  'fake://student'
+  'Fake provider',
+  'fake://deterministic'
 )
-ON CONFLICT (key) DO NOTHING;
+ON CONFLICT (key) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  credential_reference = EXCLUDED.credential_reference;
 
 INSERT INTO provider_models (id, provider_id, model_key)
 VALUES (
@@ -61,32 +63,81 @@ INSERT INTO tenants (
 )
 VALUES (
   '00000000-0000-4000-8000-000000000101',
-  'demo-tenant',
-  'Student Demo',
-  'en-GB',
+  'speicher-neun',
+  'Speicher Neun',
+  'de-DE',
   'open-qr',
   0,
-  '{"maxActiveGenerations":1}'::jsonb
+  '{"maxActiveGenerations":1,"minimumFactSelections":2}'::jsonb
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  slug = EXCLUDED.slug,
+  name = EXCLUDED.name,
+  locale = EXCLUDED.locale,
+  default_entry_mode_key = EXCLUDED.default_entry_mode_key,
+  monthly_budget_micros = EXCLUDED.monthly_budget_micros,
+  policy = EXCLUDED.policy;
 
 INSERT INTO locations (id, tenant_id, slug, name)
 VALUES (
   '00000000-0000-4000-8000-000000000102',
   '00000000-0000-4000-8000-000000000101',
-  'demo-location',
-  'Demo Location'
+  'hafencity',
+  'Speicher Neun · HafenCity'
 )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+  slug = EXCLUDED.slug,
+  name = EXCLUDED.name;
+
+-- Preserve historical catalogue versions from earlier releases. They may be
+-- referenced by immutable Generations, so retire/disable them instead of
+-- rewriting their versioned content.
+UPDATE fact_option_versions
+SET is_active = false,
+    retired_at = COALESCE(retired_at, clock_timestamp())
+WHERE id = '00000000-0000-4000-8000-000000000104'
+  AND tenant_id = '00000000-0000-4000-8000-000000000101';
+
+UPDATE review_format_enablements
+SET enabled = false
+WHERE id = '00000000-0000-4000-8000-000000000106'
+  AND tenant_id = '00000000-0000-4000-8000-000000000101';
 
 INSERT INTO fact_option_categories (id, tenant_id, key, label)
-VALUES (
-  '00000000-0000-4000-8000-000000000103',
-  '00000000-0000-4000-8000-000000000101',
-  'service',
-  '{"en-GB":"Service"}'::jsonb
-)
-ON CONFLICT (id) DO NOTHING;
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000103',
+    '00000000-0000-4000-8000-000000000101',
+    'service',
+    '{"de-DE":"Service","en-GB":"Service"}'::jsonb
+  ),
+  (
+    '00000000-0000-4000-8000-000000000109',
+    '00000000-0000-4000-8000-000000000101',
+    'essen',
+    '{"de-DE":"Essen","en-GB":"Food"}'::jsonb
+  ),
+  (
+    '00000000-0000-4000-8000-000000000110',
+    '00000000-0000-4000-8000-000000000101',
+    'atmosphaere',
+    '{"de-DE":"Atmosphäre","en-GB":"Atmosphere"}'::jsonb
+  ),
+  (
+    '00000000-0000-4000-8000-000000000111',
+    '00000000-0000-4000-8000-000000000101',
+    'preis',
+    '{"de-DE":"Preis","en-GB":"Value"}'::jsonb
+  ),
+  (
+    '00000000-0000-4000-8000-000000000112',
+    '00000000-0000-4000-8000-000000000101',
+    'wartezeit',
+    '{"de-DE":"Wartezeit","en-GB":"Waiting time"}'::jsonb
+  )
+ON CONFLICT (id) DO UPDATE SET
+  key = EXCLUDED.key,
+  label = EXCLUDED.label;
 
 INSERT INTO fact_option_versions (
   id,
@@ -101,19 +152,17 @@ INSERT INTO fact_option_versions (
   sort_order,
   is_active
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000104',
-  '00000000-0000-4000-8000-000000000101',
-  '00000000-0000-4000-8000-000000000103',
-  'attentive',
-  1,
-  'TENANT',
-  '{"en-GB":"The team was attentive"}'::jsonb,
-  'The team was attentive.',
-  'POSITIVE',
-  1,
-  true
-)
+VALUES
+  ('00000000-0000-4000-8000-000000000130','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000109','s1',1,'TENANT','{"de-DE":"Frischer Fisch","en-GB":"Fresh fish"}'::jsonb,'Frischer Fisch.','POSITIVE',10,true),
+  ('00000000-0000-4000-8000-000000000113','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000109','s2',1,'TENANT','{"de-DE":"Gut gewürzt","en-GB":"Well seasoned"}'::jsonb,'Gut gewürzt.','POSITIVE',20,true),
+  ('00000000-0000-4000-8000-000000000114','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000109','s3',1,'TENANT','{"de-DE":"Essen war kalt","en-GB":"The food was cold"}'::jsonb,'Essen war kalt.','NEGATIVE',30,true),
+  ('00000000-0000-4000-8000-000000000115','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000103','s4',1,'TENANT','{"de-DE":"Aufmerksamer Service","en-GB":"Attentive service"}'::jsonb,'Aufmerksamer Service.','POSITIVE',40,true),
+  ('00000000-0000-4000-8000-000000000116','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000103','s5',1,'TENANT','{"de-DE":"Freundliches Personal","en-GB":"Friendly staff"}'::jsonb,'Freundliches Personal.','POSITIVE',50,true),
+  ('00000000-0000-4000-8000-000000000117','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000112','s6',1,'TENANT','{"de-DE":"Lange Wartezeit","en-GB":"Long wait"}'::jsonb,'Lange Wartezeit.','NEGATIVE',60,true),
+  ('00000000-0000-4000-8000-000000000118','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000112','s7',1,'TENANT','{"de-DE":"Essen kam schnell","en-GB":"Food arrived quickly"}'::jsonb,'Essen kam schnell.','POSITIVE',70,true),
+  ('00000000-0000-4000-8000-000000000119','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000110','s8',1,'TENANT','{"de-DE":"Blick auf den Hafen","en-GB":"Harbour view"}'::jsonb,'Blick auf den Hafen.','POSITIVE',80,true),
+  ('00000000-0000-4000-8000-000000000120','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000110','s9',1,'TENANT','{"de-DE":"Zu laut","en-GB":"Too loud"}'::jsonb,'Zu laut.','NEGATIVE',90,true),
+  ('00000000-0000-4000-8000-000000000121','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000111','s10',1,'TENANT','{"de-DE":"Fairer Preis","en-GB":"Fair price"}'::jsonb,'Fairer Preis.','POSITIVE',100,true)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO review_format_versions (
@@ -128,18 +177,31 @@ INSERT INTO review_format_versions (
   content_hash,
   status
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000105',
-  'concise-student-demo',
-  1,
-  'en-GB',
-  'google',
-  '{"minChars":1,"maxChars":350,"paragraphs":1,"emojiPolicy":"none","secondPerson":false}'::jsonb,
-  '{"displayName":{"en-GB":"Concise review"},"description":{"en-GB":"One short paragraph."},"sample":{"en-GB":"The team was attentive."}}'::jsonb,
-  ARRAY['GENERATE']::generation_action[],
-  'sha256:student-demo-format-v1',
-  'ACTIVE'
-)
+VALUES
+  (
+    '00000000-0000-4000-8000-000000000122',
+    'concise-blurb',
+    1,
+    'any',
+    'google',
+    '{"minChars":20,"maxChars":420,"paragraphs":1,"emojiPolicy":"none","secondPerson":false}'::jsonb,
+    '{"displayName":{"de-DE":"Kurzer Text","en-GB":"Concise blurb"},"description":{"de-DE":"Zwei oder drei Sätze. Was passiert ist, in der Reihenfolge, in der es passiert ist.","en-GB":"Two or three sentences. What happened, in the order it happened."},"sample":{"de-DE":"Frischer Fisch, gut gewürzt, und der Service war aufmerksam. Der Blick auf den Hafen hat den Abend gemacht.","en-GB":"Fresh fish, well seasoned, with attentive service."}}'::jsonb,
+    ARRAY['GENERATE']::generation_action[],
+    'sha256:speicher-neun-concise-blurb-v1',
+    'ACTIVE'
+  ),
+  (
+    '00000000-0000-4000-8000-000000000123',
+    'social-short',
+    1,
+    'any',
+    'tripadvisor',
+    '{"minChars":20,"maxChars":140,"paragraphs":1,"emojiPolicy":"allowed","secondPerson":false}'::jsonb,
+    '{"displayName":{"de-DE":"Kurz für Portale","en-GB":"Social short"},"description":{"de-DE":"Eine Zeile, für Portale mit harter Zeichenbegrenzung.","en-GB":"One line, for listing sites with a hard character limit."},"sample":{"de-DE":"Frischer Fisch, aufmerksamer Service, Blick auf den Hafen.","en-GB":"Fresh fish, attentive service, harbour view."}}'::jsonb,
+    ARRAY['GENERATE']::generation_action[],
+    'sha256:speicher-neun-social-short-v1',
+    'ACTIVE'
+  )
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO review_format_enablements (
@@ -150,15 +212,14 @@ INSERT INTO review_format_enablements (
   sort_order,
   allowed_actions
 )
-VALUES (
-  '00000000-0000-4000-8000-000000000106',
-  '00000000-0000-4000-8000-000000000101',
-  '00000000-0000-4000-8000-000000000105',
-  true,
-  1,
-  ARRAY['GENERATE']::generation_action[]
-)
-ON CONFLICT (id) DO NOTHING;
+VALUES
+  ('00000000-0000-4000-8000-000000000124','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000122',true,1,ARRAY['GENERATE']::generation_action[]),
+  ('00000000-0000-4000-8000-000000000125','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000123',true,2,ARRAY['GENERATE']::generation_action[])
+ON CONFLICT (id) DO UPDATE SET
+  review_format_version_id = EXCLUDED.review_format_version_id,
+  enabled = EXCLUDED.enabled,
+  sort_order = EXCLUDED.sort_order,
+  allowed_actions = EXCLUDED.allowed_actions;
 
 INSERT INTO prompt_versions (
   id,
@@ -188,55 +249,48 @@ INSERT INTO effective_configuration_snapshots (
   provenance
 )
 VALUES (
-  '00000000-0000-4000-8000-000000000108',
+  '00000000-0000-4000-8000-000000000127',
   '00000000-0000-4000-8000-000000000101',
   '00000000-0000-4000-8000-000000000102',
   2,
-  'sha256:student-demo-snapshot-v1',
+  'sha256:speicher-neun-hafencity-v1',
   '{
-    "snapshotId":"00000000-0000-4000-8000-000000000108",
+    "snapshotId":"00000000-0000-4000-8000-000000000127",
     "schemaVersion":2,
     "tenantId":"00000000-0000-4000-8000-000000000101",
     "locationId":"00000000-0000-4000-8000-000000000102",
-    "tenantName":"Student Demo",
-    "locationName":"Demo Location",
+    "tenantName":"Speicher Neun",
+    "locationName":"Speicher Neun · HafenCity",
     "provenance":{},
     "settings":{
-      "locale":"en-GB",
-      "toneGuidelines":"Warm and specific.",
+      "locale":"de-DE",
+      "toneGuidelines":"Kurz, gesprochen, ohne Superlative. Nie ein Gericht beschreiben, das nicht bestellt wurde.",
       "entryMode":"open-qr",
       "requireDisclosure":false,
       "requireVerifiedExperience":false,
       "maxReviewFormatsPerRequest":1,
-      "bannedTerms":[],
-      "enabledReviewFormatVersionIds":["00000000-0000-4000-8000-000000000105"],
+      "bannedTerms":["bestes Restaurant der Stadt","gratis"],
+      "enabledReviewFormatVersionIds":["00000000-0000-4000-8000-000000000122","00000000-0000-4000-8000-000000000123"],
       "enabledCommands":["generate"],
       "monthlyBudgetMicros":0,
       "alertThresholdPct":80
     },
-    "factOptions":[{
-      "id":"00000000-0000-4000-8000-000000000104",
-      "version":"fact-attentive@1",
-      "owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},
-      "proposition":"The team was attentive.",
-      "categoryId":"00000000-0000-4000-8000-000000000103",
-      "polarity":"positive",
-      "locale":"en-GB",
-      "active":true,
-      "sortOrder":1
-    }],
-    "reviewFormats":[{
-      "id":"00000000-0000-4000-8000-000000000105",
-      "key":"concise",
-      "version":"1.0.0",
-      "displayName":"Concise review",
-      "targetPlatform":"google",
-      "locale":"en-GB",
-      "description":{"en-GB":"One short paragraph."},
-      "sample":{"en-GB":"The team was attentive."},
-      "constraints":{"minChars":1,"maxChars":350,"paragraphs":1,"emojiPolicy":"none","secondPerson":false},
-      "supportedCommands":["generate"]
-    }],
+    "factOptions":[
+      {"id":"00000000-0000-4000-8000-000000000130","version":"s1@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Frischer Fisch.","categoryId":"00000000-0000-4000-8000-000000000109","polarity":"positive","locale":"de-DE","active":true,"sortOrder":10},
+      {"id":"00000000-0000-4000-8000-000000000113","version":"s2@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Gut gewürzt.","categoryId":"00000000-0000-4000-8000-000000000109","polarity":"positive","locale":"de-DE","active":true,"sortOrder":20},
+      {"id":"00000000-0000-4000-8000-000000000114","version":"s3@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Essen war kalt.","categoryId":"00000000-0000-4000-8000-000000000109","polarity":"negative","locale":"de-DE","active":true,"sortOrder":30},
+      {"id":"00000000-0000-4000-8000-000000000115","version":"s4@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Aufmerksamer Service.","categoryId":"00000000-0000-4000-8000-000000000103","polarity":"positive","locale":"de-DE","active":true,"sortOrder":40},
+      {"id":"00000000-0000-4000-8000-000000000116","version":"s5@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Freundliches Personal.","categoryId":"00000000-0000-4000-8000-000000000103","polarity":"positive","locale":"de-DE","active":true,"sortOrder":50},
+      {"id":"00000000-0000-4000-8000-000000000117","version":"s6@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Lange Wartezeit.","categoryId":"00000000-0000-4000-8000-000000000112","polarity":"negative","locale":"de-DE","active":true,"sortOrder":60},
+      {"id":"00000000-0000-4000-8000-000000000118","version":"s7@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Essen kam schnell.","categoryId":"00000000-0000-4000-8000-000000000112","polarity":"positive","locale":"de-DE","active":true,"sortOrder":70},
+      {"id":"00000000-0000-4000-8000-000000000119","version":"s8@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Blick auf den Hafen.","categoryId":"00000000-0000-4000-8000-000000000110","polarity":"positive","locale":"de-DE","active":true,"sortOrder":80},
+      {"id":"00000000-0000-4000-8000-000000000120","version":"s9@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Zu laut.","categoryId":"00000000-0000-4000-8000-000000000110","polarity":"negative","locale":"de-DE","active":true,"sortOrder":90},
+      {"id":"00000000-0000-4000-8000-000000000121","version":"s10@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Fairer Preis.","categoryId":"00000000-0000-4000-8000-000000000111","polarity":"positive","locale":"de-DE","active":true,"sortOrder":100}
+    ],
+    "reviewFormats":[
+      {"id":"00000000-0000-4000-8000-000000000122","key":"concise-blurb","version":"1.0.0","displayName":"Kurzer Text","targetPlatform":"google","locale":"any","description":{"de-DE":"Zwei oder drei Sätze. Was passiert ist, in der Reihenfolge, in der es passiert ist."},"sample":{"de-DE":"Frischer Fisch, gut gewürzt, und der Service war aufmerksam. Der Blick auf den Hafen hat den Abend gemacht."},"constraints":{"minChars":20,"maxChars":420,"paragraphs":1,"emojiPolicy":"none","secondPerson":false},"supportedCommands":["generate"]},
+      {"id":"00000000-0000-4000-8000-000000000123","key":"social-short","version":"1.0.0","displayName":"Kurz für Portale","targetPlatform":"tripadvisor","locale":"any","description":{"de-DE":"Eine Zeile, für Portale mit harter Zeichenbegrenzung."},"sample":{"de-DE":"Frischer Fisch, aufmerksamer Service, Blick auf den Hafen."},"constraints":{"minChars":20,"maxChars":140,"paragraphs":1,"emojiPolicy":"allowed","secondPerson":false},"supportedCommands":["generate"]}
+    ],
     "promptVersions":[{
       "id":"00000000-0000-4000-8000-000000000107",
       "hash":"prompt-generate-v1",
@@ -270,7 +324,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- The provider catalogue is shared across tenants. When this idempotent seed is
 -- applied to a database that already contains the FakeProvider natural keys,
--- retain those canonical catalogue identities in the demo snapshot instead of
+-- retain those canonical catalogue identities in the product snapshot instead of
 -- the preferred bootstrap UUIDs above.
 WITH fake_catalogue AS (
   SELECT
@@ -298,7 +352,7 @@ SET payload = jsonb_set(
   to_jsonb(fake_catalogue.price_rate_id::text)
 )
 FROM fake_catalogue
-WHERE snapshot.id = '00000000-0000-4000-8000-000000000108'
+WHERE snapshot.id = '00000000-0000-4000-8000-000000000127'
   AND (
     snapshot.payload #>> '{providerRouting,providerModelId}'
   ) IS DISTINCT FROM fake_catalogue.provider_model_id::text;

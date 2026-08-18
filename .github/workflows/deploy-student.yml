@@ -16,7 +16,7 @@ on:
           - student-low-quota
           - reserved-concurrency
       acknowledge_fake_provider_only:
-        description: Public assessment deploy uses FakeProvider only
+        description: Current public release uses the deterministic provider only
         required: true
         type: boolean
 
@@ -153,12 +153,12 @@ jobs:
           aws ssm put-parameter --name /review-gen/student/generation-work-private-key --type SecureString --value "$GENERATION_PRIVATE_KEY" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/generation-work-public-key --type SecureString --value "$GENERATION_PUBLIC_KEY" --overwrite >/dev/null
 
-      - name: Apply database migrations to the assessment database
+      - name: Apply database migrations to the product database
         run: pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
         env:
           DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
 
-      - name: Install the idempotent synthetic assessment fixture
+      - name: Install the idempotent prototype-aligned product configuration
         run: >-
           pnpm --dir packages/db exec prisma db execute
           --schema prisma/schema.prisma
@@ -230,7 +230,7 @@ jobs:
           DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
           curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/health"
           curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/" >/dev/null
-          test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$DOMAIN/s/demo-tenant/demo-location")" = 303
+          test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$DOMAIN/s/speicher-neun/hafencity")" = 303
           FAST_URL="$(terraform -chdir="$TF_DIR" output -raw web_bff_fast_function_url)"
           STREAM_URL="$(terraform -chdir="$TF_DIR" output -raw web_bff_stream_function_url)"
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$FAST_URL")" = 403

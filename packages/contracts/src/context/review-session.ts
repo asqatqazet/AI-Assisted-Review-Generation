@@ -17,6 +17,7 @@ export const ReviewSessionProjectionDtoSchema = z.strictObject({
     z.literal(5),
   ]),
   action: z.enum(["generate", "paraphrase"]),
+  requirements: PublicSurveyContextDtoSchema.shape.requirements,
   factOptions: PublicSurveyContextDtoSchema.shape.factOptions,
   reviewFormats: PublicSurveyContextDtoSchema.shape.reviewFormats,
 });

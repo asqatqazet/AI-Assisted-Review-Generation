@@ -9,6 +9,10 @@ const context: PublicSurveyContextDto = {
   locale: "en-GB",
   entryMode: "invite",
   ratingRequired: true,
+  requirements: {
+    minimumFactSelections: 1,
+    maximumReviewFormatsPerGeneration: 1,
+  },
   factOptions: [],
   reviewFormats: [],
 };
@@ -64,6 +68,25 @@ describe("Survey transition table", () => {
     expect(transition(selected, { type: "START_REQUESTED" })).toMatchObject({
       value: "entry-submitting",
       entryChallengeHandle: "challenge-demo",
+      rating: 5,
+      selectedAction: "generate",
+    });
+  });
+
+  it("restores the confirmed choice when starting the Review Session fails", () => {
+    const prepared = transition(createSurveyState("challenge-demo"), {
+      type: "ENTRY_PREPARED",
+      context,
+    });
+    const rated = transition(prepared, { type: "RATING_SELECTED", rating: 5 });
+    const selected = transition(rated, {
+      type: "ACTION_SELECTED",
+      action: "generate",
+    });
+    const submitting = transition(selected, { type: "START_REQUESTED" });
+
+    expect(transition(submitting, { type: "START_FAILED" })).toMatchObject({
+      value: "entry",
       rating: 5,
       selectedAction: "generate",
     });

@@ -141,7 +141,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         id, slug, name, locale, monthly_budget_micros, policy
       ) VALUES (
         '${tenantId}', 'tenant-${tenantId}', 'Apex Dental', 'en-GB', 0,
-        '{"maxActiveGenerations":1}'::jsonb
+        '{"maxActiveGenerations":1,"minimumFactSelections":2}'::jsonb
       );
       INSERT INTO locations (id, tenant_id, slug, name)
       VALUES ('${locationId}', '${tenantId}', 'location-${locationId}', 'Central Clinic');
@@ -216,6 +216,20 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
 
     const store = createPostgresReviewerGenerationAdmissionStore({ databaseUrl });
     try {
+      await expect(
+        store.prepare({
+          routeHandleHash,
+          browserCapabilityHash,
+          idempotencyKey: "below-minimum-facts",
+          factOptionIds: [factOptionId],
+          reviewFormatVersionId,
+        }),
+      ).resolves.toEqual({ status: "rejected" });
+      await runSql(`
+        UPDATE tenants
+        SET policy = '{"maxActiveGenerations":1,"minimumFactSelections":1}'::jsonb
+        WHERE id = '${tenantId}';
+      `);
       const input = {
         routeHandleHash,
         browserCapabilityHash,

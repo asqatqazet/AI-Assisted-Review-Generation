@@ -8,6 +8,10 @@ export const PublicSurveyContextDtoSchema = z.strictObject({
   locale: LocaleDtoSchema,
   entryMode: z.enum(["invite", "open-qr", "both"]),
   ratingRequired: z.boolean(),
+  requirements: z.strictObject({
+    minimumFactSelections: z.number().int().min(1).max(20),
+    maximumReviewFormatsPerGeneration: z.number().int().min(1).max(8),
+  }),
   factOptions: z.array(
     z.strictObject({
       id: IdentifierDtoSchema,
@@ -37,4 +41,3 @@ export const PublicSurveyContextDtoSchema = z.strictObject({
 });
 
 export type PublicSurveyContextDto = z.infer<typeof PublicSurveyContextDtoSchema>;
-

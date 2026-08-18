@@ -87,6 +87,10 @@ describe("reviewer entry preparation", () => {
                 locale: "en-GB",
                 entryMode: "invite",
                 ratingRequired: true,
+                requirements: {
+                  minimumFactSelections: 1,
+                  maximumReviewFormatsPerGeneration: 1,
+                },
                 factOptions: [],
                 reviewFormats: [],
               },
@@ -135,6 +139,10 @@ describe("reviewer entry preparation", () => {
           locale: "en-GB",
           entryMode: "invite",
           ratingRequired: true,
+          requirements: {
+            minimumFactSelections: 1,
+            maximumReviewFormatsPerGeneration: 1,
+          },
           factOptions: [],
           reviewFormats: [],
         },

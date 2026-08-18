@@ -33,6 +33,7 @@ export function createReviewSessionService({ reader }: ReviewSessionServiceOptio
         locale: stored.locale,
         rating: stored.rating,
         action: stored.action,
+        requirements: { ...stored.requirements },
         factOptions: [...stored.factOptions],
         reviewFormats: stored.reviewFormats.map((format) => ({
           ...format,

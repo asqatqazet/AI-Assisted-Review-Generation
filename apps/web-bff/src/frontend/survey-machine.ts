@@ -33,7 +33,8 @@ export type SurveyEvent =
       readonly type: "ACTION_SELECTED";
       readonly action: "generate" | "paraphrase";
     }
-  | { readonly type: "START_REQUESTED" };
+  | { readonly type: "START_REQUESTED" }
+  | { readonly type: "START_FAILED" };
 
 export function createSurveyState(entryChallengeHandle: string): SurveyState {
   return { value: "entry-loading", entryChallengeHandle };
@@ -66,6 +67,16 @@ export function transition(state: SurveyState, event: SurveyEvent): SurveyState 
   ) {
     return {
       value: "entry-submitting",
+      entryChallengeHandle: state.entryChallengeHandle,
+      context: state.context,
+      rating: state.rating,
+      selectedAction: state.selectedAction,
+    };
+  }
+
+  if (state.value === "entry-submitting" && event.type === "START_FAILED") {
+    return {
+      value: "entry",
       entryChallengeHandle: state.entryChallengeHandle,
       context: state.context,
       rating: state.rating,

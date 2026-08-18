@@ -20,6 +20,10 @@ describe("US-01.3 Review Session BFF projection", () => {
             locale: "en-GB",
             rating: 4,
             action: "generate",
+            requirements: {
+              minimumFactSelections: 1,
+              maximumReviewFormatsPerGeneration: 1,
+            },
             factOptions: [
               {
                 id: "fact-attentive",

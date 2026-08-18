@@ -71,11 +71,11 @@ Follow the exact console paths, immutable OIDC subject and verification commands
    Free-plan expiry, and acknowledgement of the FakeProvider-only release. Use `reserved-concurrency` only
    after the regional account/unreserved quota is at least 113.
 3. The workflow verifies against disposable PostgreSQL, builds once, hashes the three deployment artifacts,
-   migrates Neon, installs the idempotent `demo-tenant/demo-location` fixture, runs the AWS/free-tier
+   migrates Neon, installs the idempotent `speicher-neun/hafencity` fixture, runs the AWS/free-tier
    preflight, plans and applies Terraform, then publishes that exact UI build.
 4. Treat the run as successful only if the workflow proves all of the following:
    - `GET /health` and the UI succeed through CloudFront;
-   - `GET /s/demo-tenant/demo-location` returns the expected entry redirect;
+   - `GET /s/speicher-neun/hafencity` returns the expected entry redirect;
    - direct fast and streaming Function URL requests return `403`;
    - the release artifact contains checksums, Terraform outputs and five numeric Lambda alias versions.
 5. During the restricted assessment window, run one browser Generate journey and retain evidence that the

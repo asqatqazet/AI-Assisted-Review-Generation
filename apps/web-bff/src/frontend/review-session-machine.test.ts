@@ -12,6 +12,10 @@ const projection: ReviewSessionProjectionDto = {
   tenantDisplayName: "Apex Dental",
   locationDisplayName: "Central Clinic",
   locale: "en-GB",
+  requirements: {
+    minimumFactSelections: 1,
+    maximumReviewFormatsPerGeneration: 1,
+  },
   rating: 4,
   action: "generate",
   factOptions: [
@@ -34,6 +38,39 @@ const projection: ReviewSessionProjectionDto = {
 };
 
 describe("Review Session transition table", () => {
+  it("does not advance until the backend-projected minimum Fact Option count is met", () => {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      {
+        type: "REVIEW_SESSION_LOADED",
+        projection: {
+          ...projection,
+          requirements: {
+            minimumFactSelections: 2,
+            maximumReviewFormatsPerGeneration: 1,
+          },
+          factOptions: [
+            ...projection.factOptions,
+            {
+              id: "fact-friendly",
+              label: "The team was friendly",
+              categoryLabel: "Service",
+              polarity: "positive",
+            },
+          ],
+        },
+      },
+    );
+    const selectedOne = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+
+    expect(
+      transitionReviewSession(selectedOne, { type: "CONTINUE_REQUESTED" }),
+    ).toBe(selectedOne);
+  });
+
   it("moves a confirmed Fact Option from facts into Format choice", () => {
     const loaded = transitionReviewSession(
       createReviewSessionState("review-session-demo"),

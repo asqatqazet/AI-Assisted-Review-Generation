@@ -100,6 +100,10 @@ describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {
         locale: "en-GB",
         rating: 4,
         action: "generate",
+        requirements: {
+          minimumFactSelections: 1,
+          maximumReviewFormatsPerGeneration: 1,
+        },
         factOptions: [
           {
             id: factOptionId,

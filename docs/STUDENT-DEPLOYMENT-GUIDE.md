@@ -10,7 +10,7 @@
 - GitHub `verify` 通过；
 - `deploy-student` 所有步骤通过；
 - CloudFront `/health` 和 UI 可访问；
-- `/s/demo-tenant/demo-location` 返回 reviewer entry redirect；
+- `/s/speicher-neun/hafencity` 返回 reviewer entry redirect；
 - 直接访问两个 Lambda Function URL 都返回 `403`；
 - release artifact 中存在 checksums、Terraform outputs 和五个数字化 Lambda alias version；
 - 浏览器完成一次选 Fact → Generate → guarded Draft → Copy 的合成旅程。
@@ -193,8 +193,8 @@ gh run download <RUN_ID> --name student-release --dir "$EVIDENCE_DIR"
 shasum -a 256 -c "$EVIDENCE_DIR/checksums.sha256"
 DOMAIN="$(jq -r '.cloudfront_domain_name.value' "$EVIDENCE_DIR/deployment-outputs.json")"
 curl --fail-with-body "https://$DOMAIN/health"
-curl -I "https://$DOMAIN/s/demo-tenant/demo-location"
-open "https://$DOMAIN/s/demo-tenant/demo-location"
+curl -I "https://$DOMAIN/s/speicher-neun/hafencity"
+open "https://$DOMAIN/s/speicher-neun/hafencity"
 ```
 
 在浏览器完成合成旅程并确认：

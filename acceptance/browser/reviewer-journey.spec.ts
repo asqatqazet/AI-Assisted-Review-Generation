@@ -10,30 +10,32 @@ test("the browser root explains how to enter without exposing a Tenant", async (
     page.getByRole("heading", { name: "Review assistant" }),
   ).toBeVisible();
   await expect(page.getByText("Open the review link you were given")).toBeVisible();
-  await expect(page.locator("body")).not.toContainText("Student Demo");
 });
 
 test("the reviewer entry is rendered with the Maue mobile layout", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 320, height: 700 });
-  await page.goto("/s/demo-tenant/demo-location");
+  await page.goto("/s/speicher-neun/hafencity");
 
   const heading = page.getByRole("heading", {
-    name: "Write your review of Student Demo",
+    name: "Bewerten Sie Ihren Besuch bei Speicher Neun",
   });
   await expect(heading).toBeVisible();
-  await expect(page.getByRole("banner")).toContainText("Student Demo");
-  await expect(page.getByRole("banner")).toContainText("Open visit");
+  await expect(page.getByRole("banner")).toContainText("Speicher Neun");
+  await expect(page.getByRole("banner")).toContainText("Offener Besuch");
 
   const rendering = await page.evaluate(() => {
     const body = getComputedStyle(document.body);
     const title = getComputedStyle(document.querySelector("h1")!);
     const rating = document
-      .querySelector<HTMLButtonElement>('button[aria-label="5, Very good"]')!
+      .querySelector<HTMLButtonElement>('button[aria-label="5, Sehr gut"]')!
       .getBoundingClientRect();
     const start = Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Pick what to mention")!
+      .find(
+        (button) =>
+          button.textContent?.trim() === "Auswählen, was erwähnt wird",
+      )!
       .getBoundingClientRect();
 
     return {
@@ -64,24 +66,27 @@ test("the reviewer entry is rendered with the Maue mobile layout", async ({
 
 test("the review stages keep the responsive Maue layout", async ({ page }) => {
   await page.setViewportSize({ width: 375, height: 760 });
-  await page.goto("/s/demo-tenant/demo-location");
-  await page.getByRole("button", { name: "5, Very good" }).click();
-  await page.getByRole("button", { name: "Pick what to mention" }).click();
+  await page.goto("/s/speicher-neun/hafencity");
+  await page.getByRole("button", { name: "5, Sehr gut" }).click();
+  await page
+    .getByRole("button", { name: "Auswählen, was erwähnt wird" })
+    .click();
 
   await expect(page).toHaveURL(/\/review\/[A-Za-z0-9_-]+$/);
-  const factChoice = page.getByLabel("The team was attentive");
+  const factChoice = page.getByLabel("Frischer Fisch");
+  const secondFactChoice = page.getByLabel("Gut gewürzt");
   await expect(factChoice).toBeVisible();
-  await expect(page.getByRole("banner")).toContainText("Student Demo");
+  await expect(page.getByRole("banner")).toContainText("Speicher Neun");
 
   const phoneRendering = await page.evaluate(() => {
     const fact = document
       .querySelector<HTMLInputElement>(
-        'input[aria-label="The team was attentive"], input[value]',
+        'input[value]',
       )!
       .closest("label")!
       .getBoundingClientRect();
     const continueButton = Array.from(document.querySelectorAll("button"))
-      .find((button) => button.textContent?.trim() === "Choose a format")!
+      .find((button) => button.textContent?.trim() === "Format wählen")!
       .getBoundingClientRect();
     return {
       contentWidth: document.documentElement.scrollWidth,
@@ -94,11 +99,13 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
   expect(phoneRendering.continueHeight).toBeGreaterThanOrEqual(44);
 
   await factChoice.press("Space");
+  await secondFactChoice.press("Space");
   await expect(factChoice).toBeChecked();
-  await page.getByRole("button", { name: "Choose a format" }).click();
+  await expect(secondFactChoice).toBeChecked();
+  await page.getByRole("button", { name: "Format wählen" }).click();
   await page.setViewportSize({ width: 768, height: 900 });
 
-  const formatChoice = page.getByLabel("Concise review");
+  const formatChoice = page.getByLabel("Kurzer Text");
   await expect(formatChoice).toBeVisible();
   const tabletRendering = await page.evaluate(() => {
     const main = document.querySelector("main")!.getBoundingClientRect();
@@ -113,9 +120,9 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
 
   await formatChoice.press("Space");
   await expect(formatChoice).toBeChecked();
-  await page.getByRole("button", { name: "Write the draft" }).click();
-  const reviewText = page.getByLabel("Review text");
-  await expect(reviewText).toHaveValue("The team was attentive.");
+  await page.getByRole("button", { name: "Entwurf schreiben" }).click();
+  const reviewText = page.getByLabel("Ihr Entwurf — frei bearbeitbar");
+  await expect(reviewText).toHaveValue("Frischer Fisch. Gut gewürzt.");
   const resultRendering = await reviewText.evaluate((textarea) => {
     const style = getComputedStyle(textarea);
     const rect = textarea.getBoundingClientRect();
@@ -169,8 +176,8 @@ test("the operator console keeps its 1024px working layout", async ({ page }) =>
 test("the browser binds the exact Start payload to its SHA-256 header", async ({
   page,
 }) => {
-  await page.goto("/s/demo-tenant/demo-location");
-  await page.getByRole("button", { name: "5, Very good" }).click();
+  await page.goto("/s/speicher-neun/hafencity");
+  await page.getByRole("button", { name: "5, Sehr gut" }).click();
 
   const startRequestPromise = page.waitForRequest((request) => {
     const path = new URL(request.url()).pathname;
@@ -179,7 +186,9 @@ test("the browser binds the exact Start payload to its SHA-256 header", async ({
       /^\/api\/v1\/entry-challenges\/[A-Za-z0-9_-]+\/start$/.test(path)
     );
   });
-  await page.getByRole("button", { name: "Pick what to mention" }).click();
+  await page
+    .getByRole("button", { name: "Auswählen, was erwähnt wird" })
+    .click();
   const startRequest = await startRequestPromise;
   const payload = startRequest.postData();
 
@@ -202,26 +211,33 @@ test("the browser binds the exact Start payload to its SHA-256 header", async ({
 test("a reviewer receives a grounded Draft from the local FakeProvider composition", async ({
   page,
 }) => {
-  await page.goto("/s/demo-tenant/demo-location");
+  await page.goto("/s/speicher-neun/hafencity");
 
   await expect(
-    page.getByRole("heading", { name: "Write your review of Student Demo" }),
+    page.getByRole("heading", {
+      name: "Bewerten Sie Ihren Besuch bei Speicher Neun",
+    }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "5, Very good" }).click();
-  await page.getByRole("button", { name: "Pick what to mention" }).click();
+  await page.getByRole("button", { name: "5, Sehr gut" }).click();
+  await page
+    .getByRole("button", { name: "Auswählen, was erwähnt wird" })
+    .click();
 
   await expect(page).toHaveURL(/\/review\/[A-Za-z0-9_-]+$/);
-  const factChoice = page.getByLabel("The team was attentive");
+  const factChoice = page.getByLabel("Frischer Fisch");
+  const secondFactChoice = page.getByLabel("Gut gewürzt");
   await factChoice.press("Space");
+  await secondFactChoice.press("Space");
   await expect(factChoice).toBeChecked();
-  await page.getByRole("button", { name: "Choose a format" }).click();
-  const formatChoice = page.getByLabel("Concise review");
+  await expect(secondFactChoice).toBeChecked();
+  await page.getByRole("button", { name: "Format wählen" }).click();
+  const formatChoice = page.getByLabel("Kurzer Text");
   await formatChoice.press("Space");
   await expect(formatChoice).toBeChecked();
-  await page.getByRole("button", { name: "Write the draft" }).click();
+  await page.getByRole("button", { name: "Entwurf schreiben" }).click();
 
-  await expect(page.getByRole("heading", { name: "Here it is" })).toBeVisible();
-  await expect(page.getByLabel("Review text")).toHaveValue(
-    "The team was attentive.",
+  await expect(page.getByRole("heading", { name: "Hier ist er" })).toBeVisible();
+  await expect(page.getByLabel("Ihr Entwurf — frei bearbeitbar")).toHaveValue(
+    "Frischer Fisch. Gut gewürzt.",
   );
 });

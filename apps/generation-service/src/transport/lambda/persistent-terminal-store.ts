@@ -65,7 +65,7 @@ export function createPersistentGenerationTerminalStore(
           assertionIds.length === 0 ||
           assertionIds.length !== claim.grounding.length
         ) {
-          throw new Error("Student terminal store accepts Assertion grounding only");
+          throw new Error("Terminal store accepts Assertion grounding only");
         }
         return { proposition: claim.text, assertionIds };
       });

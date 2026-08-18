@@ -18,6 +18,10 @@ describe("US-01.3 Context Review Session application module", () => {
           locale: "en-GB" as const,
           rating: 4 as const,
           action: "generate" as const,
+          requirements: {
+            minimumFactSelections: 1,
+            maximumReviewFormatsPerGeneration: 1,
+          },
           factOptions: [],
           reviewFormats: [] as const,
         };
@@ -39,6 +43,10 @@ describe("US-01.3 Context Review Session application module", () => {
       locale: "en-GB",
       rating: 4,
       action: "generate",
+      requirements: {
+        minimumFactSelections: 1,
+        maximumReviewFormatsPerGeneration: 1,
+      },
       factOptions: [],
       reviewFormats: [],
     });
