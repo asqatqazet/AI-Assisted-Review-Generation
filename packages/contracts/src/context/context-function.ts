@@ -12,6 +12,9 @@ import { ReviewSessionProjectionDtoSchema } from "./review-session.js";
 import {
   ResolveOperatorAccessInvocationDtoSchema,
 } from "./operator-access.js";
+import {
+  ConsoleRequestInvocationDtoSchema,
+} from "../console/console-function.js";
 
 const BrowserCapabilityDtoSchema = z.string().regex(/^[A-Za-z0-9_-]{20,128}$/);
 
@@ -149,6 +152,7 @@ export const ContextFunctionInvocationDtoSchema = z.discriminatedUnion(
     ListReconciliationCandidatesInvocationDtoSchema,
     ReleaseReconciledGenerationInvocationDtoSchema,
     ResolveOperatorAccessInvocationDtoSchema,
+    ConsoleRequestInvocationDtoSchema,
   ],
 );
 

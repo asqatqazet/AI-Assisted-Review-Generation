@@ -35,6 +35,11 @@ import {
   type SettleGenerationInvocationDto,
   type SettleGenerationInvocationResultDto,
 } from "@review/contracts/context";
+import {
+  ConsoleRequestInvocationResultDtoSchema,
+  type ConsoleRequestInvocationDto,
+  type ConsoleRequestInvocationResultDto,
+} from "@review/contracts/console";
 
 export interface ContextEntryService {
   prepareEntry(
@@ -72,6 +77,13 @@ export interface ContextEntryService {
 export interface ContextFunctionOptions {
   readonly entryService: ContextEntryService;
   readonly operatorService?: ContextOperatorService | undefined;
+  readonly consoleService?: ContextConsoleService | undefined;
+}
+
+export interface ContextConsoleService {
+  request(
+    input: ConsoleRequestInvocationDto["input"],
+  ): Promise<ConsoleRequestInvocationResultDto["result"]>;
 }
 
 export interface ContextOperatorService {
@@ -83,6 +95,7 @@ export interface ContextOperatorService {
 export function createContextFunctionHandler({
   entryService,
   operatorService,
+  consoleService,
 }: ContextFunctionOptions): (
   event: unknown,
 ) => Promise<
@@ -97,6 +110,7 @@ export function createContextFunctionHandler({
   | ListReconciliationCandidatesInvocationResultDto
   | ReleaseReconciledGenerationInvocationResultDto
   | ResolveOperatorAccessInvocationResultDto
+  | ConsoleRequestInvocationResultDto
 > {
   return async (event) => {
     const invocation: ContextFunctionInvocationDto =
@@ -164,6 +178,14 @@ export function createContextFunctionHandler({
             operatorService === undefined
               ? { status: "unauthorized" }
               : await operatorService.resolveAccess(invocation.input),
+        });
+      case "console-request":
+        return ConsoleRequestInvocationResultDtoSchema.parse({
+          operation: invocation.operation,
+          result:
+            consoleService === undefined
+              ? { status: "not-found" }
+              : await consoleService.request(invocation.input),
         });
     }
   };

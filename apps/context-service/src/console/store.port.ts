@@ -1,0 +1,349 @@
+import type {
+  ConsoleActionKeyDto,
+  ConsoleAnalyticsQueryDto,
+  ConsoleAnalyticsRowDto,
+  ConsoleBenchInputDto,
+  ConsoleBenchResultDto,
+  ConsoleGenerationDetailDto,
+  ConsoleKeywordDto,
+  ConsoleOverviewDto,
+  ConsoleReviewDestinationDto,
+  ConsoleSettingValueDto,
+  PlatformProvidersDto,
+  PlatformSettingsDto,
+  PlatformStylesDto,
+  PlatformTenantsDto,
+} from "@review/contracts/console";
+
+export interface ConsoleTenantRecord {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly locale: "en-GB" | "de-DE";
+  readonly settings: Readonly<Record<string, ConsoleSettingValueDto>>;
+  readonly keywordCategories: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly sortOrder: number;
+  }[];
+}
+
+export interface ConsoleLocationRecord {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly address: {
+    readonly line1: string;
+    readonly line2: string;
+    readonly postalCode: string;
+    readonly city: string;
+    readonly country: string;
+  };
+  readonly active: boolean;
+  readonly overrides: Readonly<Record<string, unknown>>;
+}
+
+export interface ConsoleContextVersionRecord {
+  readonly id: string;
+  readonly version: number;
+  readonly createdAt: string;
+  readonly createdBy: string | null;
+  readonly context: string;
+  readonly bannedTerms: readonly string[];
+}
+
+export interface ConsoleStyleRecord {
+  readonly id: string;
+  readonly key: string;
+  readonly name: string;
+  readonly version: string;
+  readonly locale: "en-GB" | "de-DE" | "any";
+  readonly targetPlatform: string;
+  readonly maxChars: number;
+  readonly supportedActions: readonly ConsoleActionKeyDto[];
+  readonly manifest: string;
+  readonly enabled: boolean;
+  readonly sortOrder: number;
+  readonly enabledActions: readonly ConsoleActionKeyDto[];
+  readonly validationStatus: "valid" | "invalid" | "unvalidated";
+}
+
+export interface ConsoleActionRecord {
+  readonly key: ConsoleActionKeyDto;
+  readonly label: string;
+  readonly enabled: boolean;
+  readonly requiredInputs: readonly string[];
+  readonly groundingRule: string;
+  readonly relativeCost: "low" | "medium" | "high";
+  /** True for the Actions a reviewer can start a Survey with. */
+  readonly isEntryAction: boolean;
+}
+
+export interface ConsolePromptRecord {
+  readonly id: string;
+  readonly action: ConsoleActionKeyDto;
+  readonly version: number;
+  readonly hash: string;
+  readonly status: "draft" | "candidate" | "in-experiment" | "retired";
+  readonly createdAt: string;
+  readonly createdBy: string | null;
+  readonly evaluationScore: number | null;
+  readonly body: string;
+  readonly variables: readonly string[];
+}
+
+export interface ConsoleExperimentRecord {
+  readonly id: string;
+  readonly action: ConsoleActionKeyDto;
+  readonly status: "draft" | "running" | "stopped";
+  readonly createdAt: string;
+  readonly startedAt: string | null;
+  readonly stoppedAt: string | null;
+  readonly variants: readonly {
+    readonly promptVersionId: string;
+    readonly promptVersionHash: string;
+    readonly weightPct: number;
+    readonly generations: number;
+    readonly accepted: number;
+  }[];
+}
+
+export interface ConsoleDistributionRecord {
+  readonly surveyUrl: string;
+  readonly entryMode: "invite" | "open-qr" | "both";
+  readonly invitationTemplate: string;
+  readonly tableQrCopy: string;
+  readonly counters: {
+    readonly issued: number;
+    readonly opened: number;
+    readonly completed: number;
+  };
+}
+
+export type ConsoleScopeSelector =
+  | { readonly type: "platform" }
+  | { readonly type: "tenant"; readonly tenantId: string }
+  | {
+      readonly type: "location";
+      readonly tenantId: string;
+      readonly locationId: string;
+    };
+
+/**
+ * Persistence seam for the operator control plane. Every method is already
+ * scoped: the service resolves and authorizes the scope before calling in, so
+ * a store implementation never has to re-derive who is asking.
+ */
+export interface ConsoleStore {
+  readTenant(tenantId: string): Promise<ConsoleTenantRecord | null>;
+  listLocations(tenantId: string): Promise<readonly ConsoleLocationRecord[]>;
+  readLocation(
+    tenantId: string,
+    locationId: string,
+  ): Promise<ConsoleLocationRecord | null>;
+  createLocation(input: {
+    readonly tenantId: string;
+    readonly name: string;
+    readonly slug: string;
+    readonly address: ConsoleLocationRecord["address"];
+    readonly entryMode: "invite" | "open-qr" | "both" | null;
+  }): Promise<{ readonly status: "created" } | { readonly status: "slug-taken" }>;
+  updateLocation(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly name: string;
+    readonly address: ConsoleLocationRecord["address"];
+    readonly active: boolean;
+  }): Promise<void>;
+  saveTenantSettings(input: {
+    readonly tenantId: string;
+    readonly values: Readonly<Record<string, ConsoleSettingValueDto>>;
+  }): Promise<void>;
+  writeLocationOverrides(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly overrides: Readonly<Record<string, unknown>>;
+  }): Promise<void>;
+
+  readDistribution(
+    tenantId: string,
+    locationId: string,
+  ): Promise<ConsoleDistributionRecord | null>;
+  listDestinations(
+    tenantId: string,
+    locationId: string,
+  ): Promise<readonly ConsoleReviewDestinationDto[]>;
+  saveDestination(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly destinationTypeId: string;
+    readonly platformPlaceId: string;
+    readonly targetUrl: string;
+    readonly enabled: boolean;
+  }): Promise<{ readonly status: "saved" } | { readonly status: "unknown-destination" }>;
+
+  listContextVersions(
+    tenantId: string,
+  ): Promise<readonly ConsoleContextVersionRecord[]>;
+  publishContextVersion(input: {
+    readonly tenantId: string;
+    readonly version: number;
+    readonly context: string;
+    readonly bannedTerms: readonly string[];
+    readonly createdBy: string;
+  }): Promise<void>;
+
+  listKeywords(
+    tenantId: string,
+    locationId: string | null,
+  ): Promise<readonly ConsoleKeywordDto[]>;
+  createKeyword(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+    readonly label: string;
+    readonly categoryKey: string;
+    readonly polarity: "positive" | "neutral" | "negative";
+  }): Promise<{ readonly status: "created" } | { readonly status: "unknown-category" }>;
+  updateKeyword(input: {
+    readonly tenantId: string;
+    readonly keywordId: string;
+    readonly label: string;
+    readonly polarity: "positive" | "neutral" | "negative";
+    readonly active: boolean;
+  }): Promise<{ readonly status: "updated" } | { readonly status: "not-found" }>;
+  reorderKeywords(input: {
+    readonly tenantId: string;
+    readonly orderedKeywordIds: readonly string[];
+  }): Promise<void>;
+  deleteKeyword(input: {
+    readonly tenantId: string;
+    readonly keywordId: string;
+  }): Promise<{ readonly status: "deleted" } | { readonly status: "not-found" }>;
+
+  listStyles(tenantId: string): Promise<readonly ConsoleStyleRecord[]>;
+  setStyleEnablement(input: {
+    readonly tenantId: string;
+    readonly styleId: string;
+    readonly enabled: boolean;
+    readonly enabledActions: readonly ConsoleActionKeyDto[];
+  }): Promise<void>;
+  reorderStyles(input: {
+    readonly tenantId: string;
+    readonly orderedStyleIds: readonly string[];
+  }): Promise<void>;
+
+  listActions(tenantId: string): Promise<readonly ConsoleActionRecord[]>;
+  setActionEnablement(input: {
+    readonly tenantId: string;
+    readonly action: ConsoleActionKeyDto;
+    readonly enabled: boolean;
+  }): Promise<void>;
+
+  listPrompts(
+    tenantId: string,
+    action: ConsoleActionKeyDto | null,
+  ): Promise<readonly ConsolePromptRecord[]>;
+  readPrompt(
+    tenantId: string,
+    promptVersionId: string,
+  ): Promise<ConsolePromptRecord | null>;
+  createPromptVersion(input: {
+    readonly tenantId: string;
+    readonly action: ConsoleActionKeyDto;
+    readonly version: number;
+    readonly hash: string;
+    readonly body: string;
+    readonly variables: readonly string[];
+    readonly createdBy: string;
+  }): Promise<void>;
+
+  listExperiments(
+    tenantId: string,
+  ): Promise<readonly ConsoleExperimentRecord[]>;
+  readExperiment(
+    tenantId: string,
+    experimentId: string,
+  ): Promise<ConsoleExperimentRecord | null>;
+  createExperiment(input: {
+    readonly tenantId: string;
+    readonly action: ConsoleActionKeyDto;
+    readonly variants: readonly {
+      readonly promptVersionId: string;
+      readonly weightPct: number;
+    }[];
+  }): Promise<
+    { readonly status: "created" } | { readonly status: "unknown-prompt" }
+  >;
+  setExperimentStatus(input: {
+    readonly tenantId: string;
+    readonly experimentId: string;
+    readonly status: "running" | "stopped";
+  }): Promise<void>;
+
+  runBench(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+    readonly input: ConsoleBenchInputDto;
+  }): Promise<ConsoleBenchResultDto>;
+
+  readOverview(input: {
+    readonly scope: ConsoleScopeSelector;
+    readonly from: string;
+    readonly to: string;
+  }): Promise<Omit<ConsoleOverviewDto, "scope">>;
+
+  readAnalytics(input: {
+    readonly scope: ConsoleScopeSelector;
+    readonly query: ConsoleAnalyticsQueryDto;
+  }): Promise<readonly ConsoleAnalyticsRowDto[]>;
+
+  readGenerationDetail(input: {
+    readonly scope: ConsoleScopeSelector;
+    readonly generationId: string;
+  }): Promise<ConsoleGenerationDetailDto["generation"] & {
+    readonly lineage: ConsoleGenerationDetailDto["lineage"];
+    readonly replayInput: ConsoleBenchInputDto | null;
+    readonly missingReplayDependencies: readonly string[];
+  } | null>;
+
+  listPlatformTenants(): Promise<PlatformTenantsDto["tenants"]>;
+  createTenant(input: {
+    readonly name: string;
+    readonly slug: string;
+    readonly locale: "en-GB" | "de-DE";
+    readonly category: string;
+    readonly plan: string;
+  }): Promise<{ readonly status: "created" } | { readonly status: "slug-taken" }>;
+  readPlatformProviders(): Promise<Omit<PlatformProvidersDto, "scope">>;
+  setProviderRouting(input: {
+    readonly providerKey: string;
+    readonly modelKey: string;
+    readonly routingPriority: number | null;
+    readonly fallbackPriority: number | null;
+  }): Promise<{ readonly status: "saved" } | { readonly status: "unknown-model" }>;
+  publishPriceRate(input: {
+    readonly providerKey: string;
+    readonly modelKey: string;
+    readonly inputMicrosPerMillion: number;
+    readonly outputMicrosPerMillion: number;
+    readonly currency: string;
+    readonly validFrom: string;
+  }): Promise<
+    { readonly status: "published" } | { readonly status: "not-later-than-current" }
+  >;
+  listPlatformStyles(): Promise<PlatformStylesDto["styles"]>;
+  importPlatformStyle(input: {
+    readonly manifest: string;
+  }): Promise<{ readonly status: "imported" } | { readonly status: "invalid" }>;
+  readPlatformSettings(): Promise<Omit<PlatformSettingsDto, "scope">>;
+  savePlatformSettings(input: {
+    readonly defaultPolicyTemplate: string;
+    readonly globalRateLimits: PlatformSettingsDto["globalRateLimits"];
+    readonly logRetentionDays: number;
+    readonly featureFlags: readonly {
+      readonly key: string;
+      readonly enabled: boolean;
+    }[];
+  }): Promise<void>;
+}
