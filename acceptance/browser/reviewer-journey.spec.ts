@@ -1,6 +1,18 @@
 import { expect, test } from "@playwright/test";
 import { createHash } from "node:crypto";
 
+test("the browser root explains how to enter without exposing a Tenant", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await expect(
+    page.getByRole("heading", { name: "Review assistant" }),
+  ).toBeVisible();
+  await expect(page.getByText("Open the review link you were given")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText("Student Demo");
+});
+
 test("the reviewer entry is rendered with the Maue mobile layout", async ({
   page,
 }) => {
