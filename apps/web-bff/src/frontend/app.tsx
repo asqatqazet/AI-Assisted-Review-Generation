@@ -73,6 +73,23 @@ function SurveyScreen({
   );
 }
 
+function LandingRoute(): React.JSX.Element {
+  return (
+    <div className={styles.page}>
+      <SurveyHeader brand="Review assistant" />
+      <main className={styles.surveyMain}>
+        <p className={styles.eyebrow}>Assisted review writing</p>
+        <h1 className={styles.title}>Review assistant</h1>
+        <p className={styles.lead}>
+          Open the review link you were given to start. The link selects the
+          correct business and location securely; this page does not ask you to
+          choose a workspace.
+        </p>
+      </main>
+    </div>
+  );
+}
+
 function StartRoute({
   entryChallengeClient,
   navigate,
@@ -595,6 +612,7 @@ export function ReviewerApplication({
 }: ReviewerApplicationProps = {}): React.JSX.Element {
   return (
     <Routes>
+      <Route path="/" element={<LandingRoute />} />
       <Route
         path="/start/:entryChallengeHandle"
         element={
