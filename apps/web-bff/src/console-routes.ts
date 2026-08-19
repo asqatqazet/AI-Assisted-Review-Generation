@@ -32,6 +32,18 @@ const NOT_FOUND = {
   message: "This resource is unavailable.",
 } as const;
 
+const encoder = new TextEncoder();
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest(
+    "SHA-256",
+    encoder.encode(value),
+  );
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 function parseConsoleQuery(
   view: string,
   params: URLSearchParams,
@@ -179,13 +191,25 @@ export function registerConsoleRoutes(
       );
     }
 
-    let rawBody: unknown;
-    try {
-      rawBody = await c.req.json();
-    } catch {
-      rawBody = undefined;
+    // The edge signs this request with the hash the browser declared, so a
+    // command whose body does not match its declared hash never reaches a
+    // Tenant's configuration.
+    const rawBody = await c.req.text();
+    const claimedBodyHash = c.req.header("x-amz-content-sha256");
+    if (
+      claimedBodyHash === undefined ||
+      claimedBodyHash !== (await sha256Hex(rawBody))
+    ) {
+      return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
     }
-    const command = ConsoleCommandDtoSchema.safeParse(rawBody);
+
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(rawBody) as unknown;
+    } catch {
+      parsedBody = undefined;
+    }
+    const command = ConsoleCommandDtoSchema.safeParse(parsedBody);
     if (!command.success) {
       return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
     }

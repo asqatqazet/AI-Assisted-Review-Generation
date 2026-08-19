@@ -2,6 +2,7 @@ import type {
   ConsoleRequestInvocationDto,
   ConsoleRequestInvocationResultDto,
 } from "@review/contracts/console";
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import { createWebBffApp } from "./app.js";
@@ -44,6 +45,11 @@ function appWithConsole(
 }
 
 const signedIn = { Cookie: "__Host-operator_session=valid-operator-session" };
+
+/** Mirrors what the browser sends so CloudFront can sign the body. */
+function payloadBound(body: string): Record<string, string> {
+  return { "x-amz-content-sha256": createHash("sha256").update(body).digest("hex") };
+}
 
 const overviewView = {
   view: "overview" as const,
@@ -269,7 +275,14 @@ describe("Console commands", () => {
       "/api/v1/console/commands?tenantId=tenant-a&locationId=location-1",
       {
         method: "POST",
-        headers: { ...signedIn, Origin: publicOrigin },
+        headers: {
+          ...signedIn,
+          Origin: publicOrigin,
+          ...payloadBound(JSON.stringify({
+          command: "reset-location-override",
+          key: "requireDisclosure",
+        })),
+        },
         body: JSON.stringify({
           command: "reset-location-override",
           key: "requireDisclosure",
@@ -294,7 +307,18 @@ describe("Console commands", () => {
 
     const response = await app.request("/api/v1/console/commands?tenantId=tenant-a", {
       method: "POST",
-      headers: { ...signedIn, Origin: publicOrigin },
+      headers: {
+        ...signedIn,
+        Origin: publicOrigin,
+        ...payloadBound(JSON.stringify({
+        command: "create-experiment",
+        action: "generate",
+        variants: [
+          { promptVersionId: "prompt-a", weightPct: 60 },
+          { promptVersionId: "prompt-b", weightPct: 50 },
+        ],
+      })),
+      },
       body: JSON.stringify({
         command: "create-experiment",
         action: "generate",
@@ -317,7 +341,11 @@ describe("Console commands", () => {
 
     const response = await app.request("/api/v1/console/commands?tenantId=tenant-a", {
       method: "POST",
-      headers: { ...signedIn, Origin: publicOrigin },
+      headers: {
+        ...signedIn,
+        Origin: publicOrigin,
+        ...payloadBound(JSON.stringify({ command: "drop-database" })),
+      },
       body: JSON.stringify({ command: "drop-database" }),
     });
 
@@ -355,5 +383,50 @@ describe("Console distribution links", () => {
     });
 
     expect(seen[0]?.publicOrigin).toBeNull();
+  });
+});
+
+describe("Console commands are payload-bound", () => {
+  const body = JSON.stringify({
+    command: "reset-location-override",
+    key: "requireDisclosure",
+  });
+
+  it("refuses a command that declares no payload hash", async () => {
+    // CloudFront signs the request with the hash the browser declared, so a
+    // command without one cannot have been signed by the edge at all.
+    const { app, seen } = appWithConsole(() => ({
+      status: "command",
+      result: { outcome: "accepted" },
+    }));
+
+    const response = await app.request("/api/v1/console/commands?tenantId=tenant-a", {
+      method: "POST",
+      headers: { ...signedIn, Origin: publicOrigin },
+      body,
+    });
+
+    expect(response.status).toBe(404);
+    expect(seen).toEqual([]);
+  });
+
+  it("refuses a body that does not match its declared hash", async () => {
+    const { app, seen } = appWithConsole(() => ({
+      status: "command",
+      result: { outcome: "accepted" },
+    }));
+
+    const response = await app.request("/api/v1/console/commands?tenantId=tenant-a", {
+      method: "POST",
+      headers: {
+        ...signedIn,
+        Origin: publicOrigin,
+        ...payloadBound(JSON.stringify({ command: "delete-keyword", keywordId: "k" })),
+      },
+      body,
+    });
+
+    expect(response.status).toBe(404);
+    expect(seen).toEqual([]);
   });
 });

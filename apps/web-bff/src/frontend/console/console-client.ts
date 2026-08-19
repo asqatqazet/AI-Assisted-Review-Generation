@@ -11,6 +11,8 @@ import {
   type OperatorAccessProjectionDto,
 } from "@review/contracts/context";
 
+import { sendPayloadBoundPost } from "../payload-bound-request.js";
+
 export type AuthorizedOperatorAccess = Extract<
   OperatorAccessProjectionDto,
   { readonly status: "authorized" }
@@ -136,17 +138,14 @@ export function createHttpConsoleClient(
     },
 
     async runCommand({ command, scope, signal }) {
-      const response = await fetch(
+      const response = await sendPayloadBoundPost(
+        fetch,
         `/api/v1/console/commands?${consoleSearchParams(scope).toString()}`,
+        JSON.stringify(command),
         {
-          method: "POST",
-          credentials: "same-origin",
-          headers: {
-            Accept: "application/json",
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(command),
-          signal: signal ?? null,
+          contentType: "application/json",
+          headers: { Accept: "application/json" },
+          signal,
         },
       );
       if (response.status === 422) {
@@ -166,11 +165,11 @@ export function createHttpConsoleClient(
     },
 
     async logout(signal) {
-      const response = await fetch("/auth/logout", {
-        method: "POST",
-        credentials: "same-origin",
+      // Bodyless, but still a POST through the same signed origin.
+      const response = await sendPayloadBoundPost(fetch, "/auth/logout", "", {
+        contentType: "application/json",
         headers: { Accept: "application/json" },
-        signal: signal ?? null,
+        signal,
       });
       if (!response.ok) {
         throw new ConsoleAccessError("unavailable");
