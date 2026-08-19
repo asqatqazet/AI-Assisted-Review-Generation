@@ -197,6 +197,19 @@ export function PlatformProvidersView({
     scope: platformScope,
   });
   const command = useConsoleCommand({ client, scope: platformScope });
+  const [price, setPrice] = useState({
+    model: "",
+    inputPerMillion: "2.50",
+    outputPerMillion: "5.00",
+    currency: "EUR",
+    validFrom: "",
+  });
+  const models = providers.data?.models ?? [];
+  const selectedModel =
+    price.model ||
+    (models[0] === undefined
+      ? ""
+      : `${models[0].providerKey}:${models[0].modelKey}`);
 
   return (
     <>
@@ -326,6 +339,119 @@ export function PlatformProvidersView({
               },
             ]}
           />
+
+          <form
+            className={styles.form}
+            onSubmit={(event) => {
+              event.preventDefault();
+              const [providerKey = "", modelKey = ""] = selectedModel.split(":");
+              command.mutate({
+                command: "publish-price-rate",
+                providerKey,
+                modelKey,
+                inputMicrosPerMillion: Math.round(
+                  Number(price.inputPerMillion) * 1_000_000,
+                ),
+                outputMicrosPerMillion: Math.round(
+                  Number(price.outputPerMillion) * 1_000_000,
+                ),
+                currency: price.currency,
+                validFrom: new Date(`${price.validFrom}T00:00:00.000Z`).toISOString(),
+              });
+            }}
+          >
+            <h2 className={styles.sectionLabel}>Publish a price version</h2>
+            <p className={styles.emptyCopy}>
+              The current version is closed at this start date and kept, so a
+              Generation from before it still costs at the old price.
+            </p>
+            <div className={styles.formRow}>
+              <label className={styles.field}>
+                Model
+                <select
+                  value={selectedModel}
+                  onChange={(event) =>
+                    setPrice((current) => ({
+                      ...current,
+                      model: event.target.value,
+                    }))
+                  }
+                >
+                  {models.map((model) => (
+                    <option
+                      key={`${model.providerKey}:${model.modelKey}`}
+                      value={`${model.providerKey}:${model.modelKey}`}
+                    >
+                      {model.providerName} · {model.modelName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                Input per million tokens
+                <input
+                  required
+                  inputMode="decimal"
+                  value={price.inputPerMillion}
+                  onChange={(event) =>
+                    setPrice((current) => ({
+                      ...current,
+                      inputPerMillion: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.field}>
+                Output per million tokens
+                <input
+                  required
+                  inputMode="decimal"
+                  value={price.outputPerMillion}
+                  onChange={(event) =>
+                    setPrice((current) => ({
+                      ...current,
+                      outputPerMillion: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.field}>
+                Currency
+                <input
+                  required
+                  maxLength={3}
+                  value={price.currency}
+                  onChange={(event) =>
+                    setPrice((current) => ({
+                      ...current,
+                      currency: event.target.value.toUpperCase(),
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.field}>
+                Valid from
+                <input
+                  required
+                  type="date"
+                  value={price.validFrom}
+                  onChange={(event) =>
+                    setPrice((current) => ({
+                      ...current,
+                      validFrom: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <button
+                className={styles.buttonPrimary}
+                type="submit"
+                disabled={command.isPending || models.length === 0}
+              >
+                Publish price version
+              </button>
+            </div>
+          </form>
         </>
       )}
     </>

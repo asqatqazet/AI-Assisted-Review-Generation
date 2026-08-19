@@ -12,6 +12,7 @@ import type {
 } from "@review/contracts/console";
 import {
   CONSOLE_SETTING_DEFINITIONS,
+  qrIsUsableForEntryMode,
   renderQrSvg,
   resolveInheritedSettings,
   type ConsoleSettingValue,
@@ -139,10 +140,16 @@ export function projectDistribution({
   readonly scope: ConsoleScopeDto;
   readonly distribution: ConsoleDistributionRecord;
 }): ConsoleDistributionDto {
+  const qrUsable = qrIsUsableForEntryMode(distribution.entryMode);
   return {
     scope,
     liveUrl: distribution.surveyUrl,
-    qrSvg: renderQrSvg(distribution.surveyUrl),
+    // The code carries no invitation token, so an invite-only venue would be
+    // handed an asset that always refuses the person who scans it.
+    qrSvg: qrUsable ? renderQrSvg(distribution.surveyUrl) : null,
+    qrUnavailableReason: qrUsable
+      ? null
+      : "This venue admits invited reviewers only, so a scanned code cannot start a review. Change the entry mode to open-qr, or distribute invitation links instead.",
     entryMode: distribution.entryMode,
     // Open-QR admits anyone who scans, so it proves no visit occurred.
     verifiesVisit: distribution.entryMode !== "open-qr",

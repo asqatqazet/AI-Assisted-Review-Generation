@@ -96,7 +96,12 @@ export const ConsoleTenantSettingsDtoSchema = z.strictObject({
 export const ConsoleDistributionDtoSchema = z.strictObject({
   scope: ConsoleScopeDtoSchema,
   liveUrl: z.string().url(),
-  qrSvg: z.string().min(1).max(200_000),
+  /**
+   * Null when this venue's entry mode cannot admit a token-free scan. A QR
+   * that leads to a refusal is worse than no QR at all.
+   */
+  qrSvg: z.string().min(1).max(200_000).nullable(),
+  qrUnavailableReason: z.string().max(400).nullable(),
   entryMode: ConsoleEntryModeDtoSchema,
   /** Open-QR carries no visit verification, so the copy must not imply one. */
   verifiesVisit: z.boolean(),

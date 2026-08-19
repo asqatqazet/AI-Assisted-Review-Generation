@@ -159,3 +159,50 @@ export function nextPublishedVersion(
     1
   );
 }
+
+export type DestinationValidation =
+  | { readonly status: "valid" }
+  | { readonly status: "rejected"; readonly reason: string };
+
+/**
+ * ADM-LOC-05. A destination the reviewer will be sent to has to be reachable
+ * before it can be enabled, and the check belongs on the server: the Console
+ * is not the only client that can save one.
+ */
+export function validateReviewDestination({
+  platformPlaceId,
+  targetUrl,
+  enabled,
+}: {
+  readonly platformPlaceId: string;
+  readonly targetUrl: string;
+  readonly enabled: boolean;
+}): DestinationValidation {
+  if (!enabled) {
+    // A disabled destination may be incomplete; nothing reads it.
+    return { status: "valid" };
+  }
+  if (platformPlaceId.trim().length === 0) {
+    return {
+      status: "rejected",
+      reason: "An enabled destination needs the platform's place identifier.",
+    };
+  }
+  if (!/^https:\/\/[^\s]+$/.test(targetUrl)) {
+    return {
+      status: "rejected",
+      reason: "The destination link must be an https:// address.",
+    };
+  }
+  return { status: "valid" };
+}
+
+/**
+ * A token-free QR only admits a reviewer where scanning is an accepted way in.
+ * Invite-only venues distribute a tokenised link instead.
+ */
+export function qrIsUsableForEntryMode(
+  entryMode: "invite" | "open-qr" | "both",
+): boolean {
+  return entryMode !== "invite";
+}

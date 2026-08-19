@@ -1,4 +1,6 @@
 import type {
+  ConsoleLocationDto,
+  ConsoleReviewDestinationDto,
   ConsoleSettingValueDto,
   InheritedSettingDto,
 } from "@review/contracts/console";
@@ -27,6 +29,43 @@ const emptyAddress = {
   country: "",
 };
 
+type Address = typeof emptyAddress;
+
+function AddressFields({
+  address,
+  disabled,
+  onChange,
+}: {
+  readonly address: Address;
+  readonly disabled: boolean;
+  readonly onChange: (next: Address) => void;
+}): React.JSX.Element {
+  const field = (
+    key: keyof Address,
+    label: string,
+    extra: { readonly maxLength?: number } = {},
+  ): React.JSX.Element => (
+    <label className={styles.field} key={key}>
+      {label}
+      <input
+        value={address[key]}
+        disabled={disabled}
+        maxLength={extra.maxLength ?? 200}
+        onChange={(event) => onChange({ ...address, [key]: event.target.value })}
+      />
+    </label>
+  );
+  return (
+    <div className={styles.formRow}>
+      {field("line1", "Address line 1")}
+      {field("line2", "Address line 2")}
+      {field("postalCode", "Postcode", { maxLength: 20 })}
+      {field("city", "City", { maxLength: 120 })}
+      {field("country", "Country code", { maxLength: 2 })}
+    </div>
+  );
+}
+
 function renderValue(value: ConsoleSettingValueDto): string {
   if (Array.isArray(value)) {
     return value.length === 0 ? "—" : value.join(", ");
@@ -50,7 +89,12 @@ export function LocationsView({
     scope: scopeController.scope,
   });
   const command = useConsoleCommand({ client, scope: scopeController.scope });
-  const [draft, setDraft] = useState({ name: "", slug: "" });
+  const [draft, setDraft] = useState({
+    name: "",
+    slug: "",
+    address: emptyAddress,
+  });
+  const [editing, setEditing] = useState<string | null>(null);
 
   return (
     <>
@@ -76,10 +120,10 @@ export function LocationsView({
                   command: "create-location",
                   name: draft.name,
                   slug: draft.slug,
-                  address: emptyAddress,
+                  address: draft.address,
                   entryMode: null,
                 });
-                setDraft({ name: "", slug: "" });
+                setDraft({ name: "", slug: "", address: emptyAddress });
               }}
             >
               <h2 className={styles.sectionLabel}>Add a Location</h2>
@@ -111,6 +155,15 @@ export function LocationsView({
                     }
                   />
                 </label>
+              </div>
+              <AddressFields
+                address={draft.address}
+                disabled={command.isPending}
+                onChange={(address) =>
+                  setDraft((current) => ({ ...current, address }))
+                }
+              />
+              <p className={styles.buttonRow}>
                 <button
                   className={styles.buttonPrimary}
                   type="submit"
@@ -118,7 +171,7 @@ export function LocationsView({
                 >
                   Add Location
                 </button>
-              </div>
+              </p>
               <RejectionNotice error={command.error} />
             </form>
           ) : null}
@@ -183,29 +236,114 @@ export function LocationsView({
                 header: "",
                 render: (row) =>
                   locations.data.editable ? (
-                    <button
-                      type="button"
-                      className={styles.button}
-                      disabled={command.isPending}
-                      onClick={() =>
-                        command.mutate({
-                          command: "update-location",
-                          locationId: row.id,
-                          name: row.name,
-                          address: row.address,
-                          active: !row.active,
-                        })
-                      }
-                    >
-                      {row.active ? "Deactivate" : "Activate"}
-                    </button>
+                    <span className={styles.buttonRow}>
+                      <button
+                        type="button"
+                        className={styles.button}
+                        onClick={() =>
+                          setEditing((current) =>
+                            current === row.id ? null : row.id,
+                          )
+                        }
+                      >
+                        {editing === row.id ? "Close" : "Edit"}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={command.isPending}
+                        onClick={() =>
+                          command.mutate({
+                            command: "update-location",
+                            locationId: row.id,
+                            name: row.name,
+                            address: row.address,
+                            active: !row.active,
+                          })
+                        }
+                      >
+                        {row.active ? "Deactivate" : "Activate"}
+                      </button>
+                    </span>
                   ) : null,
               },
             ]}
           />
+
+          {editing === null
+            ? null
+            : locations.data.locations
+                .filter((location) => location.id === editing)
+                .map((location) => (
+                  <LocationEditor
+                    key={location.id}
+                    location={location}
+                    pending={command.isPending}
+                    onSave={(next) => {
+                      command.mutate({
+                        command: "update-location",
+                        locationId: location.id,
+                        name: next.name,
+                        address: next.address,
+                        active: location.active,
+                      });
+                      setEditing(null);
+                    }}
+                  />
+                ))}
         </>
       )}
     </>
+  );
+}
+
+function LocationEditor({
+  location,
+  pending,
+  onSave,
+}: {
+  readonly location: ConsoleLocationDto;
+  readonly pending: boolean;
+  readonly onSave: (next: {
+    readonly name: string;
+    readonly address: Address;
+  }) => void;
+}): React.JSX.Element {
+  const [draft, setDraft] = useState({
+    name: location.name,
+    address: location.address,
+  });
+
+  return (
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(draft);
+      }}
+    >
+      <h2 className={styles.sectionLabel}>Edit {location.name}</h2>
+      <label className={styles.field}>
+        Name
+        <input
+          required
+          value={draft.name}
+          onChange={(event) =>
+            setDraft((current) => ({ ...current, name: event.target.value }))
+          }
+        />
+      </label>
+      <AddressFields
+        address={draft.address}
+        disabled={pending}
+        onChange={(address) => setDraft((current) => ({ ...current, address }))}
+      />
+      <p className={styles.buttonRow}>
+        <button className={styles.buttonPrimary} type="submit" disabled={pending}>
+          Save Location
+        </button>
+      </p>
+    </form>
   );
 }
 
@@ -469,6 +607,100 @@ export function LocationSettingsView({
   );
 }
 
+function DestinationEditor({
+  destination,
+  editable,
+  pending,
+  onSave,
+}: {
+  readonly destination: ConsoleReviewDestinationDto;
+  readonly editable: boolean;
+  readonly pending: boolean;
+  readonly onSave: (next: {
+    readonly platformPlaceId: string;
+    readonly targetUrl: string;
+    readonly enabled: boolean;
+  }) => void;
+}): React.JSX.Element {
+  const [draft, setDraft] = useState({
+    platformPlaceId: destination.platformPlaceId,
+    targetUrl: destination.targetUrl,
+    enabled: destination.enabled,
+  });
+
+  return (
+    <form
+      className={styles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSave(draft);
+      }}
+    >
+      <h3 className={styles.sectionLabel}>
+        {destination.displayName}{" "}
+        <span
+          className={
+            destination.configurationState === "valid"
+              ? styles.statusPass
+              : styles.statusFail
+          }
+        >
+          {destination.configurationState}
+        </span>
+      </h3>
+      <div className={styles.formRow}>
+        <label className={styles.field}>
+          Place identifier
+          <input
+            value={draft.platformPlaceId}
+            disabled={!editable}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                platformPlaceId: event.target.value,
+              }))
+            }
+          />
+        </label>
+        <label className={styles.field}>
+          Review link
+          <input
+            type="url"
+            placeholder="https://"
+            value={draft.targetUrl}
+            disabled={!editable}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                targetUrl: event.target.value,
+              }))
+            }
+          />
+        </label>
+        <label className={styles.field}>
+          Enabled
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            disabled={!editable}
+            onChange={(event) =>
+              setDraft((current) => ({
+                ...current,
+                enabled: event.target.checked,
+              }))
+            }
+          />
+        </label>
+        {editable ? (
+          <button className={styles.buttonPrimary} type="submit" disabled={pending}>
+            Save destination
+          </button>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
 export function DistributionView({
   client,
   scopeController,
@@ -548,23 +780,32 @@ export function DistributionView({
             >
               Copy survey URL
             </button>
-            <a
-              className={styles.button}
-              download={`survey-qr.svg`}
-              href={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(distribution.data.qrSvg)}`}
-            >
-              Download QR (SVG)
-            </a>
+            {distribution.data.qrSvg === null ? null : (
+              <a
+                className={styles.button}
+                download="survey-qr.svg"
+                href={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(distribution.data.qrSvg)}`}
+              >
+                Download QR (SVG)
+              </a>
+            )}
           </div>
           {copied ? <p role="status">Survey URL copied.</p> : null}
 
           <h2 className={styles.sectionLabel}>QR code</h2>
-          <div
-            className={styles.qr}
-            aria-label="QR code for the location survey URL"
-            // The QR is generated by the server from the real survey URL.
-            dangerouslySetInnerHTML={{ __html: distribution.data.qrSvg }}
-          />
+          {distribution.data.qrSvg === null ? (
+            <p className={styles.alert} role="status">
+              {distribution.data.qrUnavailableReason ??
+                "No QR code is available for this venue."}
+            </p>
+          ) : (
+            <div
+              className={styles.qr}
+              aria-label="QR code for the location survey URL"
+              // Generated by the server from the real survey URL.
+              dangerouslySetInnerHTML={{ __html: distribution.data.qrSvg }}
+            />
+          )}
 
           <h2 className={styles.sectionLabel}>Invitation copy</h2>
           <p>{distribution.data.invitationTemplate}</p>
@@ -574,74 +815,35 @@ export function DistributionView({
       )}
 
       <h2 className={styles.sectionLabel}>Review destinations</h2>
+      <p className={styles.emptyCopy}>
+        Where a reviewer is sent after drafting. The identifier belongs to this
+        venue, so two venues of the same account can point at different
+        listings.
+      </p>
       <QueryState query={destinations} label="review destinations" />
-      {destinations.data === undefined ? null : (
-        <DataTable
-          caption="External review destinations for this venue"
-          empty="No review destination is configured for this venue."
-          rows={destinations.data.destinations}
-          rowKey={(row) => row.destinationTypeId}
-          columns={[
-            {
-              key: "platform",
-              header: "Platform",
-              rowHeader: true,
-              render: (row) => row.displayName,
-            },
-            {
-              key: "placeId",
-              header: "Place id",
-              render: (row) =>
-                row.platformPlaceId === "" ? (
-                  "—"
-                ) : (
-                  <span className={styles.mono}>{row.platformPlaceId}</span>
-                ),
-            },
-            {
-              key: "state",
-              header: "Configuration",
-              render: (row) => (
-                <span
-                  className={
-                    row.configurationState === "valid"
-                      ? styles.statusPass
-                      : styles.statusFail
-                  }
-                >
-                  {row.configurationState}
-                </span>
-              ),
-            },
-            {
-              key: "enabled",
-              header: "Enabled",
-              render: (row) =>
-                destinations.data.editable ? (
-                  <button
-                    type="button"
-                    className={styles.button}
-                    disabled={command.isPending}
-                    onClick={() =>
-                      command.mutate({
-                        command: "save-destination",
-                        destinationTypeId: row.destinationTypeId,
-                        platformPlaceId: row.platformPlaceId,
-                        targetUrl: row.targetUrl,
-                        enabled: !row.enabled,
-                      })
-                    }
-                  >
-                    {row.enabled ? "Disable" : "Enable"}
-                  </button>
-                ) : row.enabled ? (
-                  "yes"
-                ) : (
-                  "no"
-                ),
-            },
-          ]}
-        />
+      <RejectionNotice error={command.error} />
+      {destinations.data === undefined ? null : destinations.data.destinations.length === 0 ? (
+        <EmptyState>
+          No review platform is available for this account yet.
+        </EmptyState>
+      ) : (
+        destinations.data.destinations.map((destination) => (
+          <DestinationEditor
+            key={destination.destinationTypeId}
+            destination={destination}
+            editable={destinations.data.editable}
+            pending={command.isPending}
+            onSave={(next) =>
+              command.mutate({
+                command: "save-destination",
+                destinationTypeId: destination.destinationTypeId,
+                platformPlaceId: next.platformPlaceId,
+                targetUrl: next.targetUrl,
+                enabled: next.enabled,
+              })
+            }
+          />
+        ))
       )}
     </>
   );

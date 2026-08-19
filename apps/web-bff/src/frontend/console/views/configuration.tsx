@@ -10,7 +10,9 @@ import {
   OwnerBadge,
   QueryState,
   RejectionNotice,
+  ReorderControls,
   ViewHeader,
+  moveItem,
 } from "../console-ui.js";
 import styles from "../operator-console.module.css";
 import type { ConsoleScopeController } from "../use-console-scope.js";
@@ -286,7 +288,32 @@ export function KeywordsView({
                 header: "Owner",
                 render: (row) => <OwnerBadge scope={row.ownerScope} />,
               },
-              { key: "order", header: "Order", render: (row) => row.sortOrder },
+              {
+                key: "order",
+                header: "Order",
+                render: (row) =>
+                  keywords.data.editable ? (
+                    <ReorderControls
+                      index={keywords.data.keywords.indexOf(row)}
+                      total={keywords.data.keywords.length}
+                      disabled={command.isPending}
+                      onMove={(from, to) =>
+                        command.mutate({
+                          command: "reorder-keywords",
+                          orderedKeywordIds: moveItem(
+                            keywords.data.keywords.map(
+                              (keyword) => keyword.id,
+                            ),
+                            from,
+                            to,
+                          ),
+                        })
+                      }
+                    />
+                  ) : (
+                    row.sortOrder
+                  ),
+              },
               {
                 key: "active",
                 header: "Active",
@@ -398,6 +425,30 @@ export function StylesView({
               render: (row) => row.targetPlatform,
             },
             { key: "maxChars", header: "Max chars", render: (row) => row.maxChars },
+            {
+              key: "order",
+              header: "Order",
+              render: (row) =>
+                stylesView.data.editable ? (
+                  <ReorderControls
+                    index={stylesView.data.styles.indexOf(row)}
+                    total={stylesView.data.styles.length}
+                    disabled={command.isPending}
+                    onMove={(from, to) =>
+                      command.mutate({
+                        command: "reorder-styles",
+                        orderedStyleIds: moveItem(
+                          stylesView.data.styles.map((style) => style.id),
+                          from,
+                          to,
+                        ),
+                      })
+                    }
+                  />
+                ) : (
+                  row.sortOrder
+                ),
+            },
             {
               key: "actions",
               header: "Enabled Actions",

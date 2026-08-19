@@ -570,10 +570,11 @@ describe("ADM-LOC-01/03 Locations and inheritance", () => {
 });
 
 describe("ADM-LOC-04/05 distribution", () => {
-  it("hands over a QR that resolves the venue's own survey URL", async () => {
+  it("withholds a QR an invite-only venue could not honour", async () => {
     const distribution = viewData<{
       liveUrl: string;
-      qrSvg: string;
+      qrSvg: string | null;
+      qrUnavailableReason: string | null;
       verifiesVisit: boolean;
     }>(
       await query({ view: "distribution" }, {
@@ -585,10 +586,10 @@ describe("ADM-LOC-04/05 distribution", () => {
     expect(distribution.liveUrl).toBe(
       "https://review.example.test/s/brightsmile/downtown",
     );
-    expect(decodeQrPayload(encodeQrCode(distribution.liveUrl))).toBe(
-      distribution.liveUrl,
-    );
-    expect(distribution.qrSvg).toContain("<svg");
+    // BrightSmile is invite-only, so a token-free code would always refuse the
+    // person who scanned it and none is offered.
+    expect(distribution.qrSvg).toBeNull();
+    expect(distribution.qrUnavailableReason).toContain("invited reviewers only");
     expect(distribution.verifiesVisit).toBe(true);
   });
 
@@ -613,7 +614,11 @@ describe("ADM-LOC-04/05 distribution", () => {
       ],
     });
 
-    const distribution = viewData<{ entryMode: string; verifiesVisit: boolean }>(
+    const distribution = viewData<{
+      entryMode: string;
+      verifiesVisit: boolean;
+      qrSvg: string | null;
+    }>(
       await query(
         { view: "distribution" },
         { tenantId: "tenant-hafen", locationId: "location-hafencity" },
@@ -623,6 +628,14 @@ describe("ADM-LOC-04/05 distribution", () => {
 
     expect(distribution.entryMode).toBe("open-qr");
     expect(distribution.verifiesVisit).toBe(false);
+    // Scanning is an accepted way in here, so a real code is offered and it
+    // decodes back to this venue's own survey URL.
+    expect(distribution.qrSvg).toContain("<svg");
+    expect(
+      decodeQrPayload(
+        encodeQrCode("https://review.example.test/s/speicher-neun/hafencity"),
+      ),
+    ).toBe("https://review.example.test/s/speicher-neun/hafencity");
   });
 
   it("keeps external destination ids on the venue", async () => {

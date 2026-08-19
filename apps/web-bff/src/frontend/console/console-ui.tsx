@@ -200,3 +200,52 @@ export function RejectionNotice({
     </p>
   );
 }
+
+/**
+ * Ordering is what a reviewer sees first, so it is edited in place rather than
+ * hidden behind a drag interaction that keyboard users cannot reach.
+ */
+export function ReorderControls({
+  index,
+  total,
+  disabled,
+  onMove,
+}: {
+  readonly index: number;
+  readonly total: number;
+  readonly disabled: boolean;
+  readonly onMove: (from: number, to: number) => void;
+}): React.JSX.Element {
+  return (
+    <span className={styles.buttonRow}>
+      <button
+        type="button"
+        className={styles.button}
+        aria-label="Move up"
+        disabled={disabled || index === 0}
+        onClick={() => onMove(index, index - 1)}
+      >
+        ↑
+      </button>
+      <button
+        type="button"
+        className={styles.button}
+        aria-label="Move down"
+        disabled={disabled || index === total - 1}
+        onClick={() => onMove(index, index + 1)}
+      >
+        ↓
+      </button>
+    </span>
+  );
+}
+
+/** Pure list move, so the reordered identity list can be sent as one command. */
+export function moveItem<T>(items: readonly T[], from: number, to: number): T[] {
+  const next = [...items];
+  const [moved] = next.splice(from, 1);
+  if (moved !== undefined) {
+    next.splice(to, 0, moved);
+  }
+  return next;
+}

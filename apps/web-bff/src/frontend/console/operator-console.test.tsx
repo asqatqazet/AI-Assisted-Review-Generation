@@ -388,6 +388,7 @@ describe("ADM-LOC-04 distribution assets", () => {
             },
             liveUrl: "https://review.example.test/s/speicher-neun/hafencity",
             qrSvg: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>',
+            qrUnavailableReason: null,
             entryMode: "open-qr",
             verifiesVisit: false,
             invitationTemplate: "Thanks for visiting HafenCity.",

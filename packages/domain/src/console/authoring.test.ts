@@ -5,6 +5,8 @@ import {
   decideExperimentMutation,
   nextPublishedVersion,
   publishPriceRate,
+  qrIsUsableForEntryMode,
+  validateReviewDestination,
   validateVariantWeights,
 } from "./authoring.js";
 
@@ -130,5 +132,57 @@ describe("immutable publishing", () => {
   it("publishes the next version rather than reusing the current one", () => {
     expect(nextPublishedVersion([])).toBe(1);
     expect(nextPublishedVersion([{ version: 1 }, { version: 2 }])).toBe(3);
+  });
+});
+
+describe("ADM-LOC-05 destination validation", () => {
+  it("accepts a complete enabled destination", () => {
+    expect(
+      validateReviewDestination({
+        platformPlaceId: "ChIJ-downtown",
+        targetUrl: "https://maps.example.test/downtown",
+        enabled: true,
+      }),
+    ).toEqual({ status: "valid" });
+  });
+
+  it("refuses to enable a destination with no place identifier", () => {
+    expect(
+      validateReviewDestination({
+        platformPlaceId: "   ",
+        targetUrl: "https://maps.example.test/downtown",
+        enabled: true,
+      }),
+    ).toMatchObject({ status: "rejected" });
+  });
+
+  it("refuses a link the reviewer's browser cannot be sent to safely", () => {
+    for (const targetUrl of ["", "http://maps.example.test", "javascript:alert(1)"]) {
+      expect(
+        validateReviewDestination({
+          platformPlaceId: "ChIJ-downtown",
+          targetUrl,
+          enabled: true,
+        }),
+      ).toMatchObject({ status: "rejected" });
+    }
+  });
+
+  it("lets an incomplete destination be saved while it stays disabled", () => {
+    expect(
+      validateReviewDestination({
+        platformPlaceId: "",
+        targetUrl: "",
+        enabled: false,
+      }),
+    ).toEqual({ status: "valid" });
+  });
+});
+
+describe("ADM-LOC-04 QR usability", () => {
+  it("offers a QR only where a token-free scan can admit a reviewer", () => {
+    expect(qrIsUsableForEntryMode("open-qr")).toBe(true);
+    expect(qrIsUsableForEntryMode("both")).toBe(true);
+    expect(qrIsUsableForEntryMode("invite")).toBe(false);
   });
 });

@@ -18,6 +18,7 @@ import {
   deriveConsoleCapabilities,
   deriveConsoleRole,
   nextPublishedVersion,
+  validateReviewDestination,
   validateVariantWeights,
 } from "@review/domain/console";
 import { derivePromptVersionHash } from "@review/domain/experiment";
@@ -761,6 +762,14 @@ async function runCommand({
     case "save-destination": {
       if (scope.tenantId === null || scope.locationId === null) {
         return NOT_FOUND;
+      }
+      const validation = validateReviewDestination({
+        platformPlaceId: command.platformPlaceId,
+        targetUrl: command.targetUrl,
+        enabled: command.enabled,
+      });
+      if (validation.status === "rejected") {
+        return rejected("INVALID_VALUE", validation.reason);
       }
       const saved = await store.saveDestination({
         tenantId: scope.tenantId,
