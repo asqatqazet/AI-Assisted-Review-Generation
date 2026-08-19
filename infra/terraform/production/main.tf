@@ -44,21 +44,21 @@ resource "aws_db_subnet_group" "db_subnets" {
 }
 
 resource "aws_db_instance" "postgres" {
-  identifier             = "review-postgres-prod"
-  engine                 = "postgres"
-  engine_version         = "16.2"
-  instance_class         = "db.t4g.medium"
-  allocated_storage      = 50
-  max_allocated_storage  = 200
-  storage_type           = "gp3"
-  multi_az               = true
-  db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
-  skip_final_snapshot    = false
+  identifier                = "review-postgres-prod"
+  engine                    = "postgres"
+  engine_version            = "16.2"
+  instance_class            = "db.t4g.medium"
+  allocated_storage         = 50
+  max_allocated_storage     = 200
+  storage_type              = "gp3"
+  multi_az                  = true
+  db_subnet_group_name      = aws_db_subnet_group.db_subnets.name
+  skip_final_snapshot       = false
   final_snapshot_identifier = "review-postgres-prod-final"
-  storage_encrypted      = true
-  deletion_protection    = true
-  username               = "review_admin"
-  password               = var.db_password
+  storage_encrypted         = true
+  deletion_protection       = true
+  username                  = "review_admin"
+  password                  = var.db_password
 }
 
 # 3. S3 Manifest Storage
