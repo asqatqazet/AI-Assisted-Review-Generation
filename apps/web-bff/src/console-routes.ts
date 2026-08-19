@@ -162,6 +162,10 @@ export function registerConsoleRoutes(
       request: { mode: "query", query },
     });
 
+    if (result.status === "rejected") {
+      // A deployment limitation, not an authorization answer.
+      return c.json(errorBody(result.code, result.message, true), 503);
+    }
     if (result.status !== "view") {
       return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
     }

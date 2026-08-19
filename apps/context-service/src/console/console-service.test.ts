@@ -852,7 +852,7 @@ describe("ADM-CFG-05 Action policy", () => {
 });
 
 describe("execution-plane views without an execution-plane reader", () => {
-  it("answers not-found rather than inventing empty Generation history", async () => {
+  it("says the view is not deployed rather than inventing empty history", async () => {
     const controlPlaneOnly = createConsoleService({
       store,
       resolveAccess: async () => grants(),
@@ -873,6 +873,8 @@ describe("execution-plane views without an execution-plane reader", () => {
       },
       { view: "generation-detail", generationId: "generation-1" },
     ] as const) {
+      // An authorized operator gets an explanation about the deployment, not
+      // the not-found an unauthorized one would see.
       await expect(
         controlPlaneOnly.request({
           identity,
@@ -880,8 +882,25 @@ describe("execution-plane views without an execution-plane reader", () => {
           publicOrigin: "https://review.example.test",
           request: { mode: "query", query: view },
         }),
-      ).resolves.toEqual({ status: "not-found" });
+      ).resolves.toMatchObject({
+        status: "rejected",
+        code: "VIEW_NOT_AVAILABLE",
+      });
     }
+
+    // An operator with no Grant for the Tenant still learns nothing.
+    await expect(
+      createConsoleService({
+        store,
+        resolveAccess: async () => grants(),
+        now: () => new Date("2026-08-18T12:00:00.000Z"),
+      }).request({
+        identity,
+        scope: { tenantId: "tenant-hafen", locationId: null },
+        publicOrigin: "https://review.example.test",
+        request: { mode: "query", query: { view: "overview" } },
+      }),
+    ).resolves.toEqual({ status: "not-found" });
   });
 
   it("still serves every configuration view the control plane owns", async () => {

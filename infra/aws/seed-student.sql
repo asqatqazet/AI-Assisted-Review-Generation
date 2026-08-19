@@ -408,4 +408,51 @@ WHERE snapshot.id = '00000000-0000-4000-8000-000000000127'
     snapshot.payload #>> '{providerRouting,providerModelId}'
   ) IS DISTINCT FROM fake_catalogue.provider_model_id::text;
 
+-- The Console's Drafting actions screen reads the Platform Action catalogue and
+-- this account's enablements. Neither existed, so the screen had nothing to
+-- show and no Action could be turned on or off.
+INSERT INTO action_definitions (action, input_contract, status)
+VALUES
+  ('GENERATE', '{"requiredInputs":["rating","assertions"]}'::jsonb, 'ACTIVE'),
+  ('PARAPHRASE', '{"requiredInputs":["sourceText"]}'::jsonb, 'ACTIVE'),
+  ('REGENERATE', '{"requiredInputs":["sourceGeneration"]}'::jsonb, 'ACTIVE'),
+  ('REFORMAT', '{"requiredInputs":["sourceGeneration","reviewFormat"]}'::jsonb, 'ACTIVE'),
+  ('CONDENSE', '{"requiredInputs":["sourceGeneration"]}'::jsonb, 'ACTIVE'),
+  ('EXPAND', '{"requiredInputs":["sourceGeneration"]}'::jsonb, 'ACTIVE'),
+  ('REVISE_WORDING', '{"requiredInputs":["sourceGeneration"]}'::jsonb, 'ACTIVE'),
+  ('ADD_FACT', '{"requiredInputs":["sourceGeneration","assertions"]}'::jsonb, 'ACTIVE')
+ON CONFLICT (action) DO UPDATE SET
+  input_contract = EXCLUDED.input_contract,
+  status = EXCLUDED.status;
+
+INSERT INTO tenant_action_enablements (tenant_id, action, enabled, sort_order)
+VALUES
+  ('00000000-0000-4000-8000-000000000101', 'GENERATE', true, 0),
+  ('00000000-0000-4000-8000-000000000101', 'PARAPHRASE', true, 1),
+  ('00000000-0000-4000-8000-000000000101', 'REGENERATE', true, 2),
+  ('00000000-0000-4000-8000-000000000101', 'CONDENSE', true, 3),
+  ('00000000-0000-4000-8000-000000000101', 'REFORMAT', false, 4),
+  ('00000000-0000-4000-8000-000000000101', 'EXPAND', false, 5),
+  ('00000000-0000-4000-8000-000000000101', 'REVISE_WORDING', false, 6),
+  ('00000000-0000-4000-8000-000000000101', 'ADD_FACT', false, 7)
+ON CONFLICT (tenant_id, action) DO NOTHING;
+
+-- Platform settings had no row at all, so the Console showed a policy of {} and
+-- every rate limit as zero, which reads as a broken deployment rather than a
+-- default one.
+INSERT INTO platform_settings (id, default_policy, rate_limits, log_retention_days)
+VALUES (
+  'platform',
+  '{"requireDisclosure":true,"requireVerifiedExperience":true,"maxReviewFormatsPerRequest":2}'::jsonb,
+  '{"perReviewSessionPerHour":20,"perTenantPerMinute":60,"maxConcurrentGenerations":4}'::jsonb,
+  7
+)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO feature_flags (key, enabled, rules)
+VALUES
+  ('console.bench', false, '{"description":"Operator Generation bench"}'::jsonb),
+  ('console.analytics', false, '{"description":"Generation analytics and audit"}'::jsonb)
+ON CONFLICT (key) DO UPDATE SET rules = EXCLUDED.rules;
+
 COMMIT;

@@ -25,8 +25,10 @@ export class ConsoleAccessError extends Error {
       | "forbidden"
       | "not-found"
       | "unavailable",
+    /** The server's own explanation, when it gave one worth showing. */
+    public readonly detail: string | null = null,
   ) {
-    super(code);
+    super(detail ?? code);
   }
 }
 
@@ -82,6 +84,27 @@ export function consoleSearchParams(
   return search;
 }
 
+/**
+ * A 503 carries a reason an operator can act on — most often that a view is
+ * not part of this deployment yet — so it is preserved rather than flattened.
+ */
+async function accessErrorWithDetail(
+  response: Response,
+): Promise<ConsoleAccessError> {
+  if (response.status !== 503) {
+    return accessErrorFor(response.status);
+  }
+  try {
+    const body = (await response.json()) as { message?: unknown };
+    return new ConsoleAccessError(
+      "unavailable",
+      typeof body.message === "string" ? body.message : null,
+    );
+  } catch {
+    return new ConsoleAccessError("unavailable");
+  }
+}
+
 function accessErrorFor(status: number): ConsoleAccessError {
   if (status === 401) {
     return new ConsoleAccessError("unauthenticated");
@@ -128,7 +151,7 @@ export function createHttpConsoleClient(
         },
       );
       if (!response.ok) {
-        throw accessErrorFor(response.status);
+        throw await accessErrorWithDetail(response);
       }
       const parsed = ConsoleViewDtoSchema.parse(await response.json());
       if (parsed.view !== view) {

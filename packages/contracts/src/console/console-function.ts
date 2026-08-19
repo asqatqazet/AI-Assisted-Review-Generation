@@ -348,6 +348,11 @@ export const ConsoleRejectionCodeDtoSchema = z.enum([
   "NOT_OVERRIDABLE",
   "INVALID_VALUE",
   "REPLAY_DEPENDENCY_MISSING",
+  /**
+   * The deployment cannot serve this view yet. It depends only on what is
+   * deployed, never on who is asking, so saying so discloses nothing.
+   */
+  "VIEW_NOT_AVAILABLE",
 ]);
 
 export const ConsoleRequestInvocationDtoSchema = z.strictObject({

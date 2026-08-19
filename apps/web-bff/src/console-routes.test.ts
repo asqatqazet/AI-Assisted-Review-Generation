@@ -430,3 +430,26 @@ describe("Console commands are payload-bound", () => {
     expect(seen).toEqual([]);
   });
 });
+
+describe("Deployment limits are not disguised as denials", () => {
+  it("returns a retryable explanation, not a 404, when a view is not deployed", async () => {
+    const { app } = appWithConsole(() => ({
+      status: "rejected",
+      code: "VIEW_NOT_AVAILABLE",
+      message: "Generation history is not available in this deployment yet.",
+    }));
+
+    const response = await app.request(
+      "/api/v1/console/views/analytics?tenantId=tenant-a" +
+        "&from=2026-07-01T00:00:00.000Z&to=2026-08-01T00:00:00.000Z" +
+        "&sortKey=generations&sortDirection=desc",
+      { headers: signedIn },
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "VIEW_NOT_AVAILABLE",
+      retryable: true,
+    });
+  });
+});

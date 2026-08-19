@@ -68,8 +68,16 @@ export function QueryState({
     );
   }
   if (query.isError) {
-    const code =
-      query.error instanceof ConsoleAccessError ? query.error.code : "unavailable";
+    const access =
+      query.error instanceof ConsoleAccessError ? query.error : null;
+    const code = access?.code ?? "unavailable";
+    if (access?.detail != null) {
+      return (
+        <p role="status" className={styles.alert}>
+          {access.detail}
+        </p>
+      );
+    }
     return (
       <p role="alert" className={styles.rejection}>
         {code === "not-found"

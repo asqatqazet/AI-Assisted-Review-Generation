@@ -191,8 +191,13 @@ async function runQuery({
       return view({ view: "bootstrap", data: bootstrap(access) });
 
     case "overview": {
+      // Reached only by an operator already authorized for this scope, so the
+      // answer is about the deployment rather than about them.
       if (executionStore === undefined) {
-        return NOT_FOUND;
+        return rejected(
+          "VIEW_NOT_AVAILABLE",
+          "Generation history is not available in this deployment yet, so this view cannot be built. Configuration screens are unaffected.",
+        );
       }
       const to = now();
       const from = new Date(
@@ -465,7 +470,10 @@ async function runQuery({
       let missing: readonly string[] = [];
       if (query.replayGenerationId !== null) {
         if (executionStore === undefined) {
-          return NOT_FOUND;
+          return rejected(
+          "VIEW_NOT_AVAILABLE",
+          "Generation history is not available in this deployment yet, so this view cannot be built. Configuration screens are unaffected.",
+        );
         }
         const generation = await executionStore.readGenerationDetail({
           scope: scope.selector,
@@ -505,7 +513,10 @@ async function runQuery({
 
     case "analytics": {
       if (executionStore === undefined) {
-        return NOT_FOUND;
+        return rejected(
+          "VIEW_NOT_AVAILABLE",
+          "Generation history is not available in this deployment yet, so this view cannot be built. Configuration screens are unaffected.",
+        );
       }
       const rows = await executionStore.readAnalytics({
         scope: scope.selector,
@@ -519,7 +530,10 @@ async function runQuery({
 
     case "generation-detail": {
       if (executionStore === undefined) {
-        return NOT_FOUND;
+        return rejected(
+          "VIEW_NOT_AVAILABLE",
+          "Generation history is not available in this deployment yet, so this view cannot be built. Configuration screens are unaffected.",
+        );
       }
       const detail = await executionStore.readGenerationDetail({
         scope: scope.selector,
@@ -1025,8 +1039,14 @@ async function runCommand({
     }
 
     case "run-bench": {
-      if (scope.tenantId === null || executionStore === undefined) {
+      if (scope.tenantId === null) {
         return NOT_FOUND;
+      }
+      if (executionStore === undefined) {
+        return rejected(
+          "VIEW_NOT_AVAILABLE",
+          "The Generation bench is not available in this deployment yet.",
+        );
       }
       return {
         status: "command",
