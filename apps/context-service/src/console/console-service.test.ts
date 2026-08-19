@@ -284,6 +284,7 @@ function freshData(): FakeConsoleData {
             accepted: 30,
           },
         ],
+        metricsAvailable: true,
       },
     ],
     destinations: [
@@ -310,6 +311,7 @@ function service(access: OperatorAccessProjectionDto = grants()): ReturnType<
 > {
   return createConsoleService({
     store,
+    executionStore: store,
     resolveAccess: async () => access,
     now: () => new Date("2026-08-18T12:00:00.000Z"),
   });
@@ -831,5 +833,63 @@ describe("ADM-CFG-05 Action policy", () => {
         { tenantId: "tenant-bright", locationId: null },
       ),
     ).toEqual({ status: "command", result: { outcome: "accepted" } });
+  });
+});
+
+describe("execution-plane views without an execution-plane reader", () => {
+  it("answers not-found rather than inventing empty Generation history", async () => {
+    const controlPlaneOnly = createConsoleService({
+      store,
+      resolveAccess: async () => grants(),
+      now: () => new Date("2026-08-18T12:00:00.000Z"),
+    });
+    const scope = { tenantId: "tenant-bright", locationId: null };
+
+    for (const view of [
+      { view: "overview" },
+      {
+        view: "analytics",
+        query: {
+          from: "2026-07-01T00:00:00.000Z",
+          to: "2026-08-01T00:00:00.000Z",
+          sortKey: "generations",
+          sortDirection: "desc",
+        },
+      },
+      { view: "generation-detail", generationId: "generation-1" },
+    ] as const) {
+      await expect(
+        controlPlaneOnly.request({
+          identity,
+          scope,
+          request: { mode: "query", query: view },
+        }),
+      ).resolves.toEqual({ status: "not-found" });
+    }
+  });
+
+  it("still serves every configuration view the control plane owns", async () => {
+    const controlPlaneOnly = createConsoleService({
+      store,
+      resolveAccess: async () => grants(),
+      now: () => new Date("2026-08-18T12:00:00.000Z"),
+    });
+
+    for (const view of [
+      { view: "bootstrap" },
+      { view: "locations" },
+      { view: "tenant-settings" },
+      { view: "context" },
+      { view: "keywords" },
+      { view: "styles" },
+      { view: "actions" },
+    ] as const) {
+      const result = await controlPlaneOnly.request({
+        identity,
+        scope: { tenantId: "tenant-bright", locationId: null },
+        request: { mode: "query", query: view },
+      });
+      expect(result.status).toBe("view");
+    }
   });
 });

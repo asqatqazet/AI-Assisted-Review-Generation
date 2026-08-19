@@ -34,25 +34,57 @@ import {
   PlatformTenantsView,
 } from "./views/platform.js";
 
-function ConsoleUnavailable({ error }: { readonly error: Error }): React.JSX.Element {
+/**
+ * "Nothing here for you" and "this service is not answering" are different
+ * facts, and an operator can only act on one of them. They are never collapsed
+ * into a single sentence.
+ */
+const ACCESS_COPY = {
+  unauthenticated: {
+    title: "Sign in to Console",
+    body: "Use your authorized operator account. Your Tenant scope is resolved after sign-in.",
+  },
+  forbidden: {
+    title: "Console access unavailable",
+    body: "Your identity has no current Console Access Grant.",
+  },
+  "not-found": {
+    title: "Nothing to show in this scope",
+    body: "This account or venue is not available to your Grants. Switch scope, or ask a platform administrator to check your access.",
+  },
+  unavailable: {
+    title: "Console is not responding",
+    body: "The Console service could not be reached. This is a service problem, not a permissions problem — retry shortly, and report it if it persists.",
+  },
+} as const;
+
+function ConsoleUnavailable({
+  error,
+  onRetry,
+}: {
+  readonly error: Error;
+  readonly onRetry?: (() => void) | undefined;
+}): React.JSX.Element {
   const code = error instanceof ConsoleAccessError ? error.code : "unavailable";
+  const copy = ACCESS_COPY[code];
   return (
     <main className={styles.accessPage}>
       <p className={styles.eyebrow}>Operator Console</p>
-      <h1 className={styles.title}>
-        {code === "unauthenticated" ? "Sign in to Console" : "Console access unavailable"}
-      </h1>
-      <p className={styles.accessCopy} role={code === "forbidden" ? "alert" : undefined}>
-        {code === "unauthenticated"
-          ? "Use your authorized operator account. Your Tenant scope is resolved after sign-in."
-          : code === "forbidden"
-            ? "Your identity has no current Console Access Grant."
-            : "The authorized Console projection could not be loaded."}
+      <h1 className={styles.title}>{copy.title}</h1>
+      <p
+        className={styles.accessCopy}
+        role={code === "unauthenticated" ? undefined : "alert"}
+      >
+        {copy.body}
       </p>
       {code === "unauthenticated" ? (
         <a className={styles.primaryAction} href="/auth/login?returnTo=%2Fconsole">
           Sign in
         </a>
+      ) : code === "unavailable" && onRetry !== undefined ? (
+        <button className={styles.primaryAction} type="button" onClick={onRetry}>
+          Try again
+        </button>
       ) : null}
     </main>
   );
@@ -379,7 +411,12 @@ export default function OperatorConsole({
     return <ConsoleUnavailable error={session.error} />;
   }
   if (bootstrap.isError) {
-    return <ConsoleUnavailable error={bootstrap.error} />;
+    return (
+      <ConsoleUnavailable
+        error={bootstrap.error}
+        onRetry={() => void bootstrap.refetch()}
+      />
+    );
   }
   if (bootstrap.data === undefined) {
     return (

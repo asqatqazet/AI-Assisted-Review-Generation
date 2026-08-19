@@ -64,6 +64,11 @@ export const ConsoleExperimentDtoSchema = z.strictObject({
    */
   editable: z.boolean(),
   stoppable: z.boolean(),
+  /**
+   * Outcome counts come from the execution plane. When it is unreachable the
+   * variants are still shown, but the counts are not presented as zero.
+   */
+  metricsAvailable: z.boolean(),
 });
 
 export const ConsoleExperimentsDtoSchema = z.strictObject({

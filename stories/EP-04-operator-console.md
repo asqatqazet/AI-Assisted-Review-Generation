@@ -1,7 +1,7 @@
 # EP-04 Operator Console — implementation record
 
-- **Status:** Control plane implemented end to end except the PostgreSQL adapter behind `ConsoleStore`
-- **Date:** 2026-08-18
+- **Status:** Control plane implemented end to end and persisted; execution-plane views await their own reader
+- **Date:** 2026-08-19
 - **Relates to:** `stories/EPICS.md` EP-04, and the prototype states in `prototypes/Admin.dc.html`
 
 ## What the Console is
@@ -55,21 +55,45 @@ same 404 body, so nothing leaks across a Tenant boundary.
   Assertion); the prototype's `styles` / `keywords` names survive only as wire
   and route names, per `AGENTS.md`.
 
-## Not implemented
+## Plane split
 
-`ConsoleStore` (`apps/context-service/src/console/store.port.ts`) has no
-PostgreSQL implementation yet. The service, transport and UI are complete and
-tested against the in-memory store used by the service tests.
+`context_svc` has no grant on `generations`, `claims`, `drafts`, `dispositions`
+or `provider_attempts` — those belong to `generation_svc`, and
+`.dependency-cruiser.cjs` stops the control-plane module reaching them. The
+Console store is therefore split along the boundary the database already
+enforces rather than by widening a role:
 
-Two things block a responsible implementation:
+| Served by `ConsoleControlPlaneStore` (PostgreSQL, context-service) | Needs `ConsoleExecutionStore` |
+|---|---|
+| bootstrap, locations, tenant and location settings, distribution, destinations, business context, fact options, review formats, actions, prompts, experiment definitions, platform accounts/providers/catalogue/settings | overview totals, analytics rows, Generation detail and lineage, bench runs, experiment outcome counts |
 
-1. **No database in the authoring environment.** `AGENTS.md` requires real
-   Postgres for persistence behavior; a persistence adapter whose required test
-   cannot be executed would be unverified code behind a green gate.
-2. **Two schema gaps.** `prisma/schema.prisma` has no versioned business-context
-   table (ADM-CFG-01 needs one), and `PromptVersion` carries no `version`,
-   `status` or `evaluationScore` column (ADM-AI-01 needs all three). Both need a
-   migration plus RLS policies, which also need a database to verify.
+Until that reader exists the execution-plane views answer with the same
+not-found projection as an unauthorized scope, and experiment variants report
+`metricsAvailable: false` rather than presenting unknown counts as zero.
 
-Everything else — including the alert conditions, analytics grain and lineage —
-maps onto existing tables.
+Month-to-date spend is an exception that lands in the control plane:
+`budget_reservations.actual_cost_micros` is settled through the paid-work
+protocol and is readable by `context_svc`, so account spend against budget is
+real rather than deferred.
+
+## Migration 20260819000011
+
+- `tenant_context_versions` — versioned business context. `context_svc` gets
+  `SELECT, INSERT` and no `UPDATE`/`DELETE`, so immutability is a grant, not a
+  convention.
+- `prompt_versions.version` / `.status` / `.evaluation_score` / `.created_by` —
+  legible version history alongside the existing content hash.
+- `provider_models.routing_priority` / `.fallback_priority` — explicit routing
+  instead of two booleans on the provider.
+- The platform-scope writes an authorized operator performs.
+
+## Not implemented## Not implemented
+
+`ConsoleExecutionStore` has no implementation. It belongs to the generation
+service, which already holds the `generation_svc` role and the execution-plane
+Prisma client, and would reach the Console over its own port rather than
+through Context.
+
+The PostgreSQL control-plane adapter is covered by
+`packages/db/src/control-plane/console-store.integration.test.ts`, which runs
+against the Postgres service in CI and skips without `DATABASE_URL`.

@@ -129,6 +129,7 @@ function freshData(): FakeConsoleData {
             accepted: 30,
           },
         ],
+        metricsAvailable: true,
       },
     ],
     destinations: [],
@@ -141,6 +142,7 @@ let store: ReturnType<typeof createFakeConsoleStore>;
 function service(): ReturnType<typeof createConsoleService> {
   return createConsoleService({
     store,
+    executionStore: store,
     resolveAccess: async () => platformAccess,
     now: () => new Date("2026-08-18T12:00:00.000Z"),
   });

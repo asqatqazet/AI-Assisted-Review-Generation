@@ -3,9 +3,13 @@ import {
   createPostgresReviewerGenerationAdmissionStore,
   createPostgresReviewSessionReader,
 } from "@review/db/admission";
-import { createPostgresOperatorAccessStore } from "@review/db/control-plane";
+import {
+  createPostgresConsoleControlPlaneStore,
+  createPostgresOperatorAccessStore,
+} from "@review/db/control-plane";
 
 import { hashCapability } from "./capability-hash.js";
+import { createConsoleService } from "./console/console-service.js";
 import { createContextFunctionHandler } from "./context-function.js";
 import { createContextEd25519GenerationAuthority } from "./ed25519-generation-authority.js";
 import { createEntryService } from "./entry-service.js";
@@ -18,10 +22,12 @@ export function createContextRuntime({
   databaseUrl,
   contextPrivateKeyPem,
   generationPublicKeyPem,
+  surveyOrigin,
 }: {
   readonly databaseUrl: string;
   readonly contextPrivateKeyPem: string;
   readonly generationPublicKeyPem: string;
+  readonly surveyOrigin: string;
 }): (event: unknown) => Promise<unknown> {
   const entryStore = createPostgresEntryAdmissionStore({ databaseUrl });
   const reviewSessionReader = createPostgresReviewSessionReader({ databaseUrl });
@@ -29,6 +35,10 @@ export function createContextRuntime({
     databaseUrl,
   });
   const operatorAccessStore = createPostgresOperatorAccessStore({ databaseUrl });
+  const consoleStore = createPostgresConsoleControlPlaneStore({
+    databaseUrl,
+    surveyOrigin,
+  });
   const entry = createEntryService({
     store: entryStore,
     newHandle: () => globalThis.crypto.randomUUID(),
@@ -58,6 +68,16 @@ export function createContextRuntime({
   });
 
   return createContextFunctionHandler({
+    /**
+     * The Console resolves Access Grants itself rather than trusting the scope
+     * the BFF forwards. Views backed by Generation history stay unavailable
+     * until the execution-plane reader is wired.
+     */
+    consoleService: createConsoleService({
+      store: consoleStore,
+      resolveAccess: async (identity) =>
+        await operatorAccessStore.resolveAccess(identity),
+    }),
     operatorService: {
       resolveAccess: async ({ identity }) =>
         await operatorAccessStore.resolveAccess(identity),

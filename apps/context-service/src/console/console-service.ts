@@ -41,7 +41,12 @@ import {
   resolveConsoleScope,
   type ResolvedScope,
 } from "./scope.js";
-import type { ConsolePromptRecord, ConsoleStore } from "./store.port.js";
+import type {
+  ConsoleControlPlaneStore,
+  ConsoleControlPlaneStoreFactory,
+  ConsoleExecutionStore,
+  ConsolePromptRecord,
+} from "./store.port.js";
 
 type Result = ConsoleRequestInvocationResultDto["result"];
 type AuthorizedAccess = Extract<
@@ -52,7 +57,13 @@ type AuthorizedAccess = Extract<
 const NOT_FOUND: Result = { status: "not-found" };
 
 export interface ConsoleServiceOptions {
-  readonly store: ConsoleStore;
+  readonly store: ConsoleControlPlaneStoreFactory;
+  /**
+   * Absent until the execution-plane reader lands. Views that need Generation
+   * history then answer with the same not-found projection as an unauthorized
+   * scope rather than inventing zeroes.
+   */
+  readonly executionStore?: ConsoleExecutionStore | undefined;
   readonly resolveAccess: (
     identity: OperatorIdentityDto,
   ) => Promise<OperatorAccessProjectionDto>;
@@ -68,6 +79,7 @@ export interface ConsoleService {
 
 export function createConsoleService({
   store,
+  executionStore,
   resolveAccess,
   now = () => new Date(),
   overviewWindowDays = 30,
@@ -84,11 +96,12 @@ export function createConsoleService({
           ? QUERY_POLICIES[input.request.query.view]
           : COMMAND_POLICIES[input.request.command.command];
 
+      const scopedStore = store.forOperator(access.operator.id);
       const scope = await resolveConsoleScope({
         access,
         request: input.scope,
         policy,
-        store,
+        store: scopedStore,
       });
       if (scope.status === "denied") {
         return NOT_FOUND;
@@ -99,7 +112,8 @@ export function createConsoleService({
             query: input.request.query,
             access,
             scope,
-            store,
+            store: scopedStore,
+            executionStore,
             now,
             overviewWindowDays,
           })
@@ -107,7 +121,8 @@ export function createConsoleService({
             command: input.request.command,
             access,
             scope,
-            store,
+            store: scopedStore,
+            executionStore,
             now,
           });
     },
@@ -150,13 +165,15 @@ async function runQuery({
   access,
   scope,
   store,
+  executionStore,
   now,
   overviewWindowDays,
 }: {
   readonly query: ConsoleQueryDto;
   readonly access: AuthorizedAccess;
   readonly scope: ResolvedOk;
-  readonly store: ConsoleStore;
+  readonly store: ConsoleControlPlaneStore;
+  readonly executionStore: ConsoleExecutionStore | undefined;
   readonly now: () => Date;
   readonly overviewWindowDays: number;
 }): Promise<Result> {
@@ -170,11 +187,14 @@ async function runQuery({
       return view({ view: "bootstrap", data: bootstrap(access) });
 
     case "overview": {
+      if (executionStore === undefined) {
+        return NOT_FOUND;
+      }
       const to = now();
       const from = new Date(
         to.getTime() - overviewWindowDays * 24 * 60 * 60 * 1000,
       );
-      const data = await store.readOverview({
+      const data = await executionStore.readOverview({
         scope: scope.selector,
         from: from.toISOString(),
         to: to.toISOString(),
@@ -412,6 +432,7 @@ async function runQuery({
             })),
             editable: experiment.status === "draft",
             stoppable: experiment.status === "running",
+            metricsAvailable: experiment.metricsAvailable,
           })),
           availablePrompts: prompts.map(promptRow),
         },
@@ -432,7 +453,10 @@ async function runQuery({
       let prefill = null;
       let missing: readonly string[] = [];
       if (query.replayGenerationId !== null) {
-        const generation = await store.readGenerationDetail({
+        if (executionStore === undefined) {
+          return NOT_FOUND;
+        }
+        const generation = await executionStore.readGenerationDetail({
           scope: scope.selector,
           generationId: query.replayGenerationId,
         });
@@ -469,7 +493,10 @@ async function runQuery({
     }
 
     case "analytics": {
-      const rows = await store.readAnalytics({
+      if (executionStore === undefined) {
+        return NOT_FOUND;
+      }
+      const rows = await executionStore.readAnalytics({
         scope: scope.selector,
         query: query.query,
       });
@@ -480,7 +507,10 @@ async function runQuery({
     }
 
     case "generation-detail": {
-      const detail = await store.readGenerationDetail({
+      if (executionStore === undefined) {
+        return NOT_FOUND;
+      }
+      const detail = await executionStore.readGenerationDetail({
         scope: scope.selector,
         generationId: query.generationId,
       });
@@ -530,7 +560,7 @@ async function runQuery({
 }
 
 async function benchProviders(
-  store: ConsoleStore,
+  store: ConsoleControlPlaneStore,
 ): Promise<
   readonly {
     readonly key: string;
@@ -581,19 +611,21 @@ function promptDetail(
 }
 
 async function requireTenant(
-  store: ConsoleStore,
+  store: ConsoleControlPlaneStore,
   scope: ResolvedOk,
-): Promise<Awaited<ReturnType<ConsoleStore["readTenant"]>>> {
+): Promise<Awaited<ReturnType<ConsoleControlPlaneStore["readTenant"]>>> {
   return scope.tenantId === null ? null : await store.readTenant(scope.tenantId);
 }
 
 async function requireLocation(
-  store: ConsoleStore,
+  store: ConsoleControlPlaneStore,
   scope: ResolvedOk,
 ): Promise<{
-  readonly tenant: NonNullable<Awaited<ReturnType<ConsoleStore["readTenant"]>>>;
+  readonly tenant: NonNullable<
+    Awaited<ReturnType<ConsoleControlPlaneStore["readTenant"]>>
+  >;
   readonly location: NonNullable<
-    Awaited<ReturnType<ConsoleStore["readLocation"]>>
+    Awaited<ReturnType<ConsoleControlPlaneStore["readLocation"]>>
   >;
 } | null> {
   if (scope.tenantId === null || scope.locationId === null) {
@@ -623,12 +655,14 @@ async function runCommand({
   access,
   scope,
   store,
+  executionStore,
   now,
 }: {
   readonly command: ConsoleCommandDto;
   readonly access: AuthorizedAccess;
   readonly scope: ResolvedOk;
-  readonly store: ConsoleStore;
+  readonly store: ConsoleControlPlaneStore;
+  readonly executionStore: ConsoleExecutionStore | undefined;
   readonly now: () => Date;
 }): Promise<Result> {
   switch (command.command) {
@@ -972,14 +1006,14 @@ async function runCommand({
     }
 
     case "run-bench": {
-      if (scope.tenantId === null) {
+      if (scope.tenantId === null || executionStore === undefined) {
         return NOT_FOUND;
       }
       return {
         status: "command",
         result: {
           outcome: "bench-result",
-          result: await store.runBench({
+          result: await executionStore.runBench({
             tenantId: scope.tenantId,
             locationId: scope.locationId,
             input: command.input,

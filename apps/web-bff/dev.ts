@@ -1,7 +1,9 @@
 import { serve } from "@hono/node-server";
 
 import {
+  createInvokedConsolePort,
   createInvokedContextPort,
+  createInvokedOperatorContextPort,
   createInvokedReviewerGenerationContextPort,
 } from "./src/adapters/context-function.port.js";
 import { createInvokedReviewerGenerationExecutionPort } from "./src/adapters/generation-function.port.js";
@@ -32,6 +34,8 @@ const generationInvoker = createHttpJsonInvoker(generationOrigin);
 
 const app = createWebBffApp({
   contextPort: createInvokedContextPort(contextInvoker),
+  operatorContextPort: createInvokedOperatorContextPort(contextInvoker),
+  consolePort: createInvokedConsolePort(contextInvoker),
   reviewerGenerationContextPort:
     createInvokedReviewerGenerationContextPort(contextInvoker),
   reviewerGenerationExecutionPort:
