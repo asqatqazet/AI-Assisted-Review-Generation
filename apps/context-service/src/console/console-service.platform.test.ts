@@ -155,6 +155,7 @@ async function query(
   return await service().request({
     identity,
     scope,
+    publicOrigin: "https://review.example.test",
     request: { mode: "query", query: view },
   });
 }
@@ -166,6 +167,7 @@ async function command(
   return await service().request({
     identity,
     scope,
+    publicOrigin: "https://review.example.test",
     request: { mode: "command", command: body },
   });
 }

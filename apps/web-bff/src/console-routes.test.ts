@@ -116,6 +116,8 @@ describe("ADM-AUTH-01/02 Console transport", () => {
     expect(seen[0]).toEqual({
       identity,
       scope: { tenantId: "tenant-a", locationId: "location-1" },
+      // Taken from the edge, not from anything the browser can set.
+      publicOrigin,
       request: { mode: "query", query: { view: "overview" } },
     });
     expect(await response.json()).toEqual(overviewView);
@@ -321,5 +323,37 @@ describe("Console commands", () => {
 
     expect(response.status).toBe(404);
     expect(seen).toEqual([]);
+  });
+});
+
+describe("Console distribution links", () => {
+  it("reports the origin the request arrived on so links resolve", async () => {
+    const { app, seen } = appWithConsole(() => ({ status: "not-found" }));
+
+    await app.request(
+      "/api/v1/console/views/distribution?tenantId=tenant-a&locationId=location-1",
+      { headers: signedIn },
+    );
+
+    expect(seen[0]?.publicOrigin).toBe(publicOrigin);
+  });
+
+  it("reports no origin when the deployment cannot establish one", async () => {
+    const seen: { publicOrigin: string | null }[] = [];
+    const app = createWebBffApp({
+      operatorAuth,
+      consolePort: {
+        request: async (input) => {
+          seen.push({ publicOrigin: input.publicOrigin });
+          return { status: "not-found" };
+        },
+      },
+    });
+
+    await app.request("/api/v1/console/views/distribution?tenantId=tenant-a", {
+      headers: signedIn,
+    });
+
+    expect(seen[0]?.publicOrigin).toBeNull();
   });
 });

@@ -76,6 +76,16 @@ Month-to-date spend is an exception that lands in the control plane:
 protocol and is readable by `context_svc`, so account spend against budget is
 real rather than deferred.
 
+## Distribution links
+
+The public origin travels on the Console request rather than sitting in
+Context configuration. It cannot be Lambda configuration: the context function
+would have to reference the CloudFront distribution, which reaches it back
+through the BFF's alias ARN and closes a Terraform cycle. The BFF already
+establishes the origin per request for its CSRF check, so the same trusted
+value mints the link and its QR. When no origin can be established the
+distribution view is withheld rather than emitting a link nobody can reach.
+
 ## Migration 20260819000011
 
 - `tenant_context_versions` — versioned business context. `context_svc` gets

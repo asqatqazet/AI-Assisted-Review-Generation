@@ -155,7 +155,7 @@ export function createFakeConsoleStore(
       }
     },
 
-    async readDistribution(tenantId, locationId) {
+    async readDistribution(tenantId, locationId, publicOrigin) {
       const tenant = tenantOf(tenantId);
       const location = data.locations.find(
         (candidate) =>
@@ -168,7 +168,7 @@ export function createFakeConsoleStore(
         tenant.settings["entryMode"] ??
         "invite") as "invite" | "open-qr" | "both";
       return {
-        surveyUrl: `https://review.example.test/s/${tenant.slug}/${location.slug}`,
+        surveyUrl: `${new URL(publicOrigin).origin}/s/${tenant.slug}/${location.slug}`,
         entryMode,
         invitationTemplate: `Thanks for visiting ${location.name}.`,
         tableQrCopy: `Scan to review ${location.name}.`,

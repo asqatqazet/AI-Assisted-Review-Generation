@@ -112,6 +112,7 @@ export function createConsoleService({
             query: input.request.query,
             access,
             scope,
+            publicOrigin: input.publicOrigin,
             store: scopedStore,
             executionStore,
             now,
@@ -164,6 +165,7 @@ async function runQuery({
   query,
   access,
   scope,
+  publicOrigin,
   store,
   executionStore,
   now,
@@ -172,6 +174,7 @@ async function runQuery({
   readonly query: ConsoleQueryDto;
   readonly access: AuthorizedAccess;
   readonly scope: ResolvedOk;
+  readonly publicOrigin: string | null;
   readonly store: ConsoleControlPlaneStore;
   readonly executionStore: ConsoleExecutionStore | undefined;
   readonly now: () => Date;
@@ -249,12 +252,19 @@ async function runQuery({
     }
 
     case "distribution": {
-      if (scope.tenantId === null || scope.locationId === null) {
+      // Without a known edge origin the link and QR would point somewhere the
+      // reviewer cannot reach, so none is offered at all.
+      if (
+        scope.tenantId === null ||
+        scope.locationId === null ||
+        publicOrigin === null
+      ) {
         return NOT_FOUND;
       }
       const distribution = await store.readDistribution(
         scope.tenantId,
         scope.locationId,
+        publicOrigin,
       );
       return distribution === null
         ? NOT_FOUND

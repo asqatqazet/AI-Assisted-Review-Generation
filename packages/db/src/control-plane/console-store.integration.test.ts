@@ -75,7 +75,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       const operations = store.forOperator(fixture.operatorId);
@@ -97,7 +96,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       const operations = store.forOperator(fixture.operatorId);
@@ -129,7 +127,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       const operations = store.forOperator(fixture.operatorId);
@@ -169,7 +166,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       const operations = store.forOperator(fixture.operatorId);
@@ -202,12 +198,15 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       const distribution = await store
         .forOperator(fixture.operatorId)
-        .readDistribution(fixture.tenantId, fixture.locationId);
+        .readDistribution(
+          fixture.tenantId,
+          fixture.locationId,
+          "https://review.example.test",
+        );
 
       expect(distribution?.surveyUrl).toBe(
         `https://review.example.test/s/tenant-${fixture.tenantId}/downtown`,
@@ -226,7 +225,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       const operations = store.forOperator(fixture.operatorId);
@@ -279,7 +277,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       // A read degrades to the empty projection; a write must not quietly
@@ -312,7 +309,6 @@ describeDatabase("EP-04 Console control-plane store", () => {
     const fixture = await seed();
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
-      surveyOrigin: "https://review.example.test",
     });
     try {
       // The service refuses this scope first; the store refuses it again.

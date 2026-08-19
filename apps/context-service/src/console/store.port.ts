@@ -171,6 +171,7 @@ export interface ConsoleControlPlaneStore {
   readDistribution(
     tenantId: string,
     locationId: string,
+    publicOrigin: string,
   ): Promise<ConsoleDistributionRecord | null>;
   listDestinations(
     tenantId: string,

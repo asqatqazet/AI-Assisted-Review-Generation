@@ -22,12 +22,10 @@ export function createContextRuntime({
   databaseUrl,
   contextPrivateKeyPem,
   generationPublicKeyPem,
-  surveyOrigin,
 }: {
   readonly databaseUrl: string;
   readonly contextPrivateKeyPem: string;
   readonly generationPublicKeyPem: string;
-  readonly surveyOrigin: string;
 }): (event: unknown) => Promise<unknown> {
   const entryStore = createPostgresEntryAdmissionStore({ databaseUrl });
   const reviewSessionReader = createPostgresReviewSessionReader({ databaseUrl });
@@ -35,10 +33,7 @@ export function createContextRuntime({
     databaseUrl,
   });
   const operatorAccessStore = createPostgresOperatorAccessStore({ databaseUrl });
-  const consoleStore = createPostgresConsoleControlPlaneStore({
-    databaseUrl,
-    surveyOrigin,
-  });
+  const consoleStore = createPostgresConsoleControlPlaneStore({ databaseUrl });
   const entry = createEntryService({
     store: entryStore,
     newHandle: () => globalThis.crypto.randomUUID(),

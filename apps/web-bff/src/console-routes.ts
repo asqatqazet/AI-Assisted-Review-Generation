@@ -146,6 +146,7 @@ export function registerConsoleRoutes(
     const result = await dependencies.consolePort!.request({
       identity: session.identity,
       scope: scopeRequest(params),
+      publicOrigin: dependencies.expectedPublicOrigin(c.req.raw.headers) ?? null,
       request: { mode: "query", query },
     });
 
@@ -192,6 +193,7 @@ export function registerConsoleRoutes(
     const result = await dependencies.consolePort!.request({
       identity: session.identity,
       scope: scopeRequest(new URL(c.req.url).searchParams),
+      publicOrigin: expectedOrigin,
       request: { mode: "command", command: command.data },
     });
 

@@ -114,7 +114,6 @@ watch(
     CONTEXT_DATABASE_URL: databaseUrl,
     CONTEXT_WORK_PRIVATE_KEY_PEM: pem.contextPrivate,
     GENERATION_WORK_PUBLIC_KEY_PEM: pem.generationPublic,
-    REVIEW_PUBLIC_ORIGIN: `http://${host}:${uiPort}`,
   }),
 );
 watch(
