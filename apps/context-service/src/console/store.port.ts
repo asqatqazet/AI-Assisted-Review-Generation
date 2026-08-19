@@ -107,6 +107,8 @@ export interface ConsoleExperimentRecord {
     readonly generations: number;
     readonly accepted: number;
   }[];
+  /** False when Generation counts could not be resolved for these variants. */
+  readonly metricsAvailable: boolean;
 }
 
 export interface ConsoleDistributionRecord {
@@ -135,7 +137,7 @@ export type ConsoleScopeSelector =
  * scoped: the service resolves and authorizes the scope before calling in, so
  * a store implementation never has to re-derive who is asking.
  */
-export interface ConsoleStore {
+export interface ConsoleControlPlaneStore {
   readTenant(tenantId: string): Promise<ConsoleTenantRecord | null>;
   listLocations(tenantId: string): Promise<readonly ConsoleLocationRecord[]>;
   readLocation(
@@ -281,32 +283,6 @@ export interface ConsoleStore {
     readonly status: "running" | "stopped";
   }): Promise<void>;
 
-  runBench(input: {
-    readonly tenantId: string;
-    readonly locationId: string | null;
-    readonly input: ConsoleBenchInputDto;
-  }): Promise<ConsoleBenchResultDto>;
-
-  readOverview(input: {
-    readonly scope: ConsoleScopeSelector;
-    readonly from: string;
-    readonly to: string;
-  }): Promise<Omit<ConsoleOverviewDto, "scope">>;
-
-  readAnalytics(input: {
-    readonly scope: ConsoleScopeSelector;
-    readonly query: ConsoleAnalyticsQueryDto;
-  }): Promise<readonly ConsoleAnalyticsRowDto[]>;
-
-  readGenerationDetail(input: {
-    readonly scope: ConsoleScopeSelector;
-    readonly generationId: string;
-  }): Promise<ConsoleGenerationDetailDto["generation"] & {
-    readonly lineage: ConsoleGenerationDetailDto["lineage"];
-    readonly replayInput: ConsoleBenchInputDto | null;
-    readonly missingReplayDependencies: readonly string[];
-  } | null>;
-
   listPlatformTenants(): Promise<PlatformTenantsDto["tenants"]>;
   createTenant(input: {
     readonly name: string;
@@ -347,3 +323,53 @@ export interface ConsoleStore {
     }[];
   }): Promise<void>;
 }
+
+/**
+ * Generation history lives in the execution plane, under a different database
+ * role that `context_svc` deliberately cannot read. Overview totals, analytics
+ * and Generation reconstruction therefore arrive over their own seam rather
+ * than by widening the control-plane grant.
+ */
+export interface ConsoleExecutionStore {
+  readOverview(input: {
+    readonly scope: ConsoleScopeSelector;
+    readonly from: string;
+    readonly to: string;
+  }): Promise<Omit<ConsoleOverviewDto, "scope">>;
+
+  readAnalytics(input: {
+    readonly scope: ConsoleScopeSelector;
+    readonly query: ConsoleAnalyticsQueryDto;
+  }): Promise<readonly ConsoleAnalyticsRowDto[]>;
+
+  readGenerationDetail(input: {
+    readonly scope: ConsoleScopeSelector;
+    readonly generationId: string;
+  }): Promise<
+    | (ConsoleGenerationDetailDto["generation"] & {
+        readonly lineage: ConsoleGenerationDetailDto["lineage"];
+        readonly replayInput: ConsoleBenchInputDto | null;
+        readonly missingReplayDependencies: readonly string[];
+      })
+    | null
+  >;
+
+  runBench(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+    readonly input: ConsoleBenchInputDto;
+  }): Promise<ConsoleBenchResultDto>;
+}
+
+/**
+ * The control-plane store is opened per operator so Row-Level Security can
+ * re-check, in the database, the decision the service already made.
+ */
+export interface ConsoleControlPlaneStoreFactory {
+  forOperator(operatorId: string): ConsoleControlPlaneStore;
+}
+
+/** Both halves, as the service tests exercise them together. */
+export interface ConsoleStore
+  extends ConsoleControlPlaneStore,
+    ConsoleExecutionStore {}

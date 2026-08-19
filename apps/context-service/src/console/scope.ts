@@ -10,7 +10,10 @@ import {
   type ConsoleCapability,
 } from "@review/domain/console";
 
-import type { ConsoleScopeSelector, ConsoleStore } from "./store.port.js";
+import type {
+  ConsoleControlPlaneStore,
+  ConsoleScopeSelector,
+} from "./store.port.js";
 
 type AuthorizedAccess = Extract<
   OperatorAccessProjectionDto,
@@ -119,7 +122,7 @@ export async function resolveConsoleScope({
   readonly access: AuthorizedAccess;
   readonly request: ConsoleScopeRequestDto;
   readonly policy: ScopePolicy;
-  readonly store: ConsoleStore;
+  readonly store: ConsoleControlPlaneStore;
 }): Promise<ResolvedScope> {
   if (policy.shape === "none") {
     return {

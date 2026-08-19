@@ -501,3 +501,46 @@ describe("Console session", () => {
     expect(await screen.findByText("owner@example.com")).toBeVisible();
   });
 });
+
+describe("Console failure states are distinguishable", () => {
+  async function renderWithSessionError(code: string): Promise<void> {
+    const { ConsoleAccessError } = await import("./console-client.js");
+    const client = createFakeConsoleClient();
+    renderConsole({
+      ...client,
+      readSession: async () => {
+        throw new ConsoleAccessError(code as never);
+      },
+    });
+  }
+
+  it("tells an operator a scope is empty rather than blaming the service", async () => {
+    await renderWithSessionError("not-found");
+
+    expect(
+      await screen.findByRole("heading", { name: "Nothing to show in this scope" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Try again" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("tells an operator the service is down and offers a retry", async () => {
+    await renderWithSessionError("unavailable");
+
+    expect(
+      await screen.findByRole("heading", { name: "Console is not responding" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/service problem, not a permissions problem/),
+    ).toBeVisible();
+  });
+
+  it("separates a missing Grant from both of those", async () => {
+    await renderWithSessionError("forbidden");
+
+    expect(
+      await screen.findByText("Your identity has no current Console Access Grant."),
+    ).toBeVisible();
+  });
+});

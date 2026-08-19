@@ -15,6 +15,7 @@ const invoke = createContextRuntime({
   databaseUrl: required("CONTEXT_DATABASE_URL"),
   contextPrivateKeyPem: required("CONTEXT_WORK_PRIVATE_KEY_PEM"),
   generationPublicKeyPem: required("GENERATION_WORK_PUBLIC_KEY_PEM"),
+  surveyOrigin: required("REVIEW_PUBLIC_ORIGIN"),
 });
 const app = new Hono();
 app.get("/health", (c) => c.json({ status: "ok", service: "context-service" }));

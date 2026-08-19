@@ -17,6 +17,9 @@ describe("US-01.3 Context production composition", () => {
         "CONTEXT_DATABASE_URL_PARAMETER",
         "CONTEXT_WORK_PRIVATE_KEY_PARAMETER",
         "GENERATION_WORK_PUBLIC_KEY_PARAMETER",
+        // Public Survey origin for distribution links. Not a credential, and
+        // read from plain configuration rather than a decrypted parameter.
+        "REVIEW_PUBLIC_ORIGIN",
       ]),
     );
     expect(source).toContain("GetParameterCommand");
@@ -31,5 +34,15 @@ describe("US-01.3 Context production composition", () => {
     expect(source).toContain("createPostgresOperatorAccessStore");
     expect(source).toContain("operatorService");
     expect(source).toContain("resolveAccess");
+  });
+
+  it("composes the Console over the control plane only", () => {
+    const source = fs.readFileSync(new URL("./runtime.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("createPostgresConsoleControlPlaneStore");
+    expect(source).toContain("consoleService");
+    // Generation history belongs to the execution plane; the Console must not
+    // reach it through the Context role.
+    expect(source).not.toContain("executionStore");
   });
 });

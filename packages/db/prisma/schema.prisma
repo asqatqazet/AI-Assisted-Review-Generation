@@ -88,6 +88,15 @@ enum FactPolarity {
   @@map("fact_polarity")
 }
 
+enum PromptVersionStatus {
+  DRAFT
+  CANDIDATE
+  IN_EXPERIMENT
+  RETIRED
+
+  @@map("prompt_version_status")
+}
+
 enum ExperimentStatus {
   DRAFT
   RUNNING
@@ -216,15 +225,17 @@ model Provider {
 }
 
 model ProviderModel {
-  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  providerId   String            @map("provider_id") @db.Uuid
-  modelKey     String            @map("model_key") @db.VarChar(160)
-  capabilities Json              @default("{}")
-  status       CatalogStatus     @default(ACTIVE)
-  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  provider     Provider          @relation(fields: [providerId], references: [id], onDelete: Restrict)
-  priceRates   PriceRate[]
-  attempts     ProviderAttempt[]
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  providerId       String            @map("provider_id") @db.Uuid
+  modelKey         String            @map("model_key") @db.VarChar(160)
+  capabilities     Json              @default("{}")
+  status           CatalogStatus     @default(ACTIVE)
+  routingPriority  Int?              @map("routing_priority")
+  fallbackPriority Int?              @map("fallback_priority")
+  createdAt        DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  provider         Provider          @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  priceRates       PriceRate[]
+  attempts         ProviderAttempt[]
 
   @@unique([providerId, modelKey])
   @@map("provider_models")
@@ -382,8 +393,24 @@ model Tenant {
   drafts                       Draft[]
   draftRevisions               DraftRevision[]
   dispositions                 Disposition[]
+  contextVersions              TenantContextVersion[]
 
   @@map("tenants")
+}
+
+model TenantContextVersion {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  version     Int
+  context     String
+  bannedTerms String[] @default([]) @map("banned_terms")
+  createdBy   String?  @map("created_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, version])
+  @@index([tenantId, version])
+  @@map("tenant_context_versions")
 }
 
 model Operator {
@@ -576,6 +603,12 @@ model PromptVersion {
   action                GenerationAction
   contentHash           String                 @map("content_hash") @db.VarChar(128)
   body                  String
+  /// Raw-SQL writers may omit this; the assign_prompt_version_ordinal trigger
+  /// fills it in. Prisma writers state it so the ordinal stays deliberate.
+  version               Int
+  status                PromptVersionStatus    @default(DRAFT)
+  evaluationScore       Decimal?               @map("evaluation_score") @db.Decimal(5, 4)
+  createdBy             String?                @map("created_by") @db.Uuid
   derivedFromTemplateId String?                @map("derived_from_template_id") @db.Uuid
   createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
   retiredAt             DateTime?              @map("retired_at") @db.Timestamptz(6)
@@ -585,6 +618,7 @@ model PromptVersion {
   generations           Generation[]
 
   @@unique([tenantId, promptKey, action, contentHash])
+  @@unique([tenantId, action, version])
   @@unique([id, tenantId])
   @@index([tenantId])
   @@map("prompt_versions")
@@ -725,16 +759,16 @@ model ReviewSessionBrowserBinding {
 }
 
 model EntryChallenge {
-  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId              String   @map("tenant_id") @db.Uuid
-  locationId            String   @map("location_id") @db.Uuid
-  routeHandleHash       String   @unique @map("route_handle_hash") @db.VarChar(128)
-  browserCapabilityHash String   @map("browser_capability_hash") @db.VarChar(128)
-  expiresAt             DateTime @map("expires_at") @db.Timestamptz(6)
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String    @map("tenant_id") @db.Uuid
+  locationId            String    @map("location_id") @db.Uuid
+  routeHandleHash       String    @unique @map("route_handle_hash") @db.VarChar(128)
+  browserCapabilityHash String    @map("browser_capability_hash") @db.VarChar(128)
+  expiresAt             DateTime  @map("expires_at") @db.Timestamptz(6)
   consumedAt            DateTime? @map("consumed_at") @db.Timestamptz(6)
-  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  tenant                Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location              Location @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location              Location  @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
 
   @@unique([id, tenantId, locationId])
   @@index([tenantId, locationId, browserCapabilityHash])
@@ -828,28 +862,28 @@ model EffectiveConfigurationSnapshot {
 }
 
 model BudgetReservation {
-  id               String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId         String                         @map("tenant_id") @db.Uuid
-  locationId       String                         @map("location_id") @db.Uuid
-  reviewSessionId  String                         @map("review_session_id") @db.Uuid
-  snapshotId       String                         @map("snapshot_id") @db.Uuid
-  permitJti        String                         @unique @map("permit_jti") @db.VarChar(128)
-  requestHash      String                         @map("request_hash") @db.VarChar(128)
-  action           GenerationAction
-  reservedMicros   BigInt                         @map("reserved_micros")
-  actualCostMicros BigInt?                        @map("actual_cost_micros")
-  status           ReservationStatus              @default(RESERVED)
-  reservedAt       DateTime                       @default(now()) @map("reserved_at") @db.Timestamptz(6)
-  expiresAt        DateTime                       @map("expires_at") @db.Timestamptz(6)
-  redeemedAt       DateTime?                      @map("redeemed_at") @db.Timestamptz(6)
-  executionLeaseId String?                        @unique @map("execution_lease_id") @db.Uuid
-  activationExpiresAt DateTime?                   @map("activation_expires_at") @db.Timestamptz(6)
-  settledAt        DateTime?                      @map("settled_at") @db.Timestamptz(6)
-  tenant           Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location         Location                       @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  reviewSession    ReviewSession                  @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  snapshot         EffectiveConfigurationSnapshot @relation(fields: [snapshotId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  generationBatch  GenerationBatch?
+  id                      String                         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                String                         @map("tenant_id") @db.Uuid
+  locationId              String                         @map("location_id") @db.Uuid
+  reviewSessionId         String                         @map("review_session_id") @db.Uuid
+  snapshotId              String                         @map("snapshot_id") @db.Uuid
+  permitJti               String                         @unique @map("permit_jti") @db.VarChar(128)
+  requestHash             String                         @map("request_hash") @db.VarChar(128)
+  action                  GenerationAction
+  reservedMicros          BigInt                         @map("reserved_micros")
+  actualCostMicros        BigInt?                        @map("actual_cost_micros")
+  status                  ReservationStatus              @default(RESERVED)
+  reservedAt              DateTime                       @default(now()) @map("reserved_at") @db.Timestamptz(6)
+  expiresAt               DateTime                       @map("expires_at") @db.Timestamptz(6)
+  redeemedAt              DateTime?                      @map("redeemed_at") @db.Timestamptz(6)
+  executionLeaseId        String?                        @unique @map("execution_lease_id") @db.Uuid
+  activationExpiresAt     DateTime?                      @map("activation_expires_at") @db.Timestamptz(6)
+  settledAt               DateTime?                      @map("settled_at") @db.Timestamptz(6)
+  tenant                  Tenant                         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location                Location                       @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  reviewSession           ReviewSession                  @relation(fields: [reviewSessionId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  snapshot                EffectiveConfigurationSnapshot @relation(fields: [snapshotId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  generationBatch         GenerationBatch?
   reconciliationQueueItem ReconciliationQueueItem?
 
   @@unique([id, tenantId, locationId, reviewSessionId])
@@ -858,12 +892,12 @@ model BudgetReservation {
 }
 
 model ReconciliationQueueItem {
-  reservationId   String            @id @map("reservation_id") @db.Uuid
-  tenantId        String            @map("tenant_id") @db.Uuid
+  reservationId    String            @id @map("reservation_id") @db.Uuid
+  tenantId         String            @map("tenant_id") @db.Uuid
   executionLeaseId String?           @map("execution_lease_id") @db.Uuid
-  dueAt           DateTime          @map("due_at") @db.Timestamptz(6)
-  createdAt       DateTime          @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
-  reservation     BudgetReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  dueAt            DateTime          @map("due_at") @db.Timestamptz(6)
+  createdAt        DateTime          @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  reservation      BudgetReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
 
   @@index([dueAt, reservationId], map: "reconciliation_queue_items_due_idx")
   @@map("reconciliation_queue_items")

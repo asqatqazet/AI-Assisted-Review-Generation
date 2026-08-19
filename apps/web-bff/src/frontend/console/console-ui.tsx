@@ -68,14 +68,15 @@ export function QueryState({
     );
   }
   if (query.isError) {
-    const notFound =
-      query.error instanceof ConsoleAccessError &&
-      query.error.code === "not-found";
+    const code =
+      query.error instanceof ConsoleAccessError ? query.error.code : "unavailable";
     return (
       <p role="alert" className={styles.rejection}>
-        {notFound
+        {code === "not-found"
           ? "This resource is unavailable in the selected scope."
-          : `${label} could not be loaded.`}
+          : code === "forbidden"
+            ? `Your Grants do not cover ${label}.`
+            : `${label} could not be loaded — the Console service did not answer.`}
       </p>
     );
   }

@@ -7,6 +7,7 @@ import type {
 
 import type {
   ConsoleActionRecord,
+  ConsoleControlPlaneStoreFactory,
   ConsoleContextVersionRecord,
   ConsoleExperimentRecord,
   ConsoleLocationRecord,
@@ -46,19 +47,28 @@ export interface FakeConsoleData {
   })[];
 }
 
+export type FakeConsoleStore = ConsoleStore &
+  ConsoleControlPlaneStoreFactory & {
+    readonly data: FakeConsoleData;
+    readonly calls: string[];
+  };
+
 export function createFakeConsoleStore(
   data: FakeConsoleData,
   calls: string[] = [],
-): ConsoleStore & { readonly data: FakeConsoleData; readonly calls: string[] } {
+): FakeConsoleStore {
   const record = (name: string): void => {
     calls.push(name);
   };
   const tenantOf = (tenantId: string): FakeConsoleData["tenants"][number] | undefined =>
     data.tenants.find((tenant) => tenant.id === tenantId);
 
-  return {
+  const store: FakeConsoleStore = {
     data,
     calls,
+    // One in-memory store stands in for every operator; authorization is the
+    // service's job and stays under test.
+    forOperator: () => store,
 
     async readTenant(tenantId) {
       record(`readTenant:${tenantId}`);
@@ -403,6 +413,7 @@ export function createFakeConsoleStore(
           generations: 0,
           accepted: 0,
         })),
+        metricsAvailable: true,
       });
       return { status: "created" };
     },
@@ -577,6 +588,8 @@ export function createFakeConsoleStore(
       record("savePlatformSettings");
     },
   };
+
+  return store;
 }
 
 export function defaultTenantSettings(

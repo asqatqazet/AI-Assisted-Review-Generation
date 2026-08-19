@@ -1,3 +1,4 @@
+export * from "./console-store.js";
 import { PrismaClient } from "../generated/control-plane/index.js";
 
 export interface OperatorIdentity {

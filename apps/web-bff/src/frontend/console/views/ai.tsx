@@ -262,15 +262,25 @@ export function ExperimentsView({
                     {
                       key: "generations",
                       header: "Generations",
-                      render: (row) => row.generations,
+                      render: (row) =>
+                        experiment.metricsAvailable ? row.generations : "—",
                     },
                     {
                       key: "acceptance",
                       header: "Accepted",
-                      render: (row) => percent(row.acceptanceRate),
+                      render: (row) =>
+                        experiment.metricsAvailable
+                          ? percent(row.acceptanceRate)
+                          : "—",
                     },
                   ]}
                 />
+                {experiment.metricsAvailable ? null : (
+                  <p className={styles.settingSource}>
+                    Outcome counts are not available in this scope, so none are
+                    shown.
+                  </p>
+                )}
                 <p className={styles.buttonRow}>
                   {experiment.stoppable ? (
                     <button
