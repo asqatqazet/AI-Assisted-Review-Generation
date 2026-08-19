@@ -361,8 +361,8 @@ resource "aws_lambda_function" "generation_service" {
       GENERATION_WORK_PRIVATE_KEY_PARAMETER = local.parameter_names.generation_work_private_key
       # Names the parameter, never the key. Generation reads it at cold start
       # and falls back to the deterministic provider when it is absent.
-      GEMINI_API_KEY_PARAMETER              = local.parameter_names.gemini_api_key
-      REVIEW_FAKE_DELAY_MS                  = "0"
+      GEMINI_API_KEY_PARAMETER = local.parameter_names.gemini_api_key
+      REVIEW_FAKE_DELAY_MS     = "0"
     }
   }
 

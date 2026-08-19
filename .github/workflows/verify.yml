@@ -26,6 +26,15 @@ jobs:
           --health-retries 20
     steps:
       - uses: actions/checkout@v4
+      # Formatting drift used to surface only during a deploy, several minutes
+      # in. `terraform fmt` needs no init and no credentials, so it belongs in
+      # the same gate as the rest of the checks.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.14.7
+          terraform_wrapper: false
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive infra/terraform
       - uses: pnpm/action-setup@v4
         with:
           version: 11.19.0
