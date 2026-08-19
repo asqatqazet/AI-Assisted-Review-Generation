@@ -31,6 +31,7 @@
       "@review/contracts/context": ["./packages/contracts/src/context/index.ts"],
       "@review/contracts/generation": ["./packages/contracts/src/generation/index.ts"],
       "@review/contracts/console": ["./packages/contracts/src/console/index.ts"],
+      "@review/contracts/console-read": ["./packages/contracts/src/console/console-read.ts"],
       "@review/llm": ["./packages/llm/src/index.ts"],
       "@review/db/control-plane": ["./packages/db/src/control-plane/index.ts"],
       "@review/db/admission": ["./packages/db/src/admission/index.ts"],

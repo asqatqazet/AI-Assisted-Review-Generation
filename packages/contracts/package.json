@@ -10,6 +10,7 @@
     "./shared": "./src/shared/index.ts",
     "./context": "./src/context/index.ts",
     "./generation": "./src/generation/index.ts",
-    "./console": "./src/console/index.ts"
+    "./console": "./src/console/index.ts",
+    "./console-read": "./src/console/console-read.ts"
   }
 }

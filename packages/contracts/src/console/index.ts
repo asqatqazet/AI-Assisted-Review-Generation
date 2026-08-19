@@ -3,6 +3,7 @@ export * from "./analytics.js";
 export * from "./bootstrap.js";
 export * from "./configuration.js";
 export * from "./console-function.js";
+export * from "./console-read.js";
 export * from "./locations.js";
 export * from "./overview.js";
 export * from "./platform.js";
