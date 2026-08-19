@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 
-import { createPostgresConsoleControlPlaneStore } from "./index.js";
+import {
+  ConsoleScopeDeniedError,
+  createPostgresConsoleControlPlaneStore,
+} from "./index.js";
 
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
@@ -267,6 +270,55 @@ describeDatabase("EP-04 Console control-plane store", () => {
       expect(live).toHaveLength(1);
       expect(live[0]?.label).toBe("Consistently friendly staff");
       expect(live[0]?.id).not.toBe(created!.id);
+    } finally {
+      await store.disconnect();
+    }
+  });
+
+  it("refuses to write into a Tenant the operator holds no Grant for", async () => {
+    const fixture = await seed();
+    const store = createPostgresConsoleControlPlaneStore({
+      databaseUrl: databaseUrl!,
+      surveyOrigin: "https://review.example.test",
+    });
+    try {
+      // A read degrades to the empty projection; a write must not quietly
+      // succeed against someone else's account.
+      await expect(
+        store.forOperator(fixture.operatorId).createLocation({
+          tenantId: fixture.otherTenantId,
+          name: "Not mine",
+          slug: "not-mine",
+          address: {
+            line1: "",
+            line2: "",
+            postalCode: "",
+            city: "",
+            country: "",
+          },
+          entryMode: null,
+        }),
+      ).rejects.toBeInstanceOf(ConsoleScopeDeniedError);
+
+      await expect(
+        store.forOperator(fixture.operatorId).listLocations(fixture.otherTenantId),
+      ).resolves.toEqual([]);
+    } finally {
+      await store.disconnect();
+    }
+  });
+
+  it("keeps Platform-only projections empty for a Tenant operator", async () => {
+    const fixture = await seed();
+    const store = createPostgresConsoleControlPlaneStore({
+      databaseUrl: databaseUrl!,
+      surveyOrigin: "https://review.example.test",
+    });
+    try {
+      // The service refuses this scope first; the store refuses it again.
+      await expect(
+        store.forOperator(fixture.operatorId).listPlatformTenants(),
+      ).resolves.toEqual([]);
     } finally {
       await store.disconnect();
     }

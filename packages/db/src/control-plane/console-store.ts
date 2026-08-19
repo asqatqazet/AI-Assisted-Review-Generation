@@ -16,6 +16,19 @@ import { PrismaClient, type Prisma } from "../generated/control-plane/index.js";
 
 type Transaction = Prisma.TransactionClient;
 
+/**
+ * Raised when the database does not agree that this operator may act in the
+ * requested scope. Reads degrade to the neutral empty projection; writes fail
+ * loudly, because reaching one means the service authorized something the
+ * Grants no longer support.
+ */
+export class ConsoleScopeDeniedError extends Error {
+  public constructor(scope: string) {
+    super(`Operator is not authorized for ${scope}.`);
+    this.name = "ConsoleScopeDeniedError";
+  }
+}
+
 export type ConsoleActionKey =
   | "generate"
   | "paraphrase"
@@ -588,21 +601,93 @@ export function createPostgresConsoleControlPlaneStore({
 
     forOperator(operatorId) {
       /**
-       * RLS sees the same decision the Console service already made. Tenant
-       * scope is set when the call names a Tenant; Platform-scope reads fall
-       * back to the operator's Platform Grant.
+       * The database re-derives the scope instead of trusting the request.
+       *
+       * `app.tenant_id` is never set from the id that was asked for — it is set
+       * only after a current Access Grant for this operator has been found, so
+       * Row-Level Security is an independent check rather than a rubber stamp
+       * on whatever the caller named.
        */
+      const grantedForTenant = async (
+        transaction: Transaction,
+        tenantId: string,
+      ): Promise<boolean> => {
+        const rows = await transaction.$queryRaw<{ granted: boolean }[]>`
+          SELECT (
+            EXISTS (
+              SELECT 1
+              FROM tenant_access_grants AS access_grant
+              WHERE access_grant.operator_id = ${operatorId}::uuid
+                AND access_grant.tenant_id = ${tenantId}::uuid
+                AND access_grant.status = 'ACTIVE'
+                AND access_grant.valid_from <= clock_timestamp()
+                AND (access_grant.valid_until IS NULL OR access_grant.valid_until > clock_timestamp())
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM platform_access_grants AS platform_grant
+              WHERE platform_grant.operator_id = ${operatorId}::uuid
+                AND platform_grant.status = 'ACTIVE'
+                AND platform_grant.valid_from <= clock_timestamp()
+                AND (platform_grant.valid_until IS NULL OR platform_grant.valid_until > clock_timestamp())
+            )
+          ) AS granted
+        `;
+        return rows[0]?.granted === true;
+      };
+
+      const grantedForPlatform = async (
+        transaction: Transaction,
+      ): Promise<boolean> => {
+        const rows = await transaction.$queryRaw<{ granted: boolean }[]>`
+          SELECT EXISTS (
+            SELECT 1
+            FROM platform_access_grants AS platform_grant
+            WHERE platform_grant.operator_id = ${operatorId}::uuid
+              AND platform_grant.status = 'ACTIVE'
+              AND platform_grant.valid_from <= clock_timestamp()
+              AND (platform_grant.valid_until IS NULL OR platform_grant.valid_until > clock_timestamp())
+          ) AS granted
+        `;
+        return rows[0]?.granted === true;
+      };
+
       const run = async <T>(
         tenantId: string | null,
         work: (transaction: Transaction) => Promise<T>,
       ): Promise<T> =>
         await client.$transaction(async (transaction) => {
           await transaction.$executeRaw`SELECT set_config('app.operator_id', ${operatorId}, true)`;
-          if (tenantId !== null) {
-            await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
+          if (tenantId === null) {
+            if (!(await grantedForPlatform(transaction))) {
+              throw new ConsoleScopeDeniedError("Platform scope");
+            }
+            return await work(transaction);
           }
+          if (!(await grantedForTenant(transaction, tenantId))) {
+            throw new ConsoleScopeDeniedError(`Tenant ${tenantId}`);
+          }
+          await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
           return await work(transaction);
         });
+
+      /**
+       * A read of a scope this operator does not hold answers exactly like a
+       * scope that holds nothing, so existence never leaks.
+       */
+      const orEmpty = async <T>(
+        work: () => Promise<T>,
+        fallback: T,
+      ): Promise<T> => {
+        try {
+          return await work();
+        } catch (error) {
+          if (error instanceof ConsoleScopeDeniedError) {
+            return fallback;
+          }
+          throw error;
+        }
+      };
 
       const readAddress = (value: unknown): AddressRecord => ({
         line1: readString(value, "line1", ""),
@@ -751,7 +836,7 @@ export function createPostgresConsoleControlPlaneStore({
           : "invalid";
       };
 
-      return {
+      const operations: ConsoleControlPlaneOperations = {
         readTenant: async (tenantId) =>
           await run(tenantId, (transaction) => loadTenant(transaction, tenantId)),
 
@@ -1712,6 +1797,49 @@ export function createPostgresConsoleControlPlaneStore({
             );
           });
         },
+      };
+
+      /**
+       * A scope this operator does not hold reads exactly like a scope that
+       * holds nothing, so no Console screen can tell the two apart. Writes are
+       * left to throw: reaching one means the Grants changed under a decision
+       * the service had already made.
+       */
+      return {
+        ...operations,
+        readTenant: async (tenantId) =>
+          await orEmpty(() => operations.readTenant(tenantId), null),
+        readLocation: async (tenantId, locationId) =>
+          await orEmpty(() => operations.readLocation(tenantId, locationId), null),
+        readDistribution: async (tenantId, locationId) =>
+          await orEmpty(
+            () => operations.readDistribution(tenantId, locationId),
+            null,
+          ),
+        readPrompt: async (tenantId, promptVersionId) =>
+          await orEmpty(() => operations.readPrompt(tenantId, promptVersionId), null),
+        readExperiment: async (tenantId, experimentId) =>
+          await orEmpty(() => operations.readExperiment(tenantId, experimentId), null),
+        listLocations: async (tenantId) =>
+          await orEmpty(() => operations.listLocations(tenantId), []),
+        listDestinations: async (tenantId, locationId) =>
+          await orEmpty(() => operations.listDestinations(tenantId, locationId), []),
+        listContextVersions: async (tenantId) =>
+          await orEmpty(() => operations.listContextVersions(tenantId), []),
+        listKeywords: async (tenantId, locationId) =>
+          await orEmpty(() => operations.listKeywords(tenantId, locationId), []),
+        listStyles: async (tenantId) =>
+          await orEmpty(() => operations.listStyles(tenantId), []),
+        listActions: async (tenantId) =>
+          await orEmpty(() => operations.listActions(tenantId), []),
+        listPrompts: async (tenantId, action) =>
+          await orEmpty(() => operations.listPrompts(tenantId, action), []),
+        listExperiments: async (tenantId) =>
+          await orEmpty(() => operations.listExperiments(tenantId), []),
+        listPlatformTenants: async () =>
+          await orEmpty(() => operations.listPlatformTenants(), []),
+        listPlatformStyles: async () =>
+          await orEmpty(() => operations.listPlatformStyles(), []),
       };
     },
   };
