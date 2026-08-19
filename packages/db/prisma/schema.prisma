@@ -603,6 +603,8 @@ model PromptVersion {
   action                GenerationAction
   contentHash           String                 @map("content_hash") @db.VarChar(128)
   body                  String
+  /// Raw-SQL writers may omit this; the assign_prompt_version_ordinal trigger
+  /// fills it in. Prisma writers state it so the ordinal stays deliberate.
   version               Int
   status                PromptVersionStatus    @default(DRAFT)
   evaluationScore       Decimal?               @map("evaluation_score") @db.Decimal(5, 4)

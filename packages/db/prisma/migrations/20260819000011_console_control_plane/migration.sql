@@ -62,6 +62,26 @@ SET version = ordered.ordinal
 FROM ordered
 WHERE prompt_versions.id = ordered.id;
 
+-- The ordinal is derived from the history, not supplied by the caller, so the
+-- database assigns it. Existing writers that never knew about it keep working.
+CREATE FUNCTION assign_prompt_version_ordinal() RETURNS trigger AS $$
+BEGIN
+  IF NEW.version IS NULL THEN
+    SELECT COALESCE(MAX(version), 0) + 1
+    INTO NEW.version
+    FROM prompt_versions
+    WHERE tenant_id = NEW.tenant_id
+      AND action = NEW.action;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER prompt_versions_assign_ordinal
+  BEFORE INSERT ON prompt_versions
+  FOR EACH ROW
+  EXECUTE FUNCTION assign_prompt_version_ordinal();
+
 ALTER TABLE prompt_versions
   ALTER COLUMN version SET NOT NULL,
   ADD CONSTRAINT prompt_versions_version_positive CHECK (version >= 1),
