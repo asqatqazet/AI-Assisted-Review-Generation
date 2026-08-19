@@ -34,8 +34,6 @@ const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
       databaseUrl,
       contextPrivateKeyPem,
       generationPublicKeyPem,
-      // Distribution links must resolve the real public Survey origin.
-      surveyOrigin: required("REVIEW_PUBLIC_ORIGIN"),
     }),
   );
   return runtime;

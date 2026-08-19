@@ -187,8 +187,6 @@ const asLocale = (value: string): Locale =>
 
 export interface ConsoleControlPlaneStoreOptions {
   readonly databaseUrl: string;
-  /** Origin the public Survey is served from, for distribution links. */
-  readonly surveyOrigin: string;
   readonly currency?: string | undefined;
   readonly now?: (() => Date) | undefined;
 }
@@ -233,6 +231,7 @@ export interface ConsoleControlPlaneOperations {
   readDistribution(
     tenantId: string,
     locationId: string,
+    publicOrigin: string,
   ): Promise<DistributionRecord | null>;
   listDestinations(
     tenantId: string,
@@ -586,12 +585,10 @@ function slugify(value: string): string {
 
 export function createPostgresConsoleControlPlaneStore({
   databaseUrl,
-  surveyOrigin,
   currency = "EUR",
   now = () => new Date(),
 }: ConsoleControlPlaneStoreOptions): PostgresConsoleControlPlaneStore {
   const client = new PrismaClient({ datasourceUrl: databaseUrl });
-  const origin = new URL(surveyOrigin).origin;
   const money = (amountMicros: number) => ({ amountMicros, currency });
 
   return {
@@ -950,7 +947,7 @@ export function createPostgresConsoleControlPlaneStore({
           });
         },
 
-        readDistribution: async (tenantId, locationId) =>
+        readDistribution: async (tenantId, locationId, publicOrigin) =>
           await run(tenantId, async (transaction) => {
             const tenant = await loadTenant(transaction, tenantId);
             const location = await transaction.location.findFirst({
@@ -978,7 +975,7 @@ export function createPostgresConsoleControlPlaneStore({
               }),
             ]);
             return {
-              surveyUrl: `${origin}/s/${tenant.slug}/${location.slug}`,
+              surveyUrl: `${new URL(publicOrigin).origin}/s/${tenant.slug}/${location.slug}`,
               entryMode,
               invitationTemplate: `Thank you for visiting ${location.name}. If you would like to leave a review, this link opens the assistant for this venue.`,
               tableQrCopy: `Scan to write a review of ${location.name}.`,
@@ -1811,9 +1808,9 @@ export function createPostgresConsoleControlPlaneStore({
           await orEmpty(() => operations.readTenant(tenantId), null),
         readLocation: async (tenantId, locationId) =>
           await orEmpty(() => operations.readLocation(tenantId, locationId), null),
-        readDistribution: async (tenantId, locationId) =>
+        readDistribution: async (tenantId, locationId, publicOrigin) =>
           await orEmpty(
-            () => operations.readDistribution(tenantId, locationId),
+            () => operations.readDistribution(tenantId, locationId, publicOrigin),
             null,
           ),
         readPrompt: async (tenantId, promptVersionId) =>

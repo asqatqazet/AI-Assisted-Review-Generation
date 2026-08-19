@@ -355,6 +355,12 @@ export const ConsoleRequestInvocationDtoSchema = z.strictObject({
   input: z.strictObject({
     identity: OperatorIdentityDtoSchema,
     scope: ConsoleScopeRequestDtoSchema,
+    /**
+     * The edge origin this request arrived on, so distribution links are minted
+     * for the domain the reviewer will actually use. Null when the BFF cannot
+     * establish its own public origin.
+     */
+    publicOrigin: z.string().url().nullable(),
     request: z.discriminatedUnion("mode", [
       z.strictObject({ mode: z.literal("query"), query: ConsoleQueryDtoSchema }),
       z.strictObject({

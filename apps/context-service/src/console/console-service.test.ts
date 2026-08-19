@@ -325,6 +325,7 @@ async function query(
   return await service(access).request({
     identity,
     scope,
+    publicOrigin: "https://review.example.test",
     request: { mode: "query", query: view },
   });
 }
@@ -337,6 +338,7 @@ async function command(
   return await service(access).request({
     identity,
     scope,
+    publicOrigin: "https://review.example.test",
     request: { mode: "command", command: body },
   });
 }
@@ -862,6 +864,7 @@ describe("execution-plane views without an execution-plane reader", () => {
         controlPlaneOnly.request({
           identity,
           scope,
+          publicOrigin: "https://review.example.test",
           request: { mode: "query", query: view },
         }),
       ).resolves.toEqual({ status: "not-found" });
@@ -887,6 +890,7 @@ describe("execution-plane views without an execution-plane reader", () => {
       const result = await controlPlaneOnly.request({
         identity,
         scope: { tenantId: "tenant-bright", locationId: null },
+        publicOrigin: "https://review.example.test",
         request: { mode: "query", query: view },
       });
       expect(result.status).toBe("view");

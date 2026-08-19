@@ -257,7 +257,6 @@ function createJourneyApp(
     generationPublicKeyPem: generationKeys.publicKey
       .export({ type: "spki", format: "pem" })
       .toString(),
-    surveyOrigin: "https://review.example.test",
   });
   const generation = createGenerationRuntime({
     databaseUrl: activeDatabaseUrl,

@@ -17,9 +17,6 @@ describe("US-01.3 Context production composition", () => {
         "CONTEXT_DATABASE_URL_PARAMETER",
         "CONTEXT_WORK_PRIVATE_KEY_PARAMETER",
         "GENERATION_WORK_PUBLIC_KEY_PARAMETER",
-        // Public Survey origin for distribution links. Not a credential, and
-        // read from plain configuration rather than a decrypted parameter.
-        "REVIEW_PUBLIC_ORIGIN",
       ]),
     );
     expect(source).toContain("GetParameterCommand");
