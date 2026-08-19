@@ -46,7 +46,15 @@ export function PromptsView({
     enabled: selection.length === 2,
   });
   const command = useConsoleCommand({ client, scope: scopeController.scope });
-  const [body, setBody] = useState("");
+  const [draft, setDraft] = useState({ action: "", body: "" });
+
+  // The filter narrows the table; publishing chooses its own Action so a
+  // prompt for any Action can be written while looking at all of them.
+  const publishAction =
+    draft.action ||
+    actionFilter ||
+    prompts.data?.actions[0]?.key ||
+    "generate";
 
   const toggle = (id: string): void => {
     setSelection((current) =>
@@ -66,7 +74,7 @@ export function PromptsView({
 
       <div className={styles.toolbar}>
         <label className={styles.field}>
-          Action
+          Filter by Action
           <select
             value={actionFilter ?? ""}
             onChange={(event) => {
@@ -81,13 +89,11 @@ export function PromptsView({
             }}
           >
             <option value="">All Actions</option>
-            {["generate", "paraphrase", "reformat", "condense", "expand", "revise-wording"].map(
-              (action) => (
-                <option key={action} value={action}>
-                  {action}
-                </option>
-              ),
-            )}
+            {(prompts.data?.actions ?? []).map((action) => (
+              <option key={action.key} value={action.key}>
+                {action.label}
+              </option>
+            ))}
           </select>
         </label>
         <button
@@ -167,20 +173,43 @@ export function PromptsView({
                 event.preventDefault();
                 command.mutate({
                   command: "create-prompt-version",
-                  action: (actionFilter ?? "generate") as ConsoleActionKeyDto,
-                  body,
+                  action: publishAction as ConsoleActionKeyDto,
+                  body: draft.body,
                   variables: [],
                 });
-                setBody("");
+                setDraft((current) => ({ ...current, body: "" }));
               }}
             >
               <h2 className={styles.sectionLabel}>Publish a new version</h2>
               <label className={styles.field}>
-                Prompt body for {actionFilter ?? "generate"}
+                Action
+                <select
+                  value={publishAction}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      action: event.target.value,
+                    }))
+                  }
+                >
+                  {prompts.data.actions.map((action) => (
+                    <option key={action.key} value={action.key}>
+                      {action.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.field}>
+                Prompt body
                 <textarea
                   required
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
+                  value={draft.body}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      body: event.target.value,
+                    }))
+                  }
                 />
               </label>
               <p className={styles.buttonRow}>

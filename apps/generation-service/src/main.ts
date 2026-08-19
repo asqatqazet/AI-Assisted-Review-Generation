@@ -24,16 +24,39 @@ const requiredParameter = async (name: string): Promise<string> => {
   return value;
 };
 
+/**
+ * A live provider key is optional. When the parameter is absent the runtime
+ * keeps the deterministic provider, so a deployment never starts making paid
+ * calls just because the plumbing exists.
+ */
+const optionalParameter = async (name: string): Promise<string | undefined> => {
+  const parameterName = process.env[name];
+  if (parameterName === undefined || parameterName.length === 0) {
+    return undefined;
+  }
+  try {
+    const response = await ssm.send(
+      new GetParameterCommand({ Name: parameterName, WithDecryption: true }),
+    );
+    const value = response.Parameter?.Value;
+    return value === undefined || value.length === 0 ? undefined : value;
+  } catch {
+    return undefined;
+  }
+};
+
 const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
   runtime ??= Promise.all([
     requiredParameter("GENERATION_DATABASE_URL_PARAMETER"),
     requiredParameter("CONTEXT_WORK_PUBLIC_KEY_PARAMETER"),
     requiredParameter("GENERATION_WORK_PRIVATE_KEY_PARAMETER"),
-  ]).then(([databaseUrl, contextPublicKeyPem, generationPrivateKeyPem]) =>
+    optionalParameter("GEMINI_API_KEY_PARAMETER"),
+  ]).then(([databaseUrl, contextPublicKeyPem, generationPrivateKeyPem, geminiApiKey]) =>
     createGenerationRuntime({
       databaseUrl,
       contextPublicKeyPem,
       generationPrivateKeyPem,
+      geminiApiKey,
       fakeDelayMs: Number.parseInt(
         process.env["REVIEW_FAKE_DELAY_MS"] ?? "0",
         10,

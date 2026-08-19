@@ -4,6 +4,7 @@ import {
   createPostgresGenerationTerminalStore,
   createPostgresReviewerDispositionStore,
 } from "@review/db/execution-plane";
+import { GeminiProvider } from "@review/llm";
 
 import { createPaidWorkAttemptPreparer } from "./application/paid-work-attempt.js";
 import type {
@@ -90,12 +91,18 @@ export function createGenerationRuntime({
   databaseUrl,
   contextPublicKeyPem,
   generationPrivateKeyPem,
+  geminiApiKey,
   fakeDelayMs = 0,
   fakeFailure = false,
 }: {
   readonly databaseUrl: string;
   readonly contextPublicKeyPem: string;
   readonly generationPrivateKeyPem: string;
+  /**
+   * Absent unless an operator installed a key. Without one the deployment
+   * keeps using the deterministic provider and makes no paid call.
+   */
+  readonly geminiApiKey?: string | undefined;
   readonly fakeDelayMs?: number;
   readonly fakeFailure?: boolean;
 }): (event: unknown) => Promise<unknown> {
@@ -129,10 +136,13 @@ export function createGenerationRuntime({
     terminalStore,
     prepareAttempt: async (workload) =>
       await createPaidWorkAttemptPreparer({
-        gateway: createAssessmentFakeGateway(workload, {
-          delayMs: fakeDelayMs,
-          fail: fakeFailure,
-        }),
+        gateway:
+          geminiApiKey === undefined || geminiApiKey.length === 0
+            ? createAssessmentFakeGateway(workload, {
+                delayMs: fakeDelayMs,
+                fail: fakeFailure,
+              })
+            : new GeminiProvider({ apiKey: geminiApiKey }),
       })(workload),
     tailExisting: createPersistentTerminalTailer({
       databaseStore: databaseTerminalStore,

@@ -26,6 +26,18 @@ export const ConsolePromptsDtoSchema = z.strictObject({
   scope: ConsoleScopeDtoSchema,
   editable: z.boolean(),
   prompts: z.array(ConsolePromptVersionDtoSchema).max(500),
+  /**
+   * Which Actions this account can hold prompts for. Read from the Action
+   * catalogue so a new Action needs no frontend change.
+   */
+  actions: z
+    .array(
+      z.strictObject({
+        key: ConsoleActionKeyDtoSchema,
+        label: z.string().min(1).max(120),
+      }),
+    )
+    .max(50),
 });
 
 export const ConsolePromptDetailDtoSchema = ConsolePromptVersionDtoSchema.extend({

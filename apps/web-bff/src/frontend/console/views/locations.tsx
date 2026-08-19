@@ -66,6 +66,112 @@ function AddressFields({
   );
 }
 
+const LOCALE_OPTIONS = ["en-GB", "de-DE"] as const;
+const ENTRY_MODE_OPTIONS = ["invite", "open-qr", "both"] as const;
+
+/**
+ * A setting is edited with the control its kind implies: a locale and an entry
+ * mode are closed sets, so they are chosen rather than typed.
+ */
+function SettingControl({
+  id,
+  kind,
+  value,
+  editable,
+  onChange,
+}: {
+  readonly id: string;
+  readonly kind: string;
+  readonly value: ConsoleSettingValueDto;
+  readonly editable: boolean;
+  readonly onChange: (next: ConsoleSettingValueDto) => void;
+}): React.JSX.Element {
+  if (kind === "locale" || kind === "entry-mode") {
+    const options = kind === "locale" ? LOCALE_OPTIONS : ENTRY_MODE_OPTIONS;
+    return (
+      <select
+        id={id}
+        className={styles.settingControl}
+        value={String(value)}
+        disabled={!editable}
+        onChange={(event) => onChange(event.target.value)}
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (kind === "boolean") {
+    return (
+      <span className={styles.settingToggle}>
+        <input
+          id={id}
+          type="checkbox"
+          checked={value === true}
+          disabled={!editable}
+          onChange={(event) => onChange(event.target.checked)}
+        />
+        <span className={styles.settingSource}>{value === true ? "ON" : "OFF"}</span>
+      </span>
+    );
+  }
+  if (kind === "number") {
+    return (
+      <input
+        id={id}
+        className={styles.settingControl}
+        type="number"
+        min={0}
+        value={Number(value)}
+        disabled={!editable}
+        onChange={(event) => onChange(Number(event.target.value))}
+      />
+    );
+  }
+  if (kind === "string-list") {
+    return (
+      <input
+        id={id}
+        className={styles.settingControl}
+        placeholder="Comma separated"
+        value={Array.isArray(value) ? value.join(", ") : ""}
+        disabled={!editable}
+        onChange={(event) =>
+          onChange(
+            event.target.value
+              .split(",")
+              .map((term) => term.trim())
+              .filter((term) => term.length > 0),
+          )
+        }
+      />
+    );
+  }
+  if (kind === "text") {
+    return (
+      <textarea
+        id={id}
+        className={styles.settingTextarea}
+        value={String(value)}
+        disabled={!editable}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    );
+  }
+  return (
+    <input
+      id={id}
+      className={styles.settingControl}
+      value={String(value)}
+      disabled={!editable}
+      onChange={(event) => onChange(event.target.value)}
+    />
+  );
+}
+
 function renderValue(value: ConsoleSettingValueDto): string {
   if (Array.isArray(value)) {
     return value.length === 0 ? "—" : value.join(", ");
@@ -389,66 +495,42 @@ export function TenantSettingsView({
                     <OwnerBadge scope={setting.ownerScope} />
                   </p>
                 </div>
-                <div>
-                  {setting.kind === "boolean" ? (
-                    <input
-                      id={`setting-${setting.key}`}
-                      type="checkbox"
-                      checked={value === true}
-                      disabled={!setting.editable}
-                      onChange={(event) =>
-                        setEdits((current) => ({
-                          ...current,
-                          [setting.key]: event.target.checked,
-                        }))
-                      }
-                    />
-                  ) : setting.kind === "number" ? (
-                    <input
-                      id={`setting-${setting.key}`}
-                      type="number"
-                      value={Number(value)}
-                      disabled={!setting.editable}
-                      onChange={(event) =>
-                        setEdits((current) => ({
-                          ...current,
-                          [setting.key]: Number(event.target.value),
-                        }))
-                      }
-                    />
-                  ) : setting.kind === "string-list" ? (
-                    <input
-                      id={`setting-${setting.key}`}
-                      value={Array.isArray(value) ? value.join(", ") : ""}
-                      disabled={!setting.editable}
-                      onChange={(event) =>
-                        setEdits((current) => ({
-                          ...current,
-                          [setting.key]: event.target.value
-                            .split(",")
-                            .map((term) => term.trim())
-                            .filter((term) => term.length > 0),
-                        }))
-                      }
-                    />
-                  ) : (
-                    <input
-                      id={`setting-${setting.key}`}
-                      value={String(value)}
-                      disabled={!setting.editable}
-                      onChange={(event) =>
-                        setEdits((current) => ({
-                          ...current,
-                          [setting.key]: event.target.value,
-                        }))
-                      }
-                    />
-                  )}
-                </div>
-                <span className={styles.settingValue}>{renderValue(value)}</span>
+                <SettingControl
+                  id={`setting-${setting.key}`}
+                  kind={setting.kind}
+                  value={value}
+                  editable={setting.editable}
+                  onChange={(next) =>
+                    setEdits((current) => ({ ...current, [setting.key]: next }))
+                  }
+                />
               </div>
             );
           })}
+
+          {settings.data.editable ? (
+            <p className={styles.buttonRow}>
+              <button
+                className={styles.buttonPrimary}
+                type="submit"
+                disabled={command.isPending || Object.keys(edits).length === 0}
+              >
+                Save account settings
+              </button>
+              {Object.keys(edits).length === 0 ? (
+                <span className={styles.settingSource}>No unsaved changes.</span>
+              ) : (
+                <button
+                  type="button"
+                  className={styles.button}
+                  onClick={() => setEdits({})}
+                >
+                  Discard changes
+                </button>
+              )}
+            </p>
+          ) : null}
+          <RejectionNotice error={command.error} />
 
           <h2 className={styles.sectionLabel}>Keyword categories</h2>
           <DataTable
@@ -467,18 +549,6 @@ export function TenantSettingsView({
             ]}
           />
 
-          {settings.data.editable ? (
-            <p className={styles.buttonRow}>
-              <button
-                className={styles.buttonPrimary}
-                type="submit"
-                disabled={command.isPending || Object.keys(edits).length === 0}
-              >
-                Save account settings
-              </button>
-            </p>
-          ) : null}
-          <RejectionNotice error={command.error} />
         </form>
       )}
     </>

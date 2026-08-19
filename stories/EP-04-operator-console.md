@@ -86,6 +86,34 @@ establishes the origin per request for its CSRF check, so the same trusted
 value mints the link and its QR. When no origin can be established the
 distribution view is withheld rather than emitting a link nobody can reach.
 
+## Installing a live provider key
+
+Google Gemini is catalogued so an operator can see and route it. The key never
+touches Terraform state or the repository:
+
+```text
+GitHub secret GEMINI_API_KEY
+        │  deploy step, only when the secret is set
+        ▼
+SSM SecureString  /review-gen/student/gemini-api-key
+        │  Lambda env holds the PARAMETER NAME, never the value
+        ▼
+Generation Lambda reads it once at cold start
+        │  absent → deterministic provider, no paid call
+        ▼
+GeminiProvider
+```
+
+Terraform owns the IAM grant and the parameter *name*; it never creates the
+parameter, so the value cannot land in remote state. The Console shows the
+credential as configured or missing from `providers.credential_reference`,
+which the deploy sets only when a key was actually installed — the control
+plane cannot read SSM, so anything else would be a guess.
+
+To install one: add `GEMINI_API_KEY` to the repository secrets and re-run
+`deploy-student`. To remove it: delete the secret, delete the SSM parameter,
+and re-run; the deployment falls back to the deterministic provider.
+
 ## Migration 20260819000011
 
 - `tenant_context_versions` — versioned business context. `context_svc` gets

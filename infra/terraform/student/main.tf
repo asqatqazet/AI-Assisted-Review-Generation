@@ -53,6 +53,7 @@ locals {
     context_work_public_key     = "/review-gen/student/context-work-public-key"
     generation_work_private_key = "/review-gen/student/generation-work-private-key"
     generation_work_public_key  = "/review-gen/student/generation-work-public-key"
+    gemini_api_key              = "/review-gen/student/gemini-api-key"
   }
 }
 
@@ -262,6 +263,7 @@ data "aws_iam_policy_document" "generation_parameters" {
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_database_url}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_public_key}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_private_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.gemini_api_key}",
     ]
   }
 }
@@ -357,6 +359,9 @@ resource "aws_lambda_function" "generation_service" {
       GENERATION_DATABASE_URL_PARAMETER     = local.parameter_names.generation_database_url
       CONTEXT_WORK_PUBLIC_KEY_PARAMETER     = local.parameter_names.context_work_public_key
       GENERATION_WORK_PRIVATE_KEY_PARAMETER = local.parameter_names.generation_work_private_key
+      # Names the parameter, never the key. Generation reads it at cold start
+      # and falls back to the deterministic provider when it is absent.
+      GEMINI_API_KEY_PARAMETER              = local.parameter_names.gemini_api_key
       REVIEW_FAKE_DELAY_MS                  = "0"
     }
   }

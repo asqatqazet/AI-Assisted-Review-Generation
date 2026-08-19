@@ -384,13 +384,20 @@ async function runQuery({
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      const prompts = await store.listPrompts(scope.tenantId, query.action);
+      const [prompts, actions] = await Promise.all([
+        store.listPrompts(scope.tenantId, query.action),
+        store.listActions(scope.tenantId),
+      ]);
       return view({
         view: "prompts",
         data: {
           scope: scope.scope,
           editable: capabilities.canManageAiOperations,
           prompts: prompts.map(promptRow),
+          actions: actions.map((action) => ({
+            key: action.key,
+            label: action.label,
+          })),
         },
       });
     }

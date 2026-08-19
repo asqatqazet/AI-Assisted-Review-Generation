@@ -130,6 +130,9 @@ declare module "*.module.css" {
     readonly detailList: string;
     readonly statusPass: string;
     readonly statusFail: string;
+    readonly settingControl: string;
+    readonly settingTextarea: string;
+    readonly settingToggle: string;
   };
   export default classes;
 }

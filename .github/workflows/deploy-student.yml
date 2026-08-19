@@ -140,6 +140,7 @@ jobs:
           CONTEXT_PUBLIC_KEY: ${{ secrets.CONTEXT_WORK_PUBLIC_KEY_PEM }}
           GENERATION_PRIVATE_KEY: ${{ secrets.GENERATION_WORK_PRIVATE_KEY_PEM }}
           GENERATION_PUBLIC_KEY: ${{ secrets.GENERATION_WORK_PUBLIC_KEY_PEM }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set -euo pipefail
           test -n "$CONTEXT_DATABASE_URL"
@@ -156,6 +157,12 @@ jobs:
           aws ssm put-parameter --name /review-gen/student/context-work-public-key --type SecureString --value "$CONTEXT_PUBLIC_KEY" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/generation-work-private-key --type SecureString --value "$GENERATION_PRIVATE_KEY" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/generation-work-public-key --type SecureString --value "$GENERATION_PUBLIC_KEY" --overwrite >/dev/null
+          # Optional. Supplied, it turns the live Gemini route on; absent, the
+          # deployment keeps using the deterministic provider and the Console
+          # shows the credential as missing.
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            aws ssm put-parameter --name /review-gen/student/gemini-api-key --type SecureString --value "$GEMINI_API_KEY" --overwrite >/dev/null
+          fi
           if ! aws ssm get-parameter --name /review-gen/student/operator-session-secret --with-decryption >/dev/null 2>&1; then
             OPERATOR_SESSION_SECRET="$(openssl rand -hex 32)"
             aws ssm put-parameter --name /review-gen/student/operator-session-secret --type SecureString --value "$OPERATOR_SESSION_SECRET" >/dev/null
@@ -173,6 +180,26 @@ jobs:
           --file "$GITHUB_WORKSPACE/infra/aws/seed-student.sql"
         env:
           DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+
+      - name: Record which live provider credentials are installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The control plane cannot read SSM, so the Console's
+          # configured/missing state comes from this reference being set.
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            REFERENCE="ssm:/review-gen/student/gemini-api-key"
+          else
+            REFERENCE=""
+          fi
+          pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin <<SQL
+          UPDATE providers
+          SET credential_reference = '$REFERENCE'
+          WHERE key = 'gemini';
+          SQL
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - name: Bootstrap encrypted remote Terraform state
         id: state

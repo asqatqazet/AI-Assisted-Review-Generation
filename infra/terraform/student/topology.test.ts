@@ -125,7 +125,11 @@ describe("student AWS topology invariants", () => {
     expect(seed).toContain("hafencity");
     expect(seed).toContain("Frischer Fisch");
     expect(seed).toContain("fake-v1");
-    expect(seed).not.toMatch(/openai|gemini/i);
+    // A live provider may be catalogued so an operator can see and route it,
+    // but the shipped fixture carries no credential for one: the deploy
+    // installs that separately, and only when a key was actually supplied.
+    expect(seed).toMatch(/'Google Gemini',\n\s*'',/);
+    expect(seed).not.toMatch(/AIza[\w-]{10,}|sk-[\w-]{10,}/);
   });
 
   it("ships an executable rollback workflow that moves only qualified aliases", () => {
@@ -177,7 +181,13 @@ describe("student AWS topology invariants", () => {
       /resource\s+"aws_ssm_parameter"\s+"(?:openai|gemini|anthropic)_api_key"/,
     );
     expect(terraform).not.toContain("parameter/review-gen/student/providers/*");
-    expect(terraform).not.toMatch(/OPENAI|GEMINI|PROVIDER_API_KEY/);
+    expect(terraform).not.toMatch(/PROVIDER_API_KEY/);
+    // Terraform may name the parameter that holds a provider key; it must
+    // never carry the key itself, or the value lands in remote state.
+    expect(terraform).not.toMatch(/(?:OPENAI|GEMINI|ANTHROPIC)_API_KEY\s*=/);
+    expect(terraform).toMatch(
+      /GEMINI_API_KEY_PARAMETER\s*=\s*local\.parameter_names\.gemini_api_key/,
+    );
     expect(terraform).toContain("CONTEXT_DATABASE_URL_PARAMETER");
     expect(terraform).toContain("GENERATION_DATABASE_URL_PARAMETER");
     expect(terraform).not.toMatch(/\bDATABASE_URL_PARAMETER\s*=/);

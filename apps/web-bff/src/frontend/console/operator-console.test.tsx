@@ -545,3 +545,134 @@ describe("Console failure states are distinguishable", () => {
     ).toBeVisible();
   });
 });
+
+describe("Console forms offer the choices the data allows", () => {
+  it("lets a prompt version be published for any Action, not just the filtered one", async () => {
+    const user = userEvent.setup();
+    const client = createFakeConsoleClient({
+      views: {
+        bootstrap: {
+          ...testBootstrap,
+          capabilities: {
+            ...testBootstrap.capabilities,
+            canManageAiOperations: true,
+          },
+        },
+        prompts: {
+          scope: tenantScope,
+          editable: true,
+          prompts: [],
+          actions: [
+            { key: "generate", label: "Generate" },
+            { key: "condense", label: "Condense" },
+          ],
+        },
+      },
+    });
+    renderConsole(client, "/console/ai/prompts?tenantId=tenant-speicher");
+
+    await screen.findByRole("heading", { name: "Publish a new version" });
+    await user.selectOptions(screen.getByLabelText("Action"), "condense");
+    await user.type(screen.getByLabelText("Prompt body"), "Shorten it.");
+    await user.click(screen.getByRole("button", { name: "Publish draft version" }));
+
+    expect(client.commands[0]?.command).toMatchObject({
+      command: "create-prompt-version",
+      action: "condense",
+    });
+  });
+
+  it("offers locale and entry mode as choices rather than free text", async () => {
+    const client = createFakeConsoleClient({
+      views: {
+        bootstrap: testBootstrap,
+        "tenant-settings": {
+          scope: tenantScope,
+          editable: true,
+          settings: [
+            {
+              key: "locale",
+              label: "Locale",
+              kind: "locale",
+              ownerScope: "tenant",
+              value: "de-DE",
+              platformDefault: null,
+              editable: true,
+            },
+            {
+              key: "entryMode",
+              label: "Entry mode",
+              kind: "entry-mode",
+              ownerScope: "tenant",
+              value: "open-qr",
+              platformDefault: null,
+              editable: true,
+            },
+            {
+              key: "toneGuidelines",
+              label: "Tone guidelines",
+              kind: "text",
+              ownerScope: "tenant",
+              value: "Plain and factual.",
+              platformDefault: null,
+              editable: true,
+            },
+          ],
+          keywordCategories: [],
+        },
+      },
+    });
+    renderConsole(client, "/console/settings/tenant?tenantId=tenant-speicher");
+
+    const locale = await screen.findByLabelText("Locale");
+    expect(locale.tagName).toBe("SELECT");
+    expect(
+      [...(locale as HTMLSelectElement).options].map((option) => option.value),
+    ).toEqual(["en-GB", "de-DE"]);
+
+    const entryMode = screen.getByLabelText("Entry mode");
+    expect(
+      [...(entryMode as HTMLSelectElement).options].map((option) => option.value),
+    ).toEqual(["invite", "open-qr", "both"]);
+
+    // Free-form guidance gets room to be written in.
+    expect(screen.getByLabelText("Tone guidelines").tagName).toBe("TEXTAREA");
+  });
+
+  it("does not offer a save until something has changed", async () => {
+    const user = userEvent.setup();
+    const client = createFakeConsoleClient({
+      views: {
+        bootstrap: testBootstrap,
+        "tenant-settings": {
+          scope: tenantScope,
+          editable: true,
+          settings: [
+            {
+              key: "locale",
+              label: "Locale",
+              kind: "locale",
+              ownerScope: "tenant",
+              value: "en-GB",
+              platformDefault: null,
+              editable: true,
+            },
+          ],
+          keywordCategories: [],
+        },
+      },
+    });
+    renderConsole(client, "/console/settings/tenant?tenantId=tenant-speicher");
+
+    expect(
+      await screen.findByRole("button", { name: "Save account settings" }),
+    ).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText("Locale"), "de-DE");
+
+    expect(
+      screen.getByRole("button", { name: "Save account settings" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Discard changes" })).toBeVisible();
+  });
+});

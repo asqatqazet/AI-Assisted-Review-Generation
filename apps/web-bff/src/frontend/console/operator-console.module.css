@@ -499,11 +499,42 @@
 
 .settingRow {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(120px, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 0;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: 16px 24px;
+  align-items: start;
+  padding: 14px 0;
   border-bottom: 1px solid var(--border-card);
+}
+
+.settingRow > div:first-child label {
+  display: block;
+  font-weight: 600;
+  color: var(--text-heading);
+  margin-bottom: 4px;
+}
+
+.settingControl {
+  width: 100%;
+  max-width: 420px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-input);
+  border-radius: 6px;
+  font: var(--type-body-sm, 400 14px/1.4 var(--font-sans));
+  color: var(--text-body);
+  background: var(--surface-card);
+}
+
+.settingTextarea {
+  composes: settingControl;
+  min-height: 96px;
+  resize: vertical;
+  font-family: var(--font-sans);
+}
+
+.settingToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .settingValue {

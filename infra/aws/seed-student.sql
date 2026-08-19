@@ -455,4 +455,51 @@ VALUES
   ('console.analytics', false, '{"description":"Generation analytics and audit"}'::jsonb)
 ON CONFLICT (key) DO UPDATE SET rules = EXCLUDED.rules;
 
+-- Google Gemini as a live routing option. The credential reference is left
+-- empty here and set by the deploy only when a key was actually installed, so
+-- the Console's configured/missing state stays truthful.
+INSERT INTO providers (id, key, display_name, credential_reference, status, is_default, is_fallback)
+VALUES (
+  '00000000-0000-4000-8000-000000000205',
+  'gemini',
+  'Google Gemini',
+  '',
+  'ACTIVE',
+  false,
+  false
+)
+ON CONFLICT (id) DO UPDATE SET
+  display_name = EXCLUDED.display_name,
+  status = EXCLUDED.status;
+
+INSERT INTO provider_models (
+  id, provider_id, model_key, capabilities, status, routing_priority, fallback_priority
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000206',
+  '00000000-0000-4000-8000-000000000205',
+  'gemini-2.0-flash',
+  '{"streaming":true,"structuredOutput":true,"maxTokens":8192}'::jsonb,
+  'ACTIVE',
+  NULL,
+  1
+)
+ON CONFLICT (id) DO UPDATE SET
+  capabilities = EXCLUDED.capabilities,
+  status = EXCLUDED.status;
+
+INSERT INTO price_rates (
+  id, provider_model_id, currency, input_per_million_micros,
+  output_per_million_micros, effective_from
+)
+VALUES (
+  '00000000-0000-4000-8000-000000000207',
+  '00000000-0000-4000-8000-000000000206',
+  'EUR',
+  100000,
+  400000,
+  TIMESTAMPTZ '2026-01-01 00:00:00+00'
+)
+ON CONFLICT (id) DO NOTHING;
+
 COMMIT;
