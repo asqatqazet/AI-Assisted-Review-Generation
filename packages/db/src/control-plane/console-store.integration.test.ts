@@ -323,12 +323,12 @@ describeDatabase("EP-04 Console control-plane store", () => {
   it("provisions and suspends an account from Platform scope", async () => {
     const fixture = await seed();
     await runSql(`
-      INSERT INTO platform_access_grants (operator_id, role_key)
-      VALUES ('${fixture.operatorId}', 'platform_admin')
-      ON CONFLICT (operator_id, role_key) DO NOTHING;
       INSERT INTO operator_role_definitions (key, capabilities)
       VALUES ('platform_admin', ARRAY['console:read', 'platform:admin'])
       ON CONFLICT (key) DO UPDATE SET capabilities = EXCLUDED.capabilities;
+      INSERT INTO platform_access_grants (operator_id, role_key)
+      VALUES ('${fixture.operatorId}', 'platform_admin')
+      ON CONFLICT (operator_id, role_key) DO NOTHING;
     `);
     const store = createPostgresConsoleControlPlaneStore({
       databaseUrl: databaseUrl!,
