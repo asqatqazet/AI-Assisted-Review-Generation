@@ -139,6 +139,24 @@ export type ConsoleScopeSelector =
  */
 export interface ConsoleControlPlaneStore {
   readTenant(tenantId: string): Promise<ConsoleTenantRecord | null>;
+  /**
+   * Every Tenant a Platform administrator may switch to. Grants alone cannot
+   * answer this: an account they provision carries no Tenant Grant for them,
+   * so it would otherwise be invisible in the scope bar it belongs in.
+   */
+  listSelectableTenants(): Promise<
+    readonly {
+      readonly id: string;
+      readonly slug: string;
+      readonly name: string;
+      readonly locations: readonly {
+        readonly id: string;
+        readonly slug: string;
+        readonly name: string;
+        readonly active: boolean;
+      }[];
+    }[]
+  >;
   listLocations(tenantId: string): Promise<readonly ConsoleLocationRecord[]>;
   readLocation(
     tenantId: string,

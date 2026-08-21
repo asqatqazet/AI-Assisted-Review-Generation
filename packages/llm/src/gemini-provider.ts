@@ -13,26 +13,29 @@ export interface GeminiProviderOptions {
   readonly defaultTimeoutMs?: number | undefined;
 }
 
-interface GeminiInteraction {
-  readonly id?: string | undefined;
-  readonly status?: string | undefined;
-  readonly steps?:
+/**
+ * Google's generateContent response. The adapter previously described an
+ * interaction/steps envelope that this API does not return, so nothing it
+ * produced could be parsed.
+ */
+interface GeminiGenerateContentResponse {
+  readonly candidates?:
     | readonly {
-        readonly type?: string | undefined;
         readonly content?:
-          | readonly {
-              readonly type?: string | undefined;
-              readonly text?: string | undefined;
-            }[]
+          | { readonly parts?: readonly { readonly text?: string | undefined }[] | undefined }
           | undefined;
+        readonly finishReason?: string | undefined;
       }[]
     | undefined;
-  readonly usage?:
+  readonly usageMetadata?:
     | {
-        readonly total_input_tokens?: number | undefined;
-        readonly total_output_tokens?: number | undefined;
-        readonly total_cached_tokens?: number | undefined;
+        readonly promptTokenCount?: number | undefined;
+        readonly candidatesTokenCount?: number | undefined;
+        readonly cachedContentTokenCount?: number | undefined;
       }
+    | undefined;
+  readonly promptFeedback?:
+    | { readonly blockReason?: string | undefined }
     | undefined;
 }
 
@@ -103,23 +106,20 @@ export class GeminiProvider implements ModelGateway {
 
     const { systemInstruction, input } = mapInput(request);
     const payload = {
-      model: request.model,
       ...(systemInstruction === undefined
         ? {}
-        : { system_instruction: systemInstruction }),
-      input,
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema: request.outputSchema.schema,
-      },
-      generation_config: {
-        max_output_tokens: request.maxOutputTokens,
+        : { systemInstruction: { parts: [{ text: systemInstruction }] } }),
+      contents: [{ role: "user", parts: [{ text: input }] }],
+      generationConfig: {
+        maxOutputTokens: request.maxOutputTokens,
         ...(request.temperature === undefined
           ? {}
           : { temperature: request.temperature }),
+        // Structured output is a hard requirement: the grounding guard parses
+        // the result, so prose would be rejected downstream anyway.
+        responseMimeType: "application/json",
+        responseSchema: request.outputSchema.schema,
       },
-      store: false,
     };
     const timeoutSignal = AbortSignal.timeout(this.#defaultTimeoutMs);
     const activeSignal = signal
@@ -128,15 +128,18 @@ export class GeminiProvider implements ModelGateway {
 
     let response: Response;
     try {
-      response = await this.#fetchFn(`${this.#baseUrl}/interactions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": this.#apiKey,
+      response = await this.#fetchFn(
+        `${this.#baseUrl}/models/${encodeURIComponent(request.model)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": this.#apiKey,
+          },
+          body: JSON.stringify(payload),
+          signal: activeSignal,
         },
-        body: JSON.stringify(payload),
-        signal: activeSignal,
-      });
+      );
     } catch (error) {
       if (isAborted(signal)) {
         throw new ModelGatewayError("cancellation", "Model generation was cancelled.");
@@ -172,15 +175,23 @@ export class GeminiProvider implements ModelGateway {
       );
     }
 
-    const interaction = (await response.json()) as GeminiInteraction;
-    const outputText = interaction.steps
-      ?.filter((step) => step.type === "model_output")
-      .flatMap((step) => step.content ?? [])
-      .find((content) => content.type === "text")?.text;
+    const completion = (await response.json()) as GeminiGenerateContentResponse;
+    const candidate = completion.candidates?.[0];
+    if (candidate === undefined) {
+      throw new ModelGatewayError(
+        "invalid-output",
+        completion.promptFeedback?.blockReason === undefined
+          ? "Gemini returned no candidate."
+          : `Gemini refused the request (${completion.promptFeedback.blockReason}).`,
+      );
+    }
+    const outputText = (candidate.content?.parts ?? [])
+      .map((part) => part.text ?? "")
+      .join("");
 
     let output: unknown;
     try {
-      output = outputText === undefined ? undefined : JSON.parse(outputText);
+      output = outputText === "" ? undefined : JSON.parse(outputText);
     } catch {
       output = undefined;
     }
@@ -197,14 +208,15 @@ export class GeminiProvider implements ModelGateway {
         provider: "gemini",
         model: request.model,
         usage: {
-          inputTokens: interaction.usage?.total_input_tokens ?? 0,
-          outputTokens: interaction.usage?.total_output_tokens ?? 0,
-          cacheReadInputTokens: interaction.usage?.total_cached_tokens ?? 0,
+          inputTokens: completion.usageMetadata?.promptTokenCount ?? 0,
+          outputTokens: completion.usageMetadata?.candidatesTokenCount ?? 0,
+          cacheReadInputTokens:
+            completion.usageMetadata?.cachedContentTokenCount ?? 0,
         },
         receipt: {
-          requestId: interaction.id ?? "unknown-id",
-          finishReason:
-            interaction.status === "completed" ? "stop" : "unknown",
+          requestId:
+            response.headers.get("x-request-id") ?? `gemini-${request.model}`,
+          finishReason: candidate.finishReason === "STOP" ? "stop" : "unknown",
         },
       },
     };

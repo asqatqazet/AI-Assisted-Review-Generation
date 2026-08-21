@@ -75,6 +75,22 @@ export function createFakeConsoleStore(
       return tenantOf(tenantId) ?? null;
     },
 
+    async listSelectableTenants() {
+      return data.tenants.map((tenant) => ({
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        locations: data.locations
+          .filter((location) => location.tenantId === tenant.id)
+          .map((location) => ({
+            id: location.id,
+            slug: location.slug,
+            name: location.name,
+            active: location.active,
+          })),
+      }));
+    },
+
     async listLocations(tenantId) {
       return data.locations.filter((location) => location.tenantId === tenantId);
     },

@@ -79,24 +79,23 @@ describe("TS-13 Model Gateway Contract Suite", () => {
           fetchFn: async () =>
             new Response(
               JSON.stringify({
-                id: "interaction-123",
-                status: "completed",
-                steps: [
+                candidates: [
                   {
-                    type: "model_output",
-                    content: [
-                      {
-                        type: "text",
-                        text: JSON.stringify({
-                          draft: "Punctual and gentle hygienist.",
-                        }),
-                      },
-                    ],
+                    content: {
+                      parts: [
+                        {
+                          text: JSON.stringify({
+                            draft: "Punctual and gentle hygienist.",
+                          }),
+                        },
+                      ],
+                    },
+                    finishReason: "STOP",
                   },
                 ],
-                usage: {
-                  total_input_tokens: 50,
-                  total_output_tokens: 20,
+                usageMetadata: {
+                  promptTokenCount: 50,
+                  candidatesTokenCount: 20,
                 },
               }),
               { status: 200, headers: { "Content-Type": "application/json" } },

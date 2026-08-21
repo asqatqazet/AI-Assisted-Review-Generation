@@ -559,3 +559,67 @@ describe("ADM-PLT-01 account lifecycle", () => {
     ).resolves.toEqual({ status: "not-found" });
   });
 });
+
+describe("ADM-AUTH-02 Platform scope selection", () => {
+  it("offers a provisioned account in the scope bar without a Tenant Grant", async () => {
+    await command(
+      {
+        command: "create-tenant",
+        name: "Chen's Noodle",
+        slug: "chens-noodle",
+        locale: "en-GB",
+        category: "Restaurant",
+        plan: "lite",
+      },
+      { tenantId: null, locationId: null },
+    );
+
+    const bootstrap = viewData<{ tenants: { slug: string }[] }>(
+      await query({ view: "bootstrap" }, { tenantId: null, locationId: null }),
+    );
+
+    // The Platform administrator holds no Tenant Grant for it, so Grants
+    // alone would have hidden the account they had just created.
+    expect(platformAccess.status === "authorized" && platformAccess.tenantGrants).toEqual(
+      [],
+    );
+    expect(bootstrap.tenants.map((tenant) => tenant.slug)).toContain(
+      "chens-noodle",
+    );
+  });
+
+  it("keeps a Tenant operator's scope bar to their own Grants", async () => {
+    const tenantOnly = createConsoleService({
+      store,
+      resolveAccess: async () => ({
+        status: "authorized",
+        operator: { id: "operator-tenant", email: "tenant@example.test" },
+        platformGrants: [],
+        tenantGrants: [
+          {
+            tenantId: "tenant-bright",
+            tenantSlug: "brightsmile",
+            tenantName: "BrightSmile",
+            roleKey: "tenant_admin",
+            capabilities: ["console:read", "tenant:configure"],
+            locations: [],
+          },
+        ],
+      }),
+      now: () => new Date("2026-08-18T12:00:00.000Z"),
+    });
+
+    const result = await tenantOnly.request({
+      identity,
+      scope: { tenantId: null, locationId: null },
+      publicOrigin: "https://review.example.test",
+      request: { mode: "query", query: { view: "bootstrap" } },
+    });
+    if (result.status !== "view" || result.view.view !== "bootstrap") {
+      throw new Error("expected bootstrap");
+    }
+    expect(result.view.data.tenants.map((tenant) => tenant.slug)).toEqual([
+      "brightsmile",
+    ]);
+  });
+});

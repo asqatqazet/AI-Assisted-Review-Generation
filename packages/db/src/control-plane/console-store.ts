@@ -200,6 +200,7 @@ type SettingValue = string | number | boolean | string[];
 
 export interface ConsoleControlPlaneOperations {
   readTenant(tenantId: string): Promise<TenantRecord | null>;
+  listSelectableTenants(): Promise<SelectableTenantRecord[]>;
   listLocations(tenantId: string): Promise<LocationRecord[]>;
   readLocation(
     tenantId: string,
@@ -389,6 +390,18 @@ export interface AddressRecord {
   readonly postalCode: string;
   readonly city: string;
   readonly country: string;
+}
+
+export interface SelectableTenantRecord {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly locations: {
+    readonly id: string;
+    readonly slug: string;
+    readonly name: string;
+    readonly active: boolean;
+  }[];
 }
 
 export interface TenantRecord {
@@ -846,6 +859,25 @@ export function createPostgresConsoleControlPlaneStore({
       const operations: ConsoleControlPlaneOperations = {
         readTenant: async (tenantId) =>
           await run(tenantId, (transaction) => loadTenant(transaction, tenantId)),
+
+        listSelectableTenants: async () =>
+          await run(null, async (transaction) => {
+            const tenants = await transaction.tenant.findMany({
+              orderBy: { name: "asc" },
+              include: { locations: { orderBy: { name: "asc" } } },
+            });
+            return tenants.map((tenant) => ({
+              id: tenant.id,
+              slug: tenant.slug,
+              name: tenant.name,
+              locations: tenant.locations.map((location) => ({
+                id: location.id,
+                slug: location.slug,
+                name: location.name,
+                active: location.status === "ACTIVE",
+              })),
+            }));
+          }),
 
         listLocations: async (tenantId) =>
           await run(tenantId, async (transaction) =>
@@ -1520,7 +1552,7 @@ export function createPostgresConsoleControlPlaneStore({
             });
             // A new Tenant starts from the Platform policy template rather
             // than from a copy of some other Tenant's configuration.
-            await transaction.tenant.create({
+            const tenant = await transaction.tenant.create({
               data: {
                 slug: input.slug,
                 name: input.name,
@@ -1532,6 +1564,69 @@ export function createPostgresConsoleControlPlaneStore({
                   : {}) as Prisma.InputJsonValue,
               },
             });
+
+            /**
+             * An account with no Actions, no Review Formats and no taxonomy is
+             * provisioned but unusable: nothing can be configured and no
+             * reviewer path exists. It therefore starts from the Platform
+             * catalogue, which is the same data an operator would otherwise
+             * have to reproduce by hand.
+             */
+            const [actions, formats] = await Promise.all([
+              transaction.actionDefinition.findMany({
+                where: { status: "ACTIVE" },
+              }),
+              transaction.reviewFormatVersion.findMany({
+                where: {
+                  status: "ACTIVE",
+                  locale: { in: [input.locale, "any"] },
+                },
+                orderBy: [{ formatKey: "asc" }, { version: "desc" }],
+              }),
+            ]);
+
+            const entryActions = new Set(["GENERATE", "PARAPHRASE"]);
+            if (actions.length > 0) {
+              await transaction.tenantActionEnablement.createMany({
+                data: actions.map((action, index) => ({
+                  tenantId: tenant.id,
+                  action: action.action,
+                  enabled: entryActions.has(action.action),
+                  sortOrder: index,
+                })),
+              });
+            }
+
+            // Only the newest version of each Review Format, and only ones
+            // this locale can serve.
+            const newestByKey = new Map<string, (typeof formats)[number]>();
+            for (const format of formats) {
+              if (!newestByKey.has(format.formatKey)) {
+                newestByKey.set(format.formatKey, format);
+              }
+            }
+            const enabled = [...newestByKey.values()];
+            if (enabled.length > 0) {
+              await transaction.reviewFormatEnablement.createMany({
+                data: enabled.map((format, index) => ({
+                  tenantId: tenant.id,
+                  reviewFormatVersionId: format.id,
+                  enabled: true,
+                  sortOrder: index,
+                  allowedActions: format.supportedActions,
+                })),
+              });
+            }
+
+            await transaction.factOptionCategory.create({
+              data: {
+                tenantId: tenant.id,
+                key: "service",
+                label: { [input.locale]: "Service" },
+                sortOrder: 0,
+              },
+            });
+
             return { status: "created" as const };
           }),
 
@@ -1895,6 +1990,8 @@ export function createPostgresConsoleControlPlaneStore({
           await orEmpty(() => operations.listExperiments(tenantId), []),
         listPlatformTenants: async () =>
           await orEmpty(() => operations.listPlatformTenants(), []),
+        listSelectableTenants: async () =>
+          await orEmpty(() => operations.listSelectableTenants(), []),
         listPlatformStyles: async () =>
           await orEmpty(() => operations.listPlatformStyles(), []),
       };

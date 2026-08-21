@@ -131,23 +131,37 @@ export function createConsoleService({
   };
 }
 
-function bootstrap(access: AuthorizedAccess): ConsoleBootstrapDto {
+async function bootstrap(
+  access: AuthorizedAccess,
+  store: ConsoleControlPlaneStore,
+): Promise<ConsoleBootstrapDto> {
   const capabilities = deriveConsoleCapabilities(access);
   const firstTenant = access.tenantGrants[0];
+  const granted = access.tenantGrants.map((grant) => ({
+    id: grant.tenantId,
+    slug: grant.tenantSlug,
+    name: grant.tenantName,
+    locations: grant.locations.map((location) => ({
+      id: location.locationId,
+      slug: location.locationSlug,
+      name: location.locationName,
+      active: location.status === "active",
+    })),
+  }));
+  // A Platform administrator is authorized for every Tenant, so the scope bar
+  // offers every Tenant — including one they just provisioned.
+  const tenants = capabilities.canAccessPlatform
+    ? (await store.listSelectableTenants()).map((tenant) => ({
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        locations: tenant.locations.map((location) => ({ ...location })),
+      }))
+    : granted;
   return {
     user: { id: access.operator.id, displayName: access.operator.email },
     role: deriveConsoleRole(access),
-    tenants: access.tenantGrants.map((grant) => ({
-      id: grant.tenantId,
-      slug: grant.tenantSlug,
-      name: grant.tenantName,
-      locations: grant.locations.map((location) => ({
-        id: location.locationId,
-        slug: location.locationSlug,
-        name: location.locationName,
-        active: location.status === "active",
-      })),
-    })),
+    tenants,
     activeContext: {
       // A Platform administrator lands on Platform scope; everyone else on
       // the single Tenant their Grants already imply.
@@ -188,7 +202,10 @@ async function runQuery({
 
   switch (query.view) {
     case "bootstrap":
-      return view({ view: "bootstrap", data: bootstrap(access) });
+      return view({
+        view: "bootstrap",
+        data: await bootstrap(access, store),
+      });
 
     case "overview": {
       // Reached only by an operator already authorized for this scope, so the

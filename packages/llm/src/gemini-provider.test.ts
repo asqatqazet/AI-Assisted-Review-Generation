@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { GeminiProvider } from "./gemini-provider.js";
 
 describe("Gemini ModelGateway adapter", () => {
-  it("uses the current Interactions structured-output contract", async () => {
+  it("calls generateContent with Gemini's own request shape", async () => {
     let receivedUrl: string | URL | Request | undefined;
     let receivedInit: RequestInit | undefined;
     const provider = new GeminiProvider({
@@ -13,35 +13,40 @@ describe("Gemini ModelGateway adapter", () => {
         receivedInit = init;
         return new Response(
           JSON.stringify({
-            id: "interaction-123",
-            status: "completed",
-            steps: [
+            candidates: [
               {
-                type: "model_output",
-                content: [
-                  {
-                    type: "text",
-                    text: JSON.stringify({
-                      draft: "Attentive service.",
-                      claims: [
-                        {
-                          id: "c1",
-                          text: "Attentive service.",
-                          assertionIds: ["a1"],
-                        },
-                      ],
-                    }),
-                  },
-                ],
+                content: {
+                  parts: [
+                    {
+                      text: JSON.stringify({
+                        draft: "Attentive service.",
+                        claims: [
+                          {
+                            id: "c1",
+                            text: "Attentive service.",
+                            assertionIds: ["a1"],
+                          },
+                        ],
+                      }),
+                    },
+                  ],
+                },
+                finishReason: "STOP",
               },
             ],
-            usage: {
-              total_input_tokens: 41,
-              total_output_tokens: 17,
-              total_cached_tokens: 3,
+            usageMetadata: {
+              promptTokenCount: 41,
+              candidatesTokenCount: 17,
+              cachedContentTokenCount: 3,
             },
           }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "x-request-id": "gemini-request-123",
+            },
+          },
         );
       },
     });
@@ -80,26 +85,30 @@ describe("Gemini ModelGateway adapter", () => {
           cacheReadInputTokens: 3,
         },
         receipt: {
-          requestId: "interaction-123",
+          requestId: "gemini-request-123",
           finishReason: "stop",
         },
       },
     });
 
+    // The model is part of the path; there is no /interactions resource.
     expect(receivedUrl).toBe(
-      "https://generativelanguage.googleapis.com/v1beta/interactions",
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
     );
     expect(new Headers(receivedInit?.headers).get("x-goog-api-key")).toBe(
       "gemini-test-key",
     );
     expect(JSON.parse(String(receivedInit?.body))).toEqual({
-      model: "gemini-3.5-flash-lite",
-      system_instruction: "Use only confirmed assertions.",
-      input: "Assertion a1: Attentive service.",
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema: {
+      systemInstruction: {
+        parts: [{ text: "Use only confirmed assertions." }],
+      },
+      contents: [
+        { role: "user", parts: [{ text: "Assertion a1: Attentive service." }] },
+      ],
+      generationConfig: {
+        maxOutputTokens: 350,
+        responseMimeType: "application/json",
+        responseSchema: {
           type: "object",
           properties: {
             draft: { type: "string" },
@@ -109,8 +118,6 @@ describe("Gemini ModelGateway adapter", () => {
           additionalProperties: false,
         },
       },
-      generation_config: { max_output_tokens: 350 },
-      store: false,
     });
   });
 });
