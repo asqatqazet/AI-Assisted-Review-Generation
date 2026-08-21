@@ -1081,6 +1081,31 @@ async function runCommand({
         : ACCEPTED;
     }
 
+    case "set-tenant-status": {
+      const saved = await store.setTenantStatus({
+        tenantId: command.tenantId,
+        status: command.status,
+      });
+      return saved.status === "not-found" ? NOT_FOUND : ACCEPTED;
+    }
+
+    case "create-keyword-category": {
+      if (scope.tenantId === null) {
+        return NOT_FOUND;
+      }
+      const created = await store.createKeywordCategory({
+        tenantId: scope.tenantId,
+        key: command.key,
+        label: command.label,
+      });
+      return created.status === "key-taken"
+        ? rejected(
+            "SLUG_TAKEN",
+            "This account already has a category with that key.",
+          )
+        : ACCEPTED;
+    }
+
     case "set-provider-routing": {
       const saved = await store.setProviderRouting({
         providerKey: command.providerKey,

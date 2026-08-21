@@ -201,6 +201,11 @@ export interface ConsoleControlPlaneStore {
     tenantId: string,
     locationId: string | null,
   ): Promise<readonly ConsoleKeywordDto[]>;
+  createKeywordCategory(input: {
+    readonly tenantId: string;
+    readonly key: string;
+    readonly label: string;
+  }): Promise<{ readonly status: "created" } | { readonly status: "key-taken" }>;
   createKeyword(input: {
     readonly tenantId: string;
     readonly locationId: string | null;
@@ -292,6 +297,10 @@ export interface ConsoleControlPlaneStore {
     readonly category: string;
     readonly plan: string;
   }): Promise<{ readonly status: "created" } | { readonly status: "slug-taken" }>;
+  setTenantStatus(input: {
+    readonly tenantId: string;
+    readonly status: "active" | "suspended" | "deactivated";
+  }): Promise<{ readonly status: "saved" } | { readonly status: "not-found" }>;
   readPlatformProviders(): Promise<Omit<PlatformProvidersDto, "scope">>;
   setProviderRouting(input: {
     readonly providerKey: string;

@@ -929,3 +929,42 @@ describe("execution-plane views without an execution-plane reader", () => {
     }
   });
 });
+
+describe("ADM-CFG-02 category management", () => {
+  it("adds a category so the taxonomy grows without a release", async () => {
+    await expect(
+      command(
+        { command: "create-keyword-category", key: "ambience", label: "Ambience" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const keywords = viewData<{ categories: { key: string }[] }>(
+      await query({ view: "keywords" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    );
+    expect(keywords.categories.map((category) => category.key)).toContain(
+      "ambience",
+    );
+  });
+
+  it("refuses a key the account already uses", async () => {
+    expect(
+      await command(
+        { command: "create-keyword-category", key: "service", label: "Service" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    ).toMatchObject({ status: "rejected", code: "SLUG_TAKEN" });
+  });
+
+  it("refuses to touch another Tenant's taxonomy", async () => {
+    expect(
+      await command(
+        { command: "create-keyword-category", key: "kueche", label: "Küche" },
+        { tenantId: "tenant-hafen", locationId: null },
+      ),
+    ).toEqual({ status: "not-found" });
+  });
+});

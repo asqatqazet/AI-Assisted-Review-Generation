@@ -27,6 +27,9 @@ export function PlatformTenantsView({
   });
   const command = useConsoleCommand({ client, scope: platformScope });
   const [filter, setFilter] = useState("");
+  // Deactivation is irreversible from here, so it is confirmed rather than
+  // performed on a single click in a table row.
+  const [closing, setClosing] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     name: "",
     slug: "",
@@ -93,8 +96,89 @@ export function PlatformTenantsView({
                 render: (row) => money(row.monthlyBudget),
               },
               { key: "status", header: "Status", render: (row) => row.status },
+              {
+                key: "lifecycle",
+                header: "",
+                render: (row) => (
+                  <span className={styles.buttonRow}>
+                    {row.status === "active" ? (
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={command.isPending}
+                        onClick={() =>
+                          command.mutate({
+                            command: "set-tenant-status",
+                            tenantId: row.id,
+                            status: "suspended",
+                          })
+                        }
+                      >
+                        Suspend
+                      </button>
+                    ) : row.suspendable ? (
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={command.isPending}
+                        onClick={() =>
+                          command.mutate({
+                            command: "set-tenant-status",
+                            tenantId: row.id,
+                            status: "active",
+                          })
+                        }
+                      >
+                        Reactivate
+                      </button>
+                    ) : null}
+                    {row.suspendable ? (
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={command.isPending}
+                        onClick={() => setClosing(row.id)}
+                      >
+                        Deactivate
+                      </button>
+                    ) : null}
+                  </span>
+                ),
+              },
             ]}
           />
+
+          {closing === null ? null : (
+            <p className={styles.alertCritical} role="alert">
+              Deactivating closes the account permanently: reviewer entry stops
+              at every venue and it cannot be reactivated here. Its Generations
+              and Drafts are retained so past reviews stay reconstructable.
+              <span className={styles.buttonRow}>
+                <button
+                  type="button"
+                  className={styles.buttonPrimary}
+                  disabled={command.isPending}
+                  onClick={() => {
+                    command.mutate({
+                      command: "set-tenant-status",
+                      tenantId: closing,
+                      status: "deactivated",
+                    });
+                    setClosing(null);
+                  }}
+                >
+                  Deactivate this account
+                </button>
+                <button
+                  type="button"
+                  className={styles.button}
+                  onClick={() => setClosing(null)}
+                >
+                  Keep it open
+                </button>
+              </span>
+            </p>
+          )}
 
           <form
             className={styles.form}

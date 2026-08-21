@@ -133,6 +133,7 @@ declare module "*.module.css" {
     readonly settingControl: string;
     readonly settingTextarea: string;
     readonly settingToggle: string;
+    readonly settingHelp: string;
   };
   export default classes;
 }

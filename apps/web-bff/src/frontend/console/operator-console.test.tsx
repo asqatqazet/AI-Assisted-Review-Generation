@@ -285,6 +285,8 @@ describe("ADM-LOC-03 override and reset", () => {
       {
         key: "requireDisclosure",
         label: "Review disclosure",
+        description: "",
+        group: "Settings",
         kind: "boolean",
         ownerScope: "tenant",
         effectiveValue: true,
@@ -296,6 +298,8 @@ describe("ADM-LOC-03 override and reset", () => {
       {
         key: "locale",
         label: "Locale",
+        description: "",
+        group: "Settings",
         kind: "locale",
         ownerScope: "tenant",
         effectiveValue: "de-DE",
@@ -593,6 +597,8 @@ describe("Console forms offer the choices the data allows", () => {
             {
               key: "locale",
               label: "Locale",
+              description: "",
+              group: "Settings",
               kind: "locale",
               ownerScope: "tenant",
               value: "de-DE",
@@ -602,6 +608,8 @@ describe("Console forms offer the choices the data allows", () => {
             {
               key: "entryMode",
               label: "Entry mode",
+              description: "",
+              group: "Settings",
               kind: "entry-mode",
               ownerScope: "tenant",
               value: "open-qr",
@@ -611,6 +619,8 @@ describe("Console forms offer the choices the data allows", () => {
             {
               key: "toneGuidelines",
               label: "Tone guidelines",
+              description: "",
+              group: "Settings",
               kind: "text",
               ownerScope: "tenant",
               value: "Plain and factual.",
@@ -651,6 +661,8 @@ describe("Console forms offer the choices the data allows", () => {
             {
               key: "locale",
               label: "Locale",
+              description: "",
+              group: "Settings",
               kind: "locale",
               ownerScope: "tenant",
               value: "en-GB",

@@ -43,6 +43,9 @@ export const ConsoleSettingKindDtoSchema = z.enum([
   "locale",
   "entry-mode",
   "string-list",
+  /** Stored in micros; shown and edited as a currency amount. */
+  "money-micros",
+  "percent",
 ]);
 
 /**
@@ -53,6 +56,8 @@ export const ConsoleSettingKindDtoSchema = z.enum([
 export const InheritedSettingDtoSchema = z.strictObject({
   key: IdentifierDtoSchema,
   label: z.string().min(1).max(120),
+  description: z.string().max(400),
+  group: z.string().min(1).max(80),
   kind: ConsoleSettingKindDtoSchema,
   ownerScope: z.literal("tenant"),
   effectiveValue: SettingValueDtoSchema,
@@ -71,6 +76,10 @@ export const ConsoleLocationSettingsDtoSchema = z.strictObject({
 export const TenantSettingDtoSchema = z.strictObject({
   key: IdentifierDtoSchema,
   label: z.string().min(1).max(120),
+  /** What the setting changes, in the operator's terms. */
+  description: z.string().max(400),
+  /** Section heading, so a long form reads as related groups. */
+  group: z.string().min(1).max(80),
   kind: ConsoleSettingKindDtoSchema,
   ownerScope: z.enum(["platform", "tenant"]),
   value: SettingValueDtoSchema,

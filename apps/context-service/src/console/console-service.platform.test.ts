@@ -491,3 +491,71 @@ describe("ADM-AI-05 bench isolation", () => {
     ).toEqual({ status: "not-found" });
   });
 });
+
+describe("ADM-PLT-01 account lifecycle", () => {
+  it("suspends and reactivates an account", async () => {
+    await expect(
+      command(
+        {
+          command: "set-tenant-status",
+          tenantId: "tenant-bright",
+          status: "suspended",
+        },
+        { tenantId: null, locationId: null },
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
+    expect(
+      data.tenants.find((tenant) => tenant.id === "tenant-bright")?.status,
+    ).toBe("suspended");
+
+    await command(
+      {
+        command: "set-tenant-status",
+        tenantId: "tenant-bright",
+        status: "active",
+      },
+      { tenantId: null, locationId: null },
+    );
+    expect(
+      data.tenants.find((tenant) => tenant.id === "tenant-bright")?.status,
+    ).toBe("active");
+  });
+
+  it("reports a deactivated account as beyond reactivation here", async () => {
+    await command(
+      {
+        command: "set-tenant-status",
+        tenantId: "tenant-bright",
+        status: "deactivated",
+      },
+      { tenantId: null, locationId: null },
+    );
+
+    const tenants = viewData<{
+      tenants: { status: string; suspendable: boolean }[];
+    }>(
+      await query({ view: "platform-tenants" }, {
+        tenantId: null,
+        locationId: null,
+      }),
+    );
+
+    expect(tenants.tenants[0]).toMatchObject({
+      status: "deactivated",
+      suspendable: false,
+    });
+  });
+
+  it("answers not-found for an account that does not exist", async () => {
+    await expect(
+      command(
+        {
+          command: "set-tenant-status",
+          tenantId: "tenant-imaginary",
+          status: "suspended",
+        },
+        { tenantId: null, locationId: null },
+      ),
+    ).resolves.toEqual({ status: "not-found" });
+  });
+});

@@ -28,7 +28,7 @@ export interface FakeConsoleData {
     readonly plan: string;
     readonly monthlyBudgetMicros: number;
     readonly monthToDateSpendMicros: number;
-    readonly status: "active" | "suspended";
+    readonly status: "active" | "suspended" | "deactivated";
   })[];
   locations: ConsoleLocationRecord[];
   contextVersions: (ConsoleContextVersionRecord & { readonly tenantId: string })[];
@@ -500,7 +500,49 @@ export function createFakeConsoleStore(
           currency: "EUR",
         },
         status: tenant.status,
+        suspendable: tenant.status !== "deactivated",
       }));
+    },
+
+    async setTenantStatus(input) {
+      const index = data.tenants.findIndex(
+        (tenant) => tenant.id === input.tenantId,
+      );
+      const existing = data.tenants[index];
+      if (existing === undefined) {
+        return { status: "not-found" };
+      }
+      data.tenants[index] = { ...existing, status: input.status };
+      return { status: "saved" };
+    },
+
+    async createKeywordCategory(input) {
+      const index = data.tenants.findIndex(
+        (tenant) => tenant.id === input.tenantId,
+      );
+      const existing = data.tenants[index];
+      if (existing === undefined) {
+        return { status: "key-taken" };
+      }
+      if (
+        existing.keywordCategories.some(
+          (category) => category.key === input.key,
+        )
+      ) {
+        return { status: "key-taken" };
+      }
+      data.tenants[index] = {
+        ...existing,
+        keywordCategories: [
+          ...existing.keywordCategories,
+          {
+            key: input.key,
+            label: input.label,
+            sortOrder: existing.keywordCategories.length,
+          },
+        ],
+      };
+      return { status: "created" };
     },
 
     async createTenant(input) {

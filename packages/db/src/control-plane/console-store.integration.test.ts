@@ -319,4 +319,75 @@ describeDatabase("EP-04 Console control-plane store", () => {
       await store.disconnect();
     }
   });
+
+  it("provisions and suspends an account from Platform scope", async () => {
+    const fixture = await seed();
+    await runSql(`
+      INSERT INTO platform_access_grants (operator_id, role_key)
+      VALUES ('${fixture.operatorId}', 'platform_admin')
+      ON CONFLICT (operator_id, role_key) DO NOTHING;
+      INSERT INTO operator_role_definitions (key, capabilities)
+      VALUES ('platform_admin', ARRAY['console:read', 'platform:admin'])
+      ON CONFLICT (key) DO UPDATE SET capabilities = EXCLUDED.capabilities;
+    `);
+    const store = createPostgresConsoleControlPlaneStore({
+      databaseUrl: databaseUrl!,
+    });
+    try {
+      const operations = store.forOperator(fixture.operatorId);
+      const slug = `provisioned-${fixture.tenantId}`;
+
+      // Platform scope sets no app.tenant_id, so this INSERT is exactly the
+      // one Row-Level Security used to reject.
+      await expect(
+        operations.createTenant({
+          name: "Provisioned Account",
+          slug,
+          locale: "en-GB",
+          category: "Dental",
+          plan: "growth",
+        }),
+      ).resolves.toEqual({ status: "created" });
+
+      const created = (await operations.listPlatformTenants()).find(
+        (tenant) => tenant.slug === slug,
+      );
+      expect(created).toMatchObject({ status: "active", suspendable: true });
+
+      await expect(
+        operations.setTenantStatus({
+          tenantId: created!.id,
+          status: "suspended",
+        }),
+      ).resolves.toEqual({ status: "saved" });
+
+      expect(
+        (await operations.listPlatformTenants()).find(
+          (tenant) => tenant.slug === slug,
+        ),
+      ).toMatchObject({ status: "suspended" });
+    } finally {
+      await store.disconnect();
+    }
+  });
+
+  it("refuses account provisioning to an operator without a Platform Grant", async () => {
+    const fixture = await seed();
+    const store = createPostgresConsoleControlPlaneStore({
+      databaseUrl: databaseUrl!,
+    });
+    try {
+      await expect(
+        store.forOperator(fixture.operatorId).createTenant({
+          name: "Not Allowed",
+          slug: `not-allowed-${fixture.tenantId}`,
+          locale: "en-GB",
+          category: "",
+          plan: "lite",
+        }),
+      ).rejects.toBeInstanceOf(ConsoleScopeDeniedError);
+    } finally {
+      await store.disconnect();
+    }
+  });
 });

@@ -11,11 +11,17 @@ export type ConsoleSettingKind =
   | "text"
   | "locale"
   | "entry-mode"
-  | "string-list";
+  | "string-list"
+  | "money-micros"
+  | "percent";
 
 export interface ConsoleSettingDefinition {
   readonly key: string;
   readonly label: string;
+  /** What the setting changes, in the operator's terms. */
+  readonly description: string;
+  /** Section heading, so a long form reads as related groups. */
+  readonly group: string;
   readonly kind: ConsoleSettingKind;
   /** Only a Location-overridable field may carry a Location override row. */
   readonly overridable: boolean;
@@ -33,53 +39,85 @@ export interface ResolvedInheritedSetting extends ConsoleSettingDefinition {
  * single venue may override. Ordering is the rendered order.
  */
 export const CONSOLE_SETTING_DEFINITIONS: readonly ConsoleSettingDefinition[] = [
-  { key: "locale", label: "Locale", kind: "locale", overridable: false },
+  {
+    key: "locale",
+    label: "Locale",
+    description:
+      "The language every reviewer sees, and the only Review Formats this account may enable.",
+    group: "Identity and language",
+    kind: "locale",
+    overridable: false,
+  },
   {
     key: "toneGuidelines",
     label: "Tone guidelines",
+    description:
+      "Guidance given to the model about register. It cannot introduce facts; only the reviewer's Assertions can.",
+    group: "Identity and language",
     kind: "text",
     overridable: false,
   },
   {
     key: "entryMode",
     label: "Entry mode",
+    description:
+      "How a reviewer gets in. Invite requires a token; open-qr admits anyone who scans and proves no visit.",
+    group: "Reviewer entry",
     kind: "entry-mode",
-    overridable: true,
-  },
-  {
-    key: "requireDisclosure",
-    label: "Review disclosure",
-    kind: "boolean",
     overridable: true,
   },
   {
     key: "requireVerifiedExperience",
     label: "Require verified experience",
+    description:
+      "Admit only reviewers whose visit could be verified. Turning this off widens who may write a review.",
+    group: "Reviewer entry",
+    kind: "boolean",
+    overridable: true,
+  },
+  {
+    key: "requireDisclosure",
+    label: "Review disclosure",
+    description:
+      "Tell the reviewer their draft was assisted, before they copy it.",
+    group: "Drafting policy",
     kind: "boolean",
     overridable: true,
   },
   {
     key: "maxReviewFormatsPerRequest",
     label: "Review Formats per request",
+    description:
+      "How many drafts one request may produce. Each one is a paid call.",
+    group: "Drafting policy",
     kind: "number",
     overridable: true,
   },
   {
     key: "bannedTerms",
     label: "Banned terms",
+    description:
+      "Words a draft may never contain. A draft containing one is rejected rather than edited.",
+    group: "Drafting policy",
     kind: "string-list",
     overridable: true,
   },
   {
     key: "monthlyBudgetMicros",
     label: "Monthly budget",
-    kind: "number",
+    description:
+      "Assisted drafting stops for the rest of the month once this is spent. Zero means no assisted drafting.",
+    group: "Budget",
+    kind: "money-micros",
     overridable: false,
   },
   {
     key: "alertThresholdPct",
     label: "Budget alert threshold",
-    kind: "number",
+    description:
+      "The share of the budget that triggers the warning banner on the overview.",
+    group: "Budget",
+    kind: "percent",
     overridable: false,
   },
 ];

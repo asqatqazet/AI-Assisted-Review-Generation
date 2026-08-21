@@ -66,6 +66,17 @@ function AddressFields({
   );
 }
 
+/** Keeps a long form readable without inventing an order of its own. */
+function groupSettings<T extends { readonly group: string }>(
+  settings: readonly T[],
+): [string, T[]][] {
+  const groups = new Map<string, T[]>();
+  for (const setting of settings) {
+    groups.set(setting.group, [...(groups.get(setting.group) ?? []), setting]);
+  }
+  return [...groups.entries()];
+}
+
 const LOCALE_OPTIONS = ["en-GB", "de-DE"] as const;
 const ENTRY_MODE_OPTIONS = ["invite", "open-qr", "both"] as const;
 
@@ -115,6 +126,43 @@ function SettingControl({
           onChange={(event) => onChange(event.target.checked)}
         />
         <span className={styles.settingSource}>{value === true ? "ON" : "OFF"}</span>
+      </span>
+    );
+  }
+  if (kind === "money-micros") {
+    // Stored in micros; an operator thinks in whole currency units.
+    return (
+      <span className={styles.settingToggle}>
+        <input
+          id={id}
+          className={styles.settingControl}
+          type="number"
+          min={0}
+          step="0.01"
+          value={Number(value) / 1_000_000}
+          disabled={!editable}
+          onChange={(event) =>
+            onChange(Math.round(Number(event.target.value) * 1_000_000))
+          }
+        />
+        <span className={styles.settingSource}>per month</span>
+      </span>
+    );
+  }
+  if (kind === "percent") {
+    return (
+      <span className={styles.settingToggle}>
+        <input
+          id={id}
+          className={styles.settingControl}
+          type="number"
+          min={1}
+          max={100}
+          value={Number(value)}
+          disabled={!editable}
+          onChange={(event) => onChange(Number(event.target.value))}
+        />
+        <span className={styles.settingSource}>% of budget</span>
       </span>
     );
   }
@@ -467,6 +515,7 @@ export function TenantSettingsView({
   });
   const command = useConsoleCommand({ client, scope: scopeController.scope });
   const [edits, setEdits] = useState<Record<string, ConsoleSettingValueDto>>({});
+  const [category, setCategory] = useState({ key: "", label: "" });
 
   return (
     <>
@@ -485,28 +534,39 @@ export function TenantSettingsView({
             setEdits({});
           }}
         >
-          {settings.data.settings.map((setting) => {
-            const value = edits[setting.key] ?? setting.value;
-            return (
-              <div className={styles.settingRow} key={setting.key}>
-                <div>
-                  <label htmlFor={`setting-${setting.key}`}>{setting.label}</label>
-                  <p className={styles.settingSource}>
-                    <OwnerBadge scope={setting.ownerScope} />
-                  </p>
-                </div>
-                <SettingControl
-                  id={`setting-${setting.key}`}
-                  kind={setting.kind}
-                  value={value}
-                  editable={setting.editable}
-                  onChange={(next) =>
-                    setEdits((current) => ({ ...current, [setting.key]: next }))
-                  }
-                />
-              </div>
-            );
-          })}
+          {groupSettings(settings.data.settings).map(([group, rows]) => (
+            <section key={group}>
+              <h2 className={styles.sectionLabel}>{group}</h2>
+              {rows.map((setting) => {
+                const value = edits[setting.key] ?? setting.value;
+                return (
+                  <div className={styles.settingRow} key={setting.key}>
+                    <div>
+                      <label htmlFor={`setting-${setting.key}`}>
+                        {setting.label}
+                      </label>
+                      <p className={styles.settingHelp}>{setting.description}</p>
+                      <p className={styles.settingSource}>
+                        <OwnerBadge scope={setting.ownerScope} />
+                      </p>
+                    </div>
+                    <SettingControl
+                      id={`setting-${setting.key}`}
+                      kind={setting.kind}
+                      value={value}
+                      editable={setting.editable}
+                      onChange={(next) =>
+                        setEdits((current) => ({
+                          ...current,
+                          [setting.key]: next,
+                        }))
+                      }
+                    />
+                  </div>
+                );
+              })}
+            </section>
+          ))}
 
           {settings.data.editable ? (
             <p className={styles.buttonRow}>
@@ -532,10 +592,14 @@ export function TenantSettingsView({
           ) : null}
           <RejectionNotice error={command.error} />
 
-          <h2 className={styles.sectionLabel}>Keyword categories</h2>
+          <h2 className={styles.sectionLabel}>Fact option categories</h2>
+          <p className={styles.emptyCopy}>
+            How fact options are grouped for a reviewer. Adding one is a data
+            change; it needs no release.
+          </p>
           <DataTable
-            caption="Keyword taxonomy owned by this account"
-            empty="This account has no keyword category yet."
+            caption="Fact option taxonomy owned by this account"
+            empty="This account has no category yet, so fact options cannot be grouped."
             rows={settings.data.keywordCategories}
             rowKey={(row) => row.key}
             columns={[
@@ -548,6 +612,55 @@ export function TenantSettingsView({
               { key: "order", header: "Order", render: (row) => row.sortOrder },
             ]}
           />
+
+          {settings.data.editable ? (
+            <div className={styles.formRow}>
+              <label className={styles.field}>
+                New category label
+                <input
+                  value={category.label}
+                  onChange={(event) =>
+                    setCategory((current) => ({
+                      ...current,
+                      label: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className={styles.field}>
+                Key
+                <input
+                  value={category.key}
+                  pattern="[a-z0-9-]+"
+                  onChange={(event) =>
+                    setCategory((current) => ({
+                      ...current,
+                      key: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <button
+                type="button"
+                className={styles.button}
+                disabled={
+                  command.isPending ||
+                  category.key.trim() === "" ||
+                  category.label.trim() === ""
+                }
+                onClick={() => {
+                  command.mutate({
+                    command: "create-keyword-category",
+                    key: category.key,
+                    label: category.label,
+                  });
+                  setCategory({ key: "", label: "" });
+                }}
+              >
+                Add category
+              </button>
+            </div>
+          ) : null}
 
         </form>
       )}

@@ -332,6 +332,15 @@ export interface ConsoleControlPlaneOperations {
     readonly status: "running" | "stopped";
   }): Promise<void>;
   listPlatformTenants(): Promise<PlatformTenantRecord[]>;
+  setTenantStatus(input: {
+    readonly tenantId: string;
+    readonly status: "active" | "suspended" | "deactivated";
+  }): Promise<{ status: "saved" } | { status: "not-found" }>;
+  createKeywordCategory(input: {
+    readonly tenantId: string;
+    readonly key: string;
+    readonly label: string;
+  }): Promise<{ status: "created" } | { status: "key-taken" }>;
   createTenant(input: {
     readonly name: string;
     readonly slug: string;
@@ -514,7 +523,8 @@ export interface PlatformTenantRecord {
   readonly plan: string;
   readonly monthToDateSpend: { readonly amountMicros: number; readonly currency: string };
   readonly monthlyBudget: { readonly amountMicros: number; readonly currency: string };
-  readonly status: "active" | "suspended";
+  readonly status: "active" | "suspended" | "deactivated";
+  readonly suspendable: boolean;
 }
 
 export interface PlatformProvidersRecord {
@@ -1488,7 +1498,11 @@ export function createPostgresConsoleControlPlaneStore({
               status:
                 tenant.status === "ACTIVE"
                   ? ("active" as const)
-                  : ("suspended" as const),
+                  : tenant.status === "SUSPENDED"
+                    ? ("suspended" as const)
+                    : ("deactivated" as const),
+              // A deactivated account is not brought back from this screen.
+              suspendable: tenant.status !== "DEACTIVATED",
             }));
           }),
 
@@ -1516,6 +1530,52 @@ export function createPostgresConsoleControlPlaneStore({
                 policy: (isRecord(platform?.defaultPolicy)
                   ? platform.defaultPolicy
                   : {}) as Prisma.InputJsonValue,
+              },
+            });
+            return { status: "created" as const };
+          }),
+
+        setTenantStatus: async (input) =>
+          await run(null, async (transaction) => {
+            const updated = await transaction.tenant.updateMany({
+              where: { id: input.tenantId },
+              data: {
+                status:
+                  input.status === "active"
+                    ? "ACTIVE"
+                    : input.status === "suspended"
+                      ? "SUSPENDED"
+                      : "DEACTIVATED",
+              },
+            });
+            return updated.count === 0
+              ? { status: "not-found" as const }
+              : { status: "saved" as const };
+          }),
+
+        createKeywordCategory: async (input) =>
+          await run(input.tenantId, async (transaction) => {
+            const clash = await transaction.factOptionCategory.findFirst({
+              where: { tenantId: input.tenantId, key: input.key },
+              select: { id: true },
+            });
+            if (clash !== null) {
+              return { status: "key-taken" as const };
+            }
+            const tenant = await transaction.tenant.findUnique({
+              where: { id: input.tenantId },
+              select: { locale: true },
+            });
+            const highest = await transaction.factOptionCategory.aggregate({
+              where: { tenantId: input.tenantId },
+              _max: { sortOrder: true },
+            });
+            await transaction.factOptionCategory.create({
+              data: {
+                tenantId: input.tenantId,
+                key: input.key,
+                label: { [asLocale(tenant?.locale ?? "en-GB")]: input.label },
+                sortOrder: (highest._max.sortOrder ?? 0) + 1,
               },
             });
             return { status: "created" as const };

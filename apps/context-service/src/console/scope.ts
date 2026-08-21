@@ -91,6 +91,11 @@ export const COMMAND_POLICIES: Readonly<
   "stop-experiment": { shape: "tenant", capability: "ai:operate" },
   "run-bench": { shape: "tenant", capability: "ai:operate" },
   "create-tenant": { shape: "platform", capability: "platform:admin" },
+  "set-tenant-status": { shape: "platform", capability: "platform:admin" },
+  "create-keyword-category": {
+    shape: "tenant",
+    capability: "tenant:configure",
+  },
   "set-provider-routing": { shape: "platform", capability: "provider:manage" },
   "publish-price-rate": { shape: "platform", capability: "provider:manage" },
   "import-platform-style": { shape: "platform", capability: "platform:admin" },

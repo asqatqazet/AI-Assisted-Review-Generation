@@ -19,7 +19,9 @@ export const PlatformTenantRowDtoSchema = z.strictObject({
   plan: z.string().max(80),
   monthToDateSpend: MoneyDtoSchema,
   monthlyBudget: MoneyDtoSchema,
-  status: z.enum(["active", "suspended"]),
+  status: z.enum(["active", "suspended", "deactivated"]),
+  /** Suspending stops reviewer entry; the account's history is retained. */
+  suspendable: z.boolean(),
 });
 
 export const PlatformTenantsDtoSchema = z.strictObject({

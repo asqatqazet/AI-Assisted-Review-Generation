@@ -84,6 +84,8 @@ export function projectTenantSettings({
         {
           key: definition.key,
           label: definition.label,
+          description: definition.description,
+          group: definition.group,
           kind: definition.kind,
           ownerScope: platformOwned ? ("platform" as const) : ("tenant" as const),
           value,
@@ -122,6 +124,8 @@ export function projectLocationSettings({
     }).map((setting) => ({
       key: setting.key,
       label: setting.label,
+      description: setting.description,
+      group: setting.group,
       kind: setting.kind,
       ownerScope: "tenant" as const,
       effectiveValue: setting.effectiveValue as never,

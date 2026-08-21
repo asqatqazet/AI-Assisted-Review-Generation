@@ -213,6 +213,16 @@ export const ConsoleCommandDtoSchema = z.discriminatedUnion("command", [
     plan: z.string().max(80),
   }),
   z.strictObject({
+    command: z.literal("set-tenant-status"),
+    tenantId: IdentifierDtoSchema,
+    status: z.enum(["active", "suspended", "deactivated"]),
+  }),
+  z.strictObject({
+    command: z.literal("create-keyword-category"),
+    key: IdentifierDtoSchema.max(100),
+    label: z.string().min(1).max(120),
+  }),
+  z.strictObject({
     command: z.literal("set-provider-routing"),
     providerKey: IdentifierDtoSchema,
     modelKey: IdentifierDtoSchema,
