@@ -968,3 +968,147 @@ describe("ADM-CFG-02 category management", () => {
     ).toEqual({ status: "not-found" });
   });
 });
+
+describe("ADM-LOC-04 tenant-wide distribution", () => {
+  it("offers every venue's own survey link in one view", async () => {
+    await command(
+      {
+        command: "create-location",
+        name: "Harbour",
+        slug: "harbour",
+        address: {
+          line1: "2 Dock Road",
+          line2: "",
+          postalCode: "BS1 2AA",
+          city: "Bristol",
+          country: "GB",
+        },
+        entryMode: null,
+      },
+      { tenantId: "tenant-bright", locationId: null },
+    );
+
+    const overview = viewData<{
+      locations: { locationId: string; name: string; liveUrl: string }[];
+    }>(
+      await query({ view: "distribution-overview" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    );
+
+    // Each venue carries its own link; none of them is the account's.
+    expect(overview.locations).toEqual([
+      expect.objectContaining({
+        locationId: "location-downtown",
+        name: "Downtown",
+        liveUrl: "https://review.example.test/s/brightsmile/downtown",
+      }),
+      expect.objectContaining({
+        name: "Harbour",
+        liveUrl: "https://review.example.test/s/brightsmile/harbour",
+      }),
+    ]);
+  });
+});
+
+  it("withholds the QR only for the venues that cannot honour a scan", async () => {
+    // BrightSmile is invite-only, so its venue gets no code. This one is
+    // overridden to open-qr and must get a real one.
+    await command(
+      {
+        command: "create-location",
+        name: "Market Stall",
+        slug: "market-stall",
+        address: {
+          line1: "Market Square",
+          line2: "",
+          postalCode: "BS1 3AA",
+          city: "Bristol",
+          country: "GB",
+        },
+        entryMode: "open-qr",
+      },
+      { tenantId: "tenant-bright", locationId: null },
+    );
+
+    const overview = viewData<{
+      locations: {
+        name: string;
+        qrSvg: string | null;
+        qrUnavailableReason: string | null;
+        verifiesVisit: boolean;
+      }[];
+    }>(
+      await query({ view: "distribution-overview" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    );
+
+    const downtown = overview.locations.find((row) => row.name === "Downtown");
+    const stall = overview.locations.find((row) => row.name === "Market Stall");
+
+    expect(downtown).toMatchObject({ qrSvg: null, verifiesVisit: true });
+    expect(downtown?.qrUnavailableReason).toContain("invited reviewers only");
+    expect(stall?.qrSvg).toContain("<svg");
+    expect(stall).toMatchObject({
+      qrUnavailableReason: null,
+      verifiesVisit: false,
+    });
+  });
+
+  it("withholds the QR of a venue that is no longer taking reviews", async () => {
+    await command(
+      {
+        command: "create-location",
+        name: "Closed Kiosk",
+        slug: "closed-kiosk",
+        address: {
+          line1: "Old Pier",
+          line2: "",
+          postalCode: "BS1 4AA",
+          city: "Bristol",
+          country: "GB",
+        },
+        entryMode: "open-qr",
+      },
+      { tenantId: "tenant-bright", locationId: null },
+    );
+    await command(
+      {
+        command: "update-location",
+        locationId: "location-closed-kiosk",
+        name: "Closed Kiosk",
+        address: {
+          line1: "Old Pier",
+          line2: "",
+          postalCode: "BS1 4AA",
+          city: "Bristol",
+          country: "GB",
+        },
+        active: false,
+      },
+      { tenantId: "tenant-bright", locationId: null },
+    );
+
+    const overview = viewData<{
+      locations: {
+        name: string;
+        active: boolean;
+        qrSvg: string | null;
+        qrUnavailableReason: string | null;
+      }[];
+    }>(
+      await query({ view: "distribution-overview" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    );
+    const kiosk = overview.locations.find((row) => row.name === "Closed Kiosk");
+
+    // Entry resolution refuses an inactive venue, so a printed code would send
+    // every scanner to a dead end.
+    expect(kiosk).toMatchObject({ active: false, qrSvg: null });
+    expect(kiosk?.qrUnavailableReason).toContain("not currently taking");
+  });

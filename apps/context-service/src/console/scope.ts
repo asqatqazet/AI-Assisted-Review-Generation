@@ -46,6 +46,7 @@ export const QUERY_POLICIES: Readonly<
   "location-settings": { shape: "location" },
   "tenant-settings": { shape: "tenant" },
   distribution: { shape: "location" },
+  "distribution-overview": { shape: "tenant" },
   destinations: { shape: "location" },
   context: { shape: "tenant" },
   keywords: { shape: "tenant" },

@@ -134,6 +134,7 @@ declare module "*.module.css" {
     readonly settingTextarea: string;
     readonly settingToggle: string;
     readonly settingHelp: string;
+    readonly qrThumbnail: string;
   };
   export default classes;
 }

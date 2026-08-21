@@ -11,6 +11,7 @@ import { useConsoleView } from "./console-queries.js";
 import { EmptyState, ViewHeader } from "./console-ui.js";
 import styles from "./operator-console.module.css";
 import { useConsoleScope, type ConsoleScopeController } from "./use-console-scope.js";
+import { DistributionOverviewView } from "./views/distribution-overview.js";
 import { OverviewView } from "./views/overview.js";
 import {
   DistributionView,
@@ -117,6 +118,7 @@ function navigationSections(
         ...(capabilities.canManageLocations
           ? [
               { to: "/console/locations", label: "Locations" },
+              { to: "/console/distribution", label: "Distribution" },
               { to: "/console/settings/tenant", label: "Account settings" },
             ]
           : []),
@@ -305,6 +307,10 @@ function ConsoleWorkspace({
           <Routes>
             <Route index element={<OverviewView {...viewProps} />} />
             <Route path="locations" element={<LocationsView {...viewProps} />} />
+            <Route
+              path="distribution"
+              element={<DistributionOverviewView {...viewProps} />}
+            />
             <Route
               path="locations/:locationId/settings"
               element={<LocationSettingsView {...viewProps} />}

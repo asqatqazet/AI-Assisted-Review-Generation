@@ -284,6 +284,10 @@ async function runQuery({
       ) {
         return NOT_FOUND;
       }
+      const resolved = await requireLocation(store, scope);
+      if (resolved === null) {
+        return NOT_FOUND;
+      }
       const distribution = await store.readDistribution(
         scope.tenantId,
         scope.locationId,
@@ -293,8 +297,58 @@ async function runQuery({
         ? NOT_FOUND
         : view({
             view: "distribution",
-            data: projectDistribution({ scope: scope.scope, distribution }),
+            data: projectDistribution({
+              scope: scope.scope,
+              distribution,
+              active: resolved.location.active,
+            }),
           });
+    }
+
+    case "distribution-overview": {
+      const tenant = await requireTenant(store, scope);
+      if (tenant === null || publicOrigin === null) {
+        return NOT_FOUND;
+      }
+      const locations = await store.listLocations(tenant.id);
+      const entries = await Promise.all(
+        locations.map(async (location) => {
+          const distribution = await store.readDistribution(
+            tenant.id,
+            location.id,
+            publicOrigin,
+          );
+          if (distribution === null) {
+            return null;
+          }
+          // Reuses the per-venue projection, so entry-mode gating and the QR
+          // cannot drift between the two screens.
+          const projected = projectDistribution({
+            scope: scope.scope,
+            distribution,
+            active: location.active,
+          });
+          return {
+            locationId: location.id,
+            slug: location.slug,
+            name: location.name,
+            active: location.active,
+            liveUrl: projected.liveUrl,
+            qrSvg: projected.qrSvg,
+            qrUnavailableReason: projected.qrUnavailableReason,
+            entryMode: projected.entryMode,
+            verifiesVisit: projected.verifiesVisit,
+            counters: projected.counters,
+          };
+        }),
+      );
+      return view({
+        view: "distribution-overview",
+        data: {
+          scope: scope.scope,
+          locations: entries.filter((entry) => entry !== null),
+        },
+      });
     }
 
     case "destinations": {

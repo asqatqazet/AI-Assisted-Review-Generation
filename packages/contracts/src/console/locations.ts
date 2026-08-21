@@ -123,6 +123,34 @@ export const ConsoleDistributionDtoSchema = z.strictObject({
   }),
 });
 
+/**
+ * Every venue of one account with its own distribution assets, so an operator
+ * can hand out links without opening each venue in turn.
+ */
+export const ConsoleDistributionOverviewDtoSchema = z.strictObject({
+  scope: ConsoleScopeDtoSchema,
+  locations: z
+    .array(
+      z.strictObject({
+        locationId: IdentifierDtoSchema,
+        slug: IdentifierDtoSchema,
+        name: z.string().min(1).max(200),
+        active: z.boolean(),
+        liveUrl: z.string().url(),
+        qrSvg: z.string().min(1).max(200_000).nullable(),
+        qrUnavailableReason: z.string().max(400).nullable(),
+        entryMode: ConsoleEntryModeDtoSchema,
+        verifiesVisit: z.boolean(),
+        counters: z.strictObject({
+          issued: z.number().int().min(0),
+          opened: z.number().int().min(0),
+          completed: z.number().int().min(0),
+        }),
+      }),
+    )
+    .max(500),
+});
+
 export const ConsoleReviewDestinationDtoSchema = z.strictObject({
   destinationTypeId: IdentifierDtoSchema,
   platform: IdentifierDtoSchema,
@@ -164,3 +192,6 @@ export type ConsoleEntryModeDto = z.infer<typeof ConsoleEntryModeDtoSchema>;
 export type ConsoleSettingValueDto = z.infer<typeof SettingValueDtoSchema>;
 
 export { SettingValueDtoSchema as ConsoleSettingValueDtoSchema };
+export type ConsoleDistributionOverviewDto = z.infer<
+  typeof ConsoleDistributionOverviewDtoSchema
+>;

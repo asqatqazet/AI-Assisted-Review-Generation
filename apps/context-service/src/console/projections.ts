@@ -140,20 +140,26 @@ export function projectLocationSettings({
 export function projectDistribution({
   scope,
   distribution,
+  active,
 }: {
   readonly scope: ConsoleScopeDto;
   readonly distribution: ConsoleDistributionRecord;
+  readonly active: boolean;
 }): ConsoleDistributionDto {
-  const qrUsable = qrIsUsableForEntryMode(distribution.entryMode);
+  // Entry resolution refuses an inactive venue outright, so being closed
+  // outranks how the venue would otherwise admit a reviewer.
+  const withheldReason = !active
+    ? "This venue is not currently taking reviews, so a scanned code would reach a dead end. Activate it before printing anything."
+    : qrIsUsableForEntryMode(distribution.entryMode)
+      ? null
+      : "This venue admits invited reviewers only, so a scanned code cannot start a review. Change the entry mode to open-qr, or distribute invitation links instead.";
   return {
     scope,
     liveUrl: distribution.surveyUrl,
     // The code carries no invitation token, so an invite-only venue would be
     // handed an asset that always refuses the person who scans it.
-    qrSvg: qrUsable ? renderQrSvg(distribution.surveyUrl) : null,
-    qrUnavailableReason: qrUsable
-      ? null
-      : "This venue admits invited reviewers only, so a scanned code cannot start a review. Change the entry mode to open-qr, or distribute invitation links instead.",
+    qrSvg: withheldReason === null ? renderQrSvg(distribution.surveyUrl) : null,
+    qrUnavailableReason: withheldReason,
     entryMode: distribution.entryMode,
     // Open-QR admits anyone who scans, so it proves no visit occurred.
     verifiesVisit: distribution.entryMode !== "open-qr",

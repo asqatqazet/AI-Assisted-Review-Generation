@@ -590,6 +590,21 @@
   height: auto;
 }
 
+.qrThumbnail {
+  display: inline-block;
+  width: 96px;
+  border: 1px solid var(--border-card);
+  border-radius: 6px;
+  padding: 4px;
+  background: var(--canvas);
+}
+
+.qrThumbnail svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
 .mono {
   font-family: var(--font-mono);
   font-size: 13px;

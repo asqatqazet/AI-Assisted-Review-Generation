@@ -29,6 +29,7 @@ import {
   ConsoleAddressDtoSchema,
   ConsoleDestinationsDtoSchema,
   ConsoleDistributionDtoSchema,
+  ConsoleDistributionOverviewDtoSchema,
   ConsoleEntryModeDtoSchema,
   ConsoleLocationListDtoSchema,
   ConsoleLocationSettingsDtoSchema,
@@ -55,6 +56,7 @@ export const ConsoleQueryDtoSchema = z.discriminatedUnion("view", [
   z.strictObject({ view: z.literal("location-settings") }),
   z.strictObject({ view: z.literal("tenant-settings") }),
   z.strictObject({ view: z.literal("distribution") }),
+  z.strictObject({ view: z.literal("distribution-overview") }),
   z.strictObject({ view: z.literal("destinations") }),
   z.strictObject({ view: z.literal("context") }),
   z.strictObject({ view: z.literal("keywords") }),
@@ -279,6 +281,10 @@ export const ConsoleViewDtoSchema = z.discriminatedUnion("view", [
   z.strictObject({
     view: z.literal("distribution"),
     data: ConsoleDistributionDtoSchema,
+  }),
+  z.strictObject({
+    view: z.literal("distribution-overview"),
+    data: ConsoleDistributionOverviewDtoSchema,
   }),
   z.strictObject({
     view: z.literal("destinations"),
