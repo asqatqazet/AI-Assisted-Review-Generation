@@ -309,31 +309,56 @@ function functionModuleMap(version: number, size: number): boolean[][] {
   return reserved.map((row) => row.map((module) => module !== null));
 }
 
-function placeData(
-  matrix: Matrix,
-  reserved: readonly (readonly boolean[])[],
-  codewords: readonly number[],
-): void {
-  const size = matrix.length;
-  let bitIndex = 0;
+/**
+ * Every data module position, in the order the standard fills them: upward and
+ * downward through two-column pairs from the right, skipping the vertical
+ * timing column.
+ *
+ * Writer and reader share this one traversal. When they each had their own,
+ * an identical mistake in both still round-tripped, so the encoder's own test
+ * could not see that column 4 was written twice and column 0 never at all.
+ */
+export function qrDataModulePositions(
+  version: number,
+): readonly (readonly [number, number])[] {
+  const size = 17 + version * 4;
+  const reserved = functionModuleMap(version, size);
+  const positions: [number, number][] = [];
   let upward = true;
   for (let right = size - 1; right >= 1; right -= 2) {
-    const columnPair = right === 6 ? right - 1 : right;
+    // Column 6 is the timing pattern. Stepping over it moves the cursor to 5,
+    // so the pairs that follow are (5,4), (3,2), (1,0).
+    if (right === 6) {
+      right = 5;
+    }
     for (let step = 0; step < size; step += 1) {
       const row = upward ? size - 1 - step : step;
-      for (const column of [columnPair, columnPair - 1]) {
-        if (reserved[row]![column]!) {
-          continue;
+      for (const column of [right, right - 1]) {
+        if (!reserved[row]![column]!) {
+          positions.push([row, column]);
         }
-        const byte = codewords[bitIndex >> 3];
-        const bit =
-          byte === undefined ? 0 : ((byte >> (7 - (bitIndex & 7))) & 1);
-        matrix[row]![column] = bit as 0 | 1;
-        bitIndex += 1;
       }
     }
     upward = !upward;
   }
+  return positions;
+}
+
+/** The function-module map, exposed so placement can be checked against it. */
+export function qrFunctionModuleMap(version: number): readonly (readonly boolean[])[] {
+  return functionModuleMap(version, 17 + version * 4);
+}
+
+function placeData(
+  matrix: Matrix,
+  version: number,
+  codewords: readonly number[],
+): void {
+  qrDataModulePositions(version).forEach(([row, column], bitIndex) => {
+    const byte = codewords[bitIndex >> 3];
+    const bit = byte === undefined ? 0 : (byte >> (7 - (bitIndex & 7))) & 1;
+    matrix[row]![column] = bit as 0 | 1;
+  });
 }
 
 function maskCondition(mask: number, row: number, column: number): boolean {
@@ -434,7 +459,7 @@ export function encodeQrCode(text: string): QrCode {
       new Array<0 | 1 | null>(size).fill(null),
     );
     placeFunctionPatterns(matrix, version);
-    placeData(matrix, reserved, codewords);
+    placeData(matrix, version, codewords);
 
     const modules = matrix.map((row, rowIndex) =>
       row.map((module, columnIndex) => {
@@ -526,8 +551,7 @@ export function renderQrSvg(
  * Location survey URL instead of asserting that some black squares were drawn.
  */
 export function decodeQrPayload(code: QrCode): string {
-  const { modules, size, version } = code;
-  const reserved = functionModuleMap(version, size);
+  const { modules, version } = code;
 
   let format = 0;
   for (let index = 0; index <= 5; index += 1) {
@@ -542,22 +566,10 @@ export function decodeQrPayload(code: QrCode): string {
   const unmaskedFormat = (format ^ 0x5412) >> 10;
   const mask = unmaskedFormat & 0b111;
 
-  const bits: number[] = [];
-  let upward = true;
-  for (let right = size - 1; right >= 1; right -= 2) {
-    const columnPair = right === 6 ? right - 1 : right;
-    for (let step = 0; step < size; step += 1) {
-      const row = upward ? size - 1 - step : step;
-      for (const column of [columnPair, columnPair - 1]) {
-        if (reserved[row]![column]!) {
-          continue;
-        }
-        const module = modules[row]![column]!;
-        bits.push(maskCondition(mask, row, column) ? module ^ 1 : module);
-      }
-    }
-    upward = !upward;
-  }
+  const bits = qrDataModulePositions(version).map(([row, column]) => {
+    const module = modules[row]![column]!;
+    return maskCondition(mask, row, column) ? module ^ 1 : module;
+  });
 
   const codewords: number[] = [];
   for (let index = 0; index + 8 <= bits.length; index += 8) {

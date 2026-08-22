@@ -162,6 +162,9 @@ importers:
       '@prisma/client':
         specifier: 6.16.1
         version: 6.16.1(prisma@6.16.1(typescript@6.0.3))(typescript@6.0.3)
+      '@review/domain':
+        specifier: workspace:*
+        version: link:../domain
     devDependencies:
       prisma:
         specifier: 6.16.1

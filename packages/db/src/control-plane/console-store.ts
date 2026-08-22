@@ -1,3 +1,9 @@
+import {
+  buildConfigSnapshot,
+  type CommandKind,
+  type EffectiveSettings,
+} from "@review/domain/configuration";
+
 import { PrismaClient, type Prisma } from "../generated/control-plane/index.js";
 
 /**
@@ -246,6 +252,12 @@ export interface ConsoleControlPlaneOperations {
     readonly targetUrl: string;
     readonly enabled: boolean;
   }): Promise<{ status: "saved" } | { status: "unknown-destination" }>;
+  republishConfiguration(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+  }): Promise<
+    { status: "published"; snapshotId: string } | { status: "incomplete"; missing: string[] }
+  >;
   listContextVersions(tenantId: string): Promise<ContextVersionRecord[]>;
   publishContextVersion(input: {
     readonly tenantId: string;
@@ -595,6 +607,109 @@ export interface PlatformSettingsRecord {
 }
 
 const iso = (value: Date): string => value.toISOString();
+
+const COMMAND_KIND_BY_ACTION: Readonly<Record<StoredAction, CommandKind>> = {
+  GENERATE: "generate",
+  PARAPHRASE: "paraphrase",
+  REGENERATE: "generate",
+  REFORMAT: "reformat",
+  CONDENSE: "condense",
+  EXPAND: "expand",
+  REVISE_WORDING: "revise-wording",
+  ADD_FACT: "generate",
+};
+
+function mapFactOption(
+  fact: {
+    id: string;
+    locationId: string | null;
+    categoryId: string;
+    version: number;
+    label: unknown;
+    proposition: string;
+    polarity: string;
+    isActive: boolean;
+    sortOrder: number;
+  },
+  tenantId: string,
+  locale: Locale,
+) {
+  return {
+    id: fact.id,
+    version: `${fact.id}@${fact.version}`,
+    owner:
+      fact.locationId === null
+        ? ({ scope: "tenant" as const, tenantId })
+        : ({
+            scope: "location" as const,
+            tenantId,
+            locationId: fact.locationId,
+          }),
+    categoryId: fact.categoryId,
+    proposition: fact.proposition || localized(fact.label, locale),
+    polarity: STORED_TO_POLARITY[
+      fact.polarity as keyof typeof STORED_TO_POLARITY
+    ],
+    locale,
+    active: fact.isActive,
+    sortOrder: fact.sortOrder,
+  };
+}
+
+function mapReviewFormat(
+  format: {
+    id: string;
+    formatKey: string;
+    version: number;
+    targetPlatform: string;
+    locale: string;
+    constraints: unknown;
+    localizedText: unknown;
+    supportedActions: string[];
+  },
+  locale: Locale,
+) {
+  const text = isRecord(format.localizedText) ? format.localizedText : {};
+  const pick = (key: string): Record<string, string> => {
+    const value = text[key];
+    return isRecord(value)
+      ? Object.fromEntries(
+          Object.entries(value).filter(
+            (entry): entry is [string, string] => typeof entry[1] === "string",
+          ),
+        )
+      : {};
+  };
+  return {
+    id: format.id,
+    key: format.formatKey,
+    version: `${format.version}`,
+    displayName: localized(text["displayName"], locale) || format.formatKey,
+    targetPlatform: format.targetPlatform,
+    locale: (format.locale === "any" ? "any" : asLocale(format.locale)) as
+      | Locale
+      | "any",
+    description: pick("description"),
+    sample: pick("sample"),
+    constraints: {
+      minChars: readNumber(format.constraints, "minChars", 0),
+      maxChars: readNumber(format.constraints, "maxChars", 1),
+      paragraphs: readNumber(format.constraints, "paragraphs", 1),
+      emojiPolicy:
+        readString(format.constraints, "emojiPolicy", "none") === "allowed"
+          ? ("allowed" as const)
+          : ("none" as const),
+      secondPerson: readBoolean(format.constraints, "secondPerson", false),
+    },
+    supportedCommands: [
+      ...new Set(
+        format.supportedActions.map(
+          (action) => COMMAND_KIND_BY_ACTION[action as StoredAction],
+        ),
+      ),
+    ],
+  };
+}
 
 function slugify(value: string): string {
   const slug = value
@@ -1091,6 +1206,183 @@ export function createPostgresConsoleControlPlaneStore({
               },
             });
             return { status: "saved" as const };
+          }),
+
+        republishConfiguration: async (input) =>
+          await run(input.tenantId, async (transaction) => {
+            const [tenant, location, platform] = await Promise.all([
+              transaction.tenant.findUnique({ where: { id: input.tenantId } }),
+              transaction.location.findFirst({
+                where: { id: input.locationId, tenantId: input.tenantId },
+              }),
+              transaction.platformSettings.findUnique({
+                where: { id: "platform" },
+              }),
+            ]);
+            if (tenant === null || location === null) {
+              return { status: "incomplete" as const, missing: ["the venue"] };
+            }
+
+            const [formats, prompts, routedModel, factOptions] = await Promise.all([
+              transaction.reviewFormatEnablement.findMany({
+                where: { tenantId: input.tenantId, enabled: true },
+                include: { reviewFormatVersion: true },
+                orderBy: { sortOrder: "asc" },
+              }),
+              transaction.promptVersion.findMany({
+                where: { tenantId: input.tenantId, retiredAt: null },
+                orderBy: [{ action: "asc" }, { version: "desc" }],
+              }),
+              // Primary route is the model the Platform ranked first.
+              transaction.providerModel.findFirst({
+                where: { status: "ACTIVE", routingPriority: { not: null } },
+                orderBy: { routingPriority: "asc" },
+                include: {
+                  provider: true,
+                  priceRates: { orderBy: { effectiveFrom: "desc" } },
+                },
+              }),
+              liveFactOptions(transaction, input.tenantId, input.locationId),
+            ]);
+
+            const missing: string[] = [];
+            if (formats.length === 0) {
+              missing.push("an enabled Review Format");
+            }
+            if (prompts.length === 0) {
+              missing.push("a prompt version");
+            }
+            if (routedModel === null) {
+              missing.push("a routed model provider");
+            }
+            if (routedModel !== null && routedModel.priceRates.length === 0) {
+              missing.push("a published price for the routed model");
+            }
+            if (missing.length > 0) {
+              return { status: "incomplete" as const, missing };
+            }
+
+            const locale = asLocale(tenant.locale);
+            const overrides = readOverrides(location.overrides);
+            const settings: EffectiveSettings = {
+              locale,
+              toneGuidelines: tenant.toneGuidelines ?? "",
+              entryMode: (tenant.defaultEntryModeKey ?? "invite") as
+                | "invite"
+                | "open-qr"
+                | "both",
+              requireDisclosure: readBoolean(tenant.policy, "requireDisclosure", true),
+              requireVerifiedExperience: readBoolean(
+                tenant.policy,
+                "requireVerifiedExperience",
+                true,
+              ),
+              maxReviewFormatsPerRequest: readNumber(
+                tenant.policy,
+                "maxReviewFormatsPerRequest",
+                1,
+              ),
+              bannedTerms: [...tenant.bannedTerms],
+              enabledReviewFormatVersionIds: formats.map(
+                (enablement) => enablement.reviewFormatVersionId,
+              ),
+              enabledCommands: [
+                ...new Set(
+                  formats.flatMap((enablement) =>
+                    enablement.allowedActions.map(
+                      (action) =>
+                        COMMAND_KIND_BY_ACTION[action as StoredAction],
+                    ),
+                  ),
+                ),
+              ],
+              monthlyBudgetMicros: Number(tenant.monthlyBudgetMicros),
+              alertThresholdPct: tenant.alertThresholdPercent,
+            };
+
+            const snapshot = buildConfigSnapshot({
+              platform: {
+                id: "platform",
+                revision: String(platform?.configRevision ?? 1n),
+                defaults: settings,
+              },
+              tenant: {
+                id: tenant.id,
+                revision: String(tenant.configRevision),
+                settings,
+                factOptions: factOptions
+                  .filter((fact) => fact.locationId === null)
+                  .map((fact) => mapFactOption(fact, tenant.id, locale)),
+              },
+              location: {
+                id: location.id,
+                tenantId: tenant.id,
+                revision: String(location.configRevision),
+                overrides,
+                factOptionAdditions: factOptions
+                  .filter((fact) => fact.locationId !== null)
+                  .map((fact) => mapFactOption(fact, tenant.id, locale)),
+              },
+              tenantName: tenant.name,
+              locationName: location.name,
+              reviewFormats: formats.map((enablement) =>
+                mapReviewFormat(enablement.reviewFormatVersion, locale),
+              ),
+              promptVersions: prompts.map((prompt) => ({
+                id: prompt.id,
+                hash: prompt.contentHash,
+                key: prompt.promptKey,
+                commandKind:
+                  COMMAND_KIND_BY_ACTION[prompt.action as StoredAction],
+                body: prompt.body,
+                variables: [],
+              })),
+              priceRates: routedModel!.priceRates.map((rate) => ({
+                id: rate.id,
+                providerModelId: routedModel!.id,
+                provider: routedModel!.provider.key,
+                model: routedModel!.modelKey,
+                inputPerMillionMicros: Number(rate.inputPerMillionMicros),
+                outputPerMillionMicros: Number(rate.outputPerMillionMicros),
+                currency: rate.currency,
+                unit: "token" as const,
+                effectiveFrom: iso(rate.effectiveFrom),
+                effectiveTo:
+                  rate.effectiveTo === null ? null : iso(rate.effectiveTo),
+              })),
+              providerRouting: {
+                providerModelId: routedModel!.id,
+                primaryProvider: routedModel!.provider.key,
+                primaryModel: routedModel!.modelKey,
+              },
+            });
+
+            // The row's identity is the uuid the schema stores; the domain's
+            // derived hash becomes the content hash. Admission checks that the
+            // payload names its own row, so the two must agree.
+            const created = await transaction.effectiveConfigurationSnapshot.create({
+              data: {
+                tenantId: tenant.id,
+                locationId: location.id,
+                schemaVersion: snapshot.schemaVersion,
+                contentHash: snapshot.snapshotId,
+                payload: {} as Prisma.InputJsonValue,
+                provenance: snapshot.provenance as unknown as Prisma.InputJsonValue,
+              },
+            });
+            await transaction.effectiveConfigurationSnapshot.update({
+              where: { id: created.id },
+              data: {
+                payload: {
+                  ...snapshot,
+                  snapshotId: created.id,
+                } as unknown as Prisma.InputJsonValue,
+              },
+            });
+            return {
+              status: "published" as const,
+              snapshotId: created.id,
+            };
           }),
 
         listContextVersions: async (tenantId) =>
@@ -1976,6 +2268,183 @@ export function createPostgresConsoleControlPlaneStore({
           await orEmpty(() => operations.listLocations(tenantId), []),
         listDestinations: async (tenantId, locationId) =>
           await orEmpty(() => operations.listDestinations(tenantId, locationId), []),
+        republishConfiguration: async (input) =>
+          await run(input.tenantId, async (transaction) => {
+            const [tenant, location, platform] = await Promise.all([
+              transaction.tenant.findUnique({ where: { id: input.tenantId } }),
+              transaction.location.findFirst({
+                where: { id: input.locationId, tenantId: input.tenantId },
+              }),
+              transaction.platformSettings.findUnique({
+                where: { id: "platform" },
+              }),
+            ]);
+            if (tenant === null || location === null) {
+              return { status: "incomplete" as const, missing: ["the venue"] };
+            }
+
+            const [formats, prompts, routedModel, factOptions] = await Promise.all([
+              transaction.reviewFormatEnablement.findMany({
+                where: { tenantId: input.tenantId, enabled: true },
+                include: { reviewFormatVersion: true },
+                orderBy: { sortOrder: "asc" },
+              }),
+              transaction.promptVersion.findMany({
+                where: { tenantId: input.tenantId, retiredAt: null },
+                orderBy: [{ action: "asc" }, { version: "desc" }],
+              }),
+              // Primary route is the model the Platform ranked first.
+              transaction.providerModel.findFirst({
+                where: { status: "ACTIVE", routingPriority: { not: null } },
+                orderBy: { routingPriority: "asc" },
+                include: {
+                  provider: true,
+                  priceRates: { orderBy: { effectiveFrom: "desc" } },
+                },
+              }),
+              liveFactOptions(transaction, input.tenantId, input.locationId),
+            ]);
+
+            const missing: string[] = [];
+            if (formats.length === 0) {
+              missing.push("an enabled Review Format");
+            }
+            if (prompts.length === 0) {
+              missing.push("a prompt version");
+            }
+            if (routedModel === null) {
+              missing.push("a routed model provider");
+            }
+            if (routedModel !== null && routedModel.priceRates.length === 0) {
+              missing.push("a published price for the routed model");
+            }
+            if (missing.length > 0) {
+              return { status: "incomplete" as const, missing };
+            }
+
+            const locale = asLocale(tenant.locale);
+            const overrides = readOverrides(location.overrides);
+            const settings: EffectiveSettings = {
+              locale,
+              toneGuidelines: tenant.toneGuidelines ?? "",
+              entryMode: (tenant.defaultEntryModeKey ?? "invite") as
+                | "invite"
+                | "open-qr"
+                | "both",
+              requireDisclosure: readBoolean(tenant.policy, "requireDisclosure", true),
+              requireVerifiedExperience: readBoolean(
+                tenant.policy,
+                "requireVerifiedExperience",
+                true,
+              ),
+              maxReviewFormatsPerRequest: readNumber(
+                tenant.policy,
+                "maxReviewFormatsPerRequest",
+                1,
+              ),
+              bannedTerms: [...tenant.bannedTerms],
+              enabledReviewFormatVersionIds: formats.map(
+                (enablement) => enablement.reviewFormatVersionId,
+              ),
+              enabledCommands: [
+                ...new Set(
+                  formats.flatMap((enablement) =>
+                    enablement.allowedActions.map(
+                      (action) =>
+                        COMMAND_KIND_BY_ACTION[action as StoredAction],
+                    ),
+                  ),
+                ),
+              ],
+              monthlyBudgetMicros: Number(tenant.monthlyBudgetMicros),
+              alertThresholdPct: tenant.alertThresholdPercent,
+            };
+
+            const snapshot = buildConfigSnapshot({
+              platform: {
+                id: "platform",
+                revision: String(platform?.configRevision ?? 1n),
+                defaults: settings,
+              },
+              tenant: {
+                id: tenant.id,
+                revision: String(tenant.configRevision),
+                settings,
+                factOptions: factOptions
+                  .filter((fact) => fact.locationId === null)
+                  .map((fact) => mapFactOption(fact, tenant.id, locale)),
+              },
+              location: {
+                id: location.id,
+                tenantId: tenant.id,
+                revision: String(location.configRevision),
+                overrides,
+                factOptionAdditions: factOptions
+                  .filter((fact) => fact.locationId !== null)
+                  .map((fact) => mapFactOption(fact, tenant.id, locale)),
+              },
+              tenantName: tenant.name,
+              locationName: location.name,
+              reviewFormats: formats.map((enablement) =>
+                mapReviewFormat(enablement.reviewFormatVersion, locale),
+              ),
+              promptVersions: prompts.map((prompt) => ({
+                id: prompt.id,
+                hash: prompt.contentHash,
+                key: prompt.promptKey,
+                commandKind:
+                  COMMAND_KIND_BY_ACTION[prompt.action as StoredAction],
+                body: prompt.body,
+                variables: [],
+              })),
+              priceRates: routedModel!.priceRates.map((rate) => ({
+                id: rate.id,
+                providerModelId: routedModel!.id,
+                provider: routedModel!.provider.key,
+                model: routedModel!.modelKey,
+                inputPerMillionMicros: Number(rate.inputPerMillionMicros),
+                outputPerMillionMicros: Number(rate.outputPerMillionMicros),
+                currency: rate.currency,
+                unit: "token" as const,
+                effectiveFrom: iso(rate.effectiveFrom),
+                effectiveTo:
+                  rate.effectiveTo === null ? null : iso(rate.effectiveTo),
+              })),
+              providerRouting: {
+                providerModelId: routedModel!.id,
+                primaryProvider: routedModel!.provider.key,
+                primaryModel: routedModel!.modelKey,
+              },
+            });
+
+            // The row's identity is the uuid the schema stores; the domain's
+            // derived hash becomes the content hash. Admission checks that the
+            // payload names its own row, so the two must agree.
+            const created = await transaction.effectiveConfigurationSnapshot.create({
+              data: {
+                tenantId: tenant.id,
+                locationId: location.id,
+                schemaVersion: snapshot.schemaVersion,
+                contentHash: snapshot.snapshotId,
+                payload: {} as Prisma.InputJsonValue,
+                provenance: snapshot.provenance as unknown as Prisma.InputJsonValue,
+              },
+            });
+            await transaction.effectiveConfigurationSnapshot.update({
+              where: { id: created.id },
+              data: {
+                payload: {
+                  ...snapshot,
+                  snapshotId: created.id,
+                } as unknown as Prisma.InputJsonValue,
+              },
+            });
+            return {
+              status: "published" as const,
+              snapshotId: created.id,
+            };
+          }),
+
         listContextVersions: async (tenantId) =>
           await orEmpty(() => operations.listContextVersions(tenantId), []),
         listKeywords: async (tenantId, locationId) =>

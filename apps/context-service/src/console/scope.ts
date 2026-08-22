@@ -77,6 +77,10 @@ export const COMMAND_POLICIES: Readonly<
     capability: "tenant:configure",
   },
   "save-destination": { shape: "location", capability: "tenant:configure" },
+  "republish-configuration": {
+    shape: "location",
+    capability: "tenant:configure",
+  },
   "publish-context-version": { shape: "tenant", capability: "tenant:configure" },
   "create-keyword": { shape: "tenant", capability: "tenant:configure" },
   "update-keyword": { shape: "tenant", capability: "tenant:configure" },

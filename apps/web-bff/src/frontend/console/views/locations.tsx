@@ -928,6 +928,23 @@ export function DistributionView({
       />
       <QueryState query={distribution} label="distribution" />
 
+      <p className={styles.emptyCopy}>
+        Reviewers are served the configuration published for this venue, not the
+        settings as they stand right now. Publish after changing account
+        settings, fact options, Review Formats or Platform routing.
+      </p>
+      <p className={styles.buttonRow}>
+        <button
+          type="button"
+          className={styles.button}
+          disabled={command.isPending}
+          onClick={() => command.mutate({ command: "republish-configuration" })}
+        >
+          Publish configuration to this venue
+        </button>
+      </p>
+      <RejectionNotice error={command.error} />
+
       {distribution.data === undefined ? null : (
         <>
           <dl className={styles.detailList}>

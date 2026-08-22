@@ -1112,3 +1112,36 @@ describe("ADM-LOC-04 tenant-wide distribution", () => {
     expect(kiosk).toMatchObject({ active: false, qrSvg: null });
     expect(kiosk?.qrUnavailableReason).toContain("not currently taking");
   });
+
+describe("US-04.2 publishing configuration to a venue", () => {
+  it("materialises the venue's own snapshot", async () => {
+    expect(
+      await command({ command: "republish-configuration" }, {
+        tenantId: "tenant-bright",
+        locationId: "location-downtown",
+      }),
+    ).toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    expect(store.calls).toContain(
+      "republishConfiguration:tenant-bright:location-downtown",
+    );
+  });
+
+  it("refuses to publish into a venue of another account", async () => {
+    expect(
+      await command({ command: "republish-configuration" }, {
+        tenantId: "tenant-bright",
+        locationId: "location-hafencity",
+      }),
+    ).toEqual({ status: "not-found" });
+  });
+
+  it("needs a venue, not just an account", async () => {
+    expect(
+      await command({ command: "republish-configuration" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    ).toEqual({ status: "not-found" });
+  });
+});

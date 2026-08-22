@@ -204,6 +204,14 @@ export interface ConsoleControlPlaneStore {
     readonly enabled: boolean;
   }): Promise<{ readonly status: "saved" } | { readonly status: "unknown-destination" }>;
 
+  republishConfiguration(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+  }): Promise<
+    | { readonly status: "published"; readonly snapshotId: string }
+    | { readonly status: "incomplete"; readonly missing: readonly string[] }
+  >;
+
   listContextVersions(
     tenantId: string,
   ): Promise<readonly ConsoleContextVersionRecord[]>;

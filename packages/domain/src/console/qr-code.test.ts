@@ -5,7 +5,9 @@ import {
   decodeQrPayload,
   encodeQrCode,
   qrBlockSyndromes,
+  qrDataModulePositions,
   qrEncodedBlocks,
+  qrFunctionModuleMap,
   renderQrSvg,
 } from "./qr-code.js";
 
@@ -150,5 +152,51 @@ describe("rendered output is scannable off a screen", () => {
     const extent = (code.size + 8) * 4;
 
     expect(svg).toContain(`viewBox="0 0 ${extent} ${extent}"`);
+  });
+});
+
+describe("data placement covers the symbol exactly once", () => {
+  // Checked against the function-module map rather than by re-running the
+  // traversal, so a traversal that is wrong in the same way twice still fails.
+  for (const version of [1, 2, 3, 5, 7, 10]) {
+    it(`fills every data module of version ${version} once`, () => {
+      const size = 17 + version * 4;
+      const functionModules = qrFunctionModuleMap(version);
+      const positions = qrDataModulePositions(version);
+
+      const seen = new Set<string>();
+      for (const [row, column] of positions) {
+        const key = `${row}:${column}`;
+        expect(seen.has(key)).toBe(false);
+        seen.add(key);
+        expect(functionModules[row]![column]).toBe(false);
+      }
+
+      let expected = 0;
+      for (let row = 0; row < size; row += 1) {
+        for (let column = 0; column < size; column += 1) {
+          if (!functionModules[row]![column]!) {
+            expected += 1;
+          }
+        }
+      }
+      // Nothing skipped: a missed column would leave data unplaced and the
+      // symbol unreadable to a scanner.
+      expect(positions.length).toBe(expected);
+    });
+  }
+
+  it("uses every column except the vertical timing pattern", () => {
+    const columns = new Set(
+      qrDataModulePositions(3).map(([, column]) => column),
+    );
+
+    expect(columns.has(6)).toBe(false);
+    expect(columns.has(0)).toBe(true);
+    for (let column = 0; column < 29; column += 1) {
+      if (column !== 6) {
+        expect(columns.has(column)).toBe(true);
+      }
+    }
   });
 });

@@ -874,6 +874,23 @@ async function runCommand({
       return saved.status === "unknown-destination" ? NOT_FOUND : ACCEPTED;
     }
 
+    case "republish-configuration": {
+      const resolved = await requireLocation(store, scope);
+      if (resolved === null) {
+        return NOT_FOUND;
+      }
+      const published = await store.republishConfiguration({
+        tenantId: resolved.tenant.id,
+        locationId: resolved.location.id,
+      });
+      return published.status === "incomplete"
+        ? rejected(
+            "INVALID_VALUE",
+            `This venue cannot be published yet. Missing: ${published.missing.join(", ")}.`,
+          )
+        : ACCEPTED;
+    }
+
     case "publish-context-version": {
       if (scope.tenantId === null) {
         return NOT_FOUND;

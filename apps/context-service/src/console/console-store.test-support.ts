@@ -222,6 +222,11 @@ export function createFakeConsoleStore(
       return { status: "saved" };
     },
 
+    async republishConfiguration(input) {
+      record(`republishConfiguration:${input.tenantId}:${input.locationId}`);
+      return { status: "published", snapshotId: "snapshot-1" };
+    },
+
     async listContextVersions(tenantId) {
       return data.contextVersions.filter(
         (version) => version.tenantId === tenantId,

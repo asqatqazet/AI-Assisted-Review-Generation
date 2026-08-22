@@ -215,6 +215,15 @@ export const ConsoleCommandDtoSchema = z.discriminatedUnion("command", [
     plan: z.string().max(80),
   }),
   z.strictObject({
+    /**
+     * Materialises this venue's Effective Configuration Snapshot from current
+     * account configuration and Platform routing. Generation reads the
+     * snapshot, not the live tables, so a change reaches reviewers only once
+     * it has been published here.
+     */
+    command: z.literal("republish-configuration"),
+  }),
+  z.strictObject({
     command: z.literal("set-tenant-status"),
     tenantId: IdentifierDtoSchema,
     status: z.enum(["active", "suspended", "deactivated"]),
