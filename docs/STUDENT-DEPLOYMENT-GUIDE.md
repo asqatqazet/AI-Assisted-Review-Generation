@@ -167,7 +167,7 @@ gh run list --workflow verify.yml --branch main --limit 3
 2. `teardown_date` 填 AWS Free plan 到期日前的日期；
 3. `deployment_profile` 保持默认的 `student-low-quota`；
 4. `operator_email` 填写首位 Console 管理员的真实邮箱；
-5. 勾选 `acknowledge_fake_provider_only`；
+5. 勾选 `acknowledge_provider_cost`；未勾选时部署会明确失败并说明原因，而不是静默跳过；
 6. 开始运行。
 
 首次 apply 会创建 Cognito 用户并发送临时密码邮件。该邮箱同时被绑定到不可变的 Cognito issuer/subject，workflow

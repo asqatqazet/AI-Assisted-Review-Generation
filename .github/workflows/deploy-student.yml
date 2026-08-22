@@ -19,8 +19,10 @@ on:
         description: Email invited as the initial Console operator
         required: true
         type: string
-      acknowledge_fake_provider_only:
-        description: Current public release uses the deterministic provider only
+      acknowledge_provider_cost:
+        description: >-
+          I accept that venues routed to a live provider bill the credential I
+          installed. Venues routed to the deterministic provider stay free.
         required: true
         type: boolean
 
@@ -39,7 +41,6 @@ env:
 
 jobs:
   deploy:
-    if: inputs.acknowledge_fake_provider_only
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
@@ -57,6 +58,14 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     steps:
+      # Declining used to skip the whole job, which reported a green run that
+      # had deployed nothing and said nothing about why.
+      - name: Require the provider cost acknowledgement
+        if: ${{ !inputs.acknowledge_provider_cost }}
+        run: |
+          echo "::error::Deployment stopped: the provider cost acknowledgement was not given." >&2
+          echo "Tick 'acknowledge_provider_cost' to deploy. Nothing was changed." >&2
+          exit 1
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
