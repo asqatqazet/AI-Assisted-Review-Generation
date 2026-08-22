@@ -135,6 +135,7 @@ declare module "*.module.css" {
     readonly settingToggle: string;
     readonly settingHelp: string;
     readonly qrThumbnail: string;
+    readonly reworkCard: string;
   };
   export default classes;
 }

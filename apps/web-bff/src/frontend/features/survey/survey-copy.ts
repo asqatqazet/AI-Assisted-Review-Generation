@@ -63,6 +63,11 @@ export interface SurveyCopy {
   readonly provenance: (count: number) => string;
   readonly copy: string;
   readonly readyToCopy: string;
+  readonly reworkLabel: string;
+  readonly tryAgain: string;
+  readonly tryAnotherFormat: string;
+  readonly changeWhatYouSaid: string;
+  readonly reworkNote: string;
   readonly copied: string;
   readonly manualCopy: string;
   readonly copyFootnote: string;
@@ -164,6 +169,12 @@ const english: SurveyCopy = {
     `What this draft is built on (${count} facts, each traceable)`,
   copy: "Copy",
   readyToCopy: "Ready to copy.",
+  reworkLabel: "Not quite right?",
+  tryAgain: "Write it again",
+  tryAnotherFormat: "Try another style",
+  changeWhatYouSaid: "Change what you mentioned",
+  reworkNote:
+    "Writing it again uses the same points you confirmed, worded differently.",
   copied: "Copied",
   manualCopy: "Select the review text and copy it manually.",
   copyFootnote:
@@ -282,6 +293,12 @@ const german: SurveyCopy = {
     `Worauf dieser Entwurf beruht (${count} belegte Fakten)`,
   copy: "Kopieren",
   readyToCopy: "Bereit zum Kopieren.",
+  reworkLabel: "Nicht ganz passend?",
+  tryAgain: "Neu schreiben lassen",
+  tryAnotherFormat: "Anderen Stil versuchen",
+  changeWhatYouSaid: "Angaben ändern",
+  reworkNote:
+    "Beim Neuschreiben werden dieselben bestätigten Punkte anders formuliert.",
   copied: "Kopiert",
   manualCopy: "Markieren und kopieren Sie den Text manuell.",
   copyFootnote:

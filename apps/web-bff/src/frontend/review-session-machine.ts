@@ -89,7 +89,8 @@ export type ReviewSessionEvent =
       readonly type: "RETRY_REQUESTED";
       readonly idempotencyKey: string;
     }
-  | { readonly type: "RETURN_TO_FACTS" };
+  | { readonly type: "RETURN_TO_FACTS" }
+  | { readonly type: "RETURN_TO_FORMAT" };
 
 export function createReviewSessionState(
   reviewSessionHandle: string,
@@ -209,6 +210,46 @@ export function transitionReviewSession(
       selectedReviewFormatId: state.selectedReviewFormatId,
       code: event.code,
       retryable: event.retryable,
+    };
+  }
+
+  /**
+   * A reviewer who dislikes the Draft must be able to ask again. Resampling
+   * reuses the Assertions and Review Format already confirmed, so it produces
+   * another wording of the same facts rather than a different review.
+   */
+  if (state.value === "results" && event.type === "RETRY_REQUESTED") {
+    return {
+      value: "generating",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
+      selectedReviewFormatId: state.selectedReviewFormatId,
+      idempotencyKey: event.idempotencyKey,
+    };
+  }
+
+  if (state.value === "results" && event.type === "RETURN_TO_FORMAT") {
+    return {
+      value: "format",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
+      // Reopened so another style can be picked, with the previous one shown
+      // as the current choice.
+      selectedReviewFormatId: state.selectedReviewFormatId,
+    };
+  }
+
+  if (state.value === "results" && event.type === "RETURN_TO_FACTS") {
+    return {
+      value: "facts",
+      reviewSessionHandle: state.reviewSessionHandle,
+      projection: state.projection,
+      selectedFactOptionIds: state.selectedFactOptionIds,
+      customerAssertion: state.customerAssertion,
     };
   }
 

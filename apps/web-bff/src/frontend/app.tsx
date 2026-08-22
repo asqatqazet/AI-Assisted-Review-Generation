@@ -921,6 +921,55 @@ function ReviewRoute({
                 : copy.readyToCopy}
           </p>
         </section>
+
+        {/* A reviewer who dislikes the Draft can ask again without losing the
+            points they already confirmed. */}
+        <section className={styles.reworkCard} aria-label={copy.reworkLabel}>
+          <p className={styles.eyebrow}>{copy.reworkLabel}</p>
+          <div className={styles.resultActions}>
+            <button
+              className={styles.textButton}
+              type="button"
+              onClick={() =>
+                setState((current) =>
+                  transitionReviewSession(current, {
+                    type: "RETRY_REQUESTED",
+                    idempotencyKey: newIdempotencyKey(),
+                  }),
+                )
+              }
+            >
+              {copy.tryAgain}
+            </button>
+            {state.projection.reviewFormats.length > 1 ? (
+              <button
+                className={styles.textButton}
+                type="button"
+                onClick={() =>
+                  setState((current) =>
+                    transitionReviewSession(current, {
+                      type: "RETURN_TO_FORMAT",
+                    }),
+                  )
+                }
+              >
+                {copy.tryAnotherFormat}
+              </button>
+            ) : null}
+            <button
+              className={styles.textButton}
+              type="button"
+              onClick={() =>
+                setState((current) =>
+                  transitionReviewSession(current, { type: "RETURN_TO_FACTS" }),
+                )
+              }
+            >
+              {copy.changeWhatYouSaid}
+            </button>
+          </div>
+          <p className={styles.resultFootnote}>{copy.reworkNote}</p>
+        </section>
         <p className={styles.resultFootnote}>
           {copy.copyFootnote}
         </p>

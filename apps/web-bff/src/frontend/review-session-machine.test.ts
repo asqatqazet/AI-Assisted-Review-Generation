@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   createReviewSessionState,
   transitionReviewSession,
+  type ReviewSessionState,
 } from "./review-session-machine.js";
 
 const projection: ReviewSessionProjectionDto = {
@@ -305,6 +306,79 @@ describe("Review Session transition table", () => {
 
     expect(
       transitionReviewSession(failed, { type: "RETURN_TO_FACTS" }),
+    ).toMatchObject({
+      value: "facts",
+      selectedFactOptionIds: ["fact-attentive"],
+    });
+  });
+});
+
+describe("US-03.5 reworking a draft the reviewer is not happy with", () => {
+  function atResults(): ReviewSessionState {
+    const loaded = transitionReviewSession(
+      createReviewSessionState("review-session-demo"),
+      { type: "REVIEW_SESSION_LOADED", projection },
+    );
+    const chosen = transitionReviewSession(loaded, {
+      type: "FACT_OPTION_TOGGLED",
+      factOptionId: "fact-attentive",
+    });
+    const continued = transitionReviewSession(chosen, {
+      type: "CONTINUE_REQUESTED",
+    });
+    const formatted = transitionReviewSession(continued, {
+      type: "REVIEW_FORMAT_SELECTED",
+      reviewFormatId: "format-concise-v1",
+    });
+    const generating = transitionReviewSession(formatted, {
+      type: "GENERATION_REQUESTED",
+      idempotencyKey: "key-1",
+    });
+    return transitionReviewSession(generating, {
+      type: "GENERATION_SUCCEEDED",
+      draft: {
+        id: "draft-a",
+        generationId: "generation-a",
+        revision: 1,
+        text: "The team was attentive.",
+      },
+    });
+  }
+
+  it("resamples from the same confirmed Assertions and Review Format", () => {
+    const results = atResults();
+
+    const again = transitionReviewSession(results, {
+      type: "RETRY_REQUESTED",
+      idempotencyKey: "key-2",
+    });
+
+    // A resample reuses the inputs the reviewer already confirmed; it must not
+    // silently widen or drop them.
+    expect(again).toMatchObject({
+      value: "generating",
+      selectedFactOptionIds: ["fact-attentive"],
+      selectedReviewFormatId: "format-concise-v1",
+      idempotencyKey: "key-2",
+    });
+  });
+
+  it("lets the reviewer choose a different Review Format", () => {
+    const results = atResults();
+
+    expect(
+      transitionReviewSession(results, { type: "RETURN_TO_FORMAT" }),
+    ).toMatchObject({
+      value: "format",
+      selectedFactOptionIds: ["fact-attentive"],
+    });
+  });
+
+  it("lets the reviewer change what they said before drafting again", () => {
+    const results = atResults();
+
+    expect(
+      transitionReviewSession(results, { type: "RETURN_TO_FACTS" }),
     ).toMatchObject({
       value: "facts",
       selectedFactOptionIds: ["fact-attentive"],

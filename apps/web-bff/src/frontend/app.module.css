@@ -573,3 +573,11 @@
     letter-spacing: 0.06em;
   }
 }
+
+.reworkCard {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-card);
+  border-radius: 12px;
+  background: var(--surface-wash-sand);
+}

@@ -918,3 +918,78 @@ describe("reviewer application routes", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 });
+
+describe("reworking a draft from the result screen", () => {
+  it("offers to write it again without losing the confirmed points", async () => {
+    const user = userEvent.setup();
+    const commands: unknown[] = [];
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              status: "ready",
+              reviewSessionHandle: "review-session-demo",
+              tenantDisplayName: "Apex Dental",
+              locationDisplayName: "Central Clinic",
+              locale: "en-GB",
+              rating: 4,
+              action: "generate",
+              requirements,
+              factOptions: [
+                {
+                  id: "fact-attentive",
+                  label: "The team was attentive",
+                  categoryLabel: "Service",
+                  polarity: "positive",
+                },
+              ],
+              reviewFormats: [
+                { ...entryReviewFormats[0]!, availableCommands: ["generate"] },
+              ],
+              destinations,
+            }),
+          }}
+          generationClient={{
+            async *start(input) {
+              commands.push({
+                factOptionIds: input.factOptionIds,
+                reviewFormatId: input.reviewFormatId,
+                customerAssertion: input.customerAssertion,
+              });
+              yield {
+                type: "terminal",
+                status: "completed",
+                draft: {
+                  id: `draft-${commands.length}`,
+                  generationId: `generation-${commands.length}`,
+                  revision: 1,
+                  text: `Draft ${commands.length}.`,
+                },
+              } as const;
+            },
+          }}
+          newIdempotencyKey={() => `key-${commands.length + 1}`}
+          copyText={async () => undefined}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Choose a format" }));
+    await user.click(screen.getByRole("radio", { name: "Concise blurb" }));
+    await user.click(screen.getByRole("button", { name: "Write the draft" }));
+
+    expect(await screen.findByDisplayValue("Draft 1.")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Write it again" }));
+
+    // The resample reuses the Assertions already confirmed rather than
+    // sending the reviewer back to the beginning.
+    expect(await screen.findByDisplayValue("Draft 2.")).toBeVisible();
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toEqual(commands[0]);
+  });
+});
