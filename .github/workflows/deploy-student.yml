@@ -190,6 +190,47 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
 
+      # Migrations run under the migration role while the Lambdas connect under
+      # their own. If those point at different databases the runtime sees a
+      # schema the code was never built for, and every request that touches a
+      # recent column fails for no visible reason.
+      - name: Verify the runtime database has the migrated schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing="$(psql "$CONTEXT_DATABASE_URL" -X -A -t -c "
+            SELECT string_agg(name, ', ')
+            FROM (
+              SELECT 'tenant_context_versions table' AS name
+              WHERE to_regclass('public.tenant_context_versions') IS NULL
+              UNION ALL
+              SELECT 'prompt_versions.version'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'prompt_versions' AND column_name = 'version'
+              )
+              UNION ALL
+              SELECT 'provider_models.routing_priority'
+              WHERE NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'provider_models' AND column_name = 'routing_priority'
+              )
+              UNION ALL
+              SELECT 'entry mode definitions'
+              WHERE (SELECT count(*) FROM entry_mode_definitions) < 3
+            ) AS checks;
+          ")"
+          if [ -n "$missing" ]; then
+            echo "::error::The runtime database is missing: $missing" >&2
+            echo "Migrations were applied to NEON_MIGRATION_DATABASE_URL, but the" >&2
+            echo "Lambdas connect through NEON_CONTEXT_DATABASE_URL. Point both at" >&2
+            echo "the same database (different roles are fine) and redeploy." >&2
+            exit 1
+          fi
+          echo "Runtime database carries the migrated schema."
+        env:
+          CONTEXT_DATABASE_URL: ${{ secrets.NEON_CONTEXT_DATABASE_URL }}
+
       - name: Record which live provider credentials are installed
         shell: bash
         run: |
