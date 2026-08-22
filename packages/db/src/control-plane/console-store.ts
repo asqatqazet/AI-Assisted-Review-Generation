@@ -1851,6 +1851,11 @@ export function createPostgresConsoleControlPlaneStore({
                 locale: input.locale,
                 category: input.category,
                 businessProfile: { plan: input.plan },
+                // Without an entry mode a venue admits nobody, and the Console
+                // would still display a fallback value the column does not
+                // hold. Open-QR is the only mode the Console can currently
+                // make usable, since it cannot issue invitations yet.
+                defaultEntryModeKey: "open-qr",
                 policy: (isRecord(platform?.defaultPolicy)
                   ? platform.defaultPolicy
                   : {}) as Prisma.InputJsonValue,

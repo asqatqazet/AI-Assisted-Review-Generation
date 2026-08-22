@@ -9,6 +9,7 @@ An assisted review-writing system that turns only reviewer-confirmed assertions 
 - [Accepted system and AWS architecture](docs/SYSTEM-ARCHITECTURE.md)
 - [Zero-budget hosting facts and primary sources](docs/research/ZERO-BUDGET-HOSTING.md)
 - [Accepted product Epics and prototype traceability](stories/EPICS.md)
+- [Onboarding an account, field by field](docs/TENANT-ONBOARDING.md)
 - [Canonical domain language and invariants](docs/agents/domain.md)
 - [Accepted package boundaries](docs/adr/ADR-004-package-boundaries.md)
 - [Cost-controlled AWS deployment execution guide](docs/STUDENT-DEPLOYMENT-GUIDE.md)

@@ -1,7 +1,13 @@
 BEGIN;
 
+-- All three entry modes exist as data, because Account settings offers all
+-- three. With only open-qr seeded, choosing invite or both failed on the
+-- foreign key behind that dropdown.
 INSERT INTO entry_mode_definitions (key, semantics)
-VALUES ('open-qr', '{"verification":false}'::jsonb)
+VALUES
+  ('open-qr', '{"verification":false}'::jsonb),
+  ('invite', '{"verification":true}'::jsonb),
+  ('both', '{"verification":"optional"}'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
 INSERT INTO providers (id, key, display_name, credential_reference)
