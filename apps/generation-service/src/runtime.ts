@@ -87,6 +87,41 @@ export function createAssessmentFakeGateway(
   };
 }
 
+/**
+ * A provider that configuration routes to but which this deployment cannot
+ * run is a misconfiguration, not a reason to substitute another one: serving
+ * deterministic text as a real draft would be worse than failing.
+ */
+export { selectGateway as selectGatewayForTest };
+
+function selectGateway({
+  routedProvider,
+  workload,
+  geminiApiKey,
+  fakeDelayMs,
+  fakeFailure,
+}: {
+  readonly routedProvider: string;
+  readonly workload: GenerationWorkloadDto;
+  readonly geminiApiKey: string | undefined;
+  readonly fakeDelayMs: number;
+  readonly fakeFailure: boolean;
+}): ModelGatewayPort {
+  if (routedProvider === "fake") {
+    return createAssessmentFakeGateway(workload, {
+      delayMs: fakeDelayMs,
+      fail: fakeFailure,
+    });
+  }
+  if (routedProvider === "gemini") {
+    if (geminiApiKey === undefined || geminiApiKey.length === 0) {
+      throw new Error("GENERATION_PROVIDER_CREDENTIAL_MISSING");
+    }
+    return new GeminiProvider({ apiKey: geminiApiKey });
+  }
+  throw new Error("GENERATION_PROVIDER_NOT_AVAILABLE");
+}
+
 export function createGenerationRuntime({
   databaseUrl,
   contextPublicKeyPem,
@@ -136,13 +171,19 @@ export function createGenerationRuntime({
     terminalStore,
     prepareAttempt: async (workload) =>
       await createPaidWorkAttemptPreparer({
-        gateway:
-          geminiApiKey === undefined || geminiApiKey.length === 0
-            ? createAssessmentFakeGateway(workload, {
-                delayMs: fakeDelayMs,
-                fail: fakeFailure,
-              })
-            : new GeminiProvider({ apiKey: geminiApiKey }),
+        /**
+         * The routed provider decides which gateway runs, never the mere
+         * presence of a key. Installing a Gemini credential must not silently
+         * redirect traffic that configuration still routes to the
+         * deterministic provider — the model name would not even exist there.
+         */
+        gateway: selectGateway({
+          routedProvider: workload.snapshot.providerRouting.primaryProvider,
+          workload,
+          geminiApiKey,
+          fakeDelayMs,
+          fakeFailure,
+        }),
       })(workload),
     tailExisting: createPersistentTerminalTailer({
       databaseStore: databaseTerminalStore,

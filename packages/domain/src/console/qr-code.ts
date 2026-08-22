@@ -473,10 +473,14 @@ function applyFormatInformation(modules: (0 | 1)[][], mask: number): void {
     modules[14 - index]![8] = bitAt(index);
   }
 
-  for (let index = 0; index <= 7; index += 1) {
+  // The second copy is split 7/8, not 8/7: the eighth module of that column is
+  // the dark module, so bit 7 belongs to the row beside the top-right finder.
+  // Writing it as 8/7 dropped bit 7 and shifted the rest by one column, which
+  // left the redundant copy unreadable to a decoder that falls back to it.
+  for (let index = 0; index <= 6; index += 1) {
     modules[size - 1 - index]![8] = bitAt(index);
   }
-  for (let index = 8; index <= 14; index += 1) {
+  for (let index = 7; index <= 14; index += 1) {
     modules[8]![size - 15 + index] = bitAt(index);
   }
   modules[size - 8]![8] = 1;
@@ -508,7 +512,9 @@ export function renderQrSvg(
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${extent} ${extent}" width="${extent}" height="${extent}" role="img">`,
     `<rect width="${extent}" height="${extent}" fill="#ffffff"/>`,
-    `<path d="${path.join("")}" fill="#000000"/>`,
+    // Module edges must stay hard: an anti-aliased boundary is what makes a
+    // code scanned off a screen ambiguous to a camera.
+    `<path d="${path.join("")}" fill="#000000" shape-rendering="crispEdges"/>`,
     "</svg>",
   ].join("");
 }

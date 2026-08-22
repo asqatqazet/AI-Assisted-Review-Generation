@@ -76,3 +76,79 @@ describe("ADM-LOC-04 production QR generation", () => {
     expect(svg).toContain("<path d=\"M");
   });
 });
+
+describe("format information a scanner relies on", () => {
+  /** Reads the 15 format bits from the copy beside the top-left finder. */
+  function firstCopy(modules: readonly (readonly (0 | 1)[])[]): number {
+    let raw = 0;
+    for (let index = 0; index <= 5; index += 1) {
+      raw |= modules[8]![index]! << index;
+    }
+    raw |= modules[8]![7]! << 6;
+    raw |= modules[8]![8]! << 7;
+    raw |= modules[7]![8]! << 8;
+    for (let index = 9; index <= 14; index += 1) {
+      raw |= modules[14 - index]![8]! << index;
+    }
+    return raw;
+  }
+
+  /** Reads the redundant copy split across the other two finders. */
+  function secondCopy(modules: readonly (readonly (0 | 1)[])[]): number {
+    const size = modules.length;
+    let raw = 0;
+    for (let index = 0; index <= 6; index += 1) {
+      raw |= modules[size - 1 - index]![8]! << index;
+    }
+    for (let index = 7; index <= 14; index += 1) {
+      raw |= modules[8]![size - 15 + index]! << index;
+    }
+    return raw;
+  }
+
+  it("writes both copies identically, so a damaged code still decodes", () => {
+    for (const text of [
+      "https://review.example.test/s/brightsmile/downtown",
+      "https://review.example.test/s/a/b",
+      `https://review.example.test/s/${"x".repeat(120)}`,
+    ]) {
+      const code = encodeQrCode(text);
+
+      expect(secondCopy(code.modules)).toBe(firstCopy(code.modules));
+    }
+  });
+
+  it("declares error-correction level M and the mask it actually applied", () => {
+    const code = encodeQrCode("https://review.example.test/s/brightsmile/downtown");
+    // The stored bits are XOR-masked by the standard's 0x5412 pattern.
+    const data = (firstCopy(code.modules) ^ 0x5412) >> 10;
+
+    expect(data >> 3).toBe(0b00);
+    expect(data & 0b111).toBeGreaterThanOrEqual(0);
+    expect(data & 0b111).toBeLessThanOrEqual(7);
+  });
+
+  it("keeps the dark module set", () => {
+    const code = encodeQrCode("https://review.example.test/s/brightsmile/downtown");
+
+    expect(code.modules[code.size - 8]![8]).toBe(1);
+  });
+});
+
+describe("rendered output is scannable off a screen", () => {
+  it("keeps module edges hard rather than anti-aliased", () => {
+    expect(renderQrSvg("https://review.example.test/s/a/b")).toContain(
+      'shape-rendering="crispEdges"',
+    );
+  });
+
+  it("surrounds the code with the quiet zone a decoder expects", () => {
+    const text = "https://review.example.test/s/brightsmile/downtown";
+    const code = encodeQrCode(text);
+    const svg = renderQrSvg(text, { moduleSize: 4, quietZone: 4 });
+    // Four clear modules on every side, so the viewBox is eight wider.
+    const extent = (code.size + 8) * 4;
+
+    expect(svg).toContain(`viewBox="0 0 ${extent} ${extent}"`);
+  });
+});

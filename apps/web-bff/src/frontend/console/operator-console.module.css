@@ -577,7 +577,8 @@
 }
 
 .qr {
-  max-width: 220px;
+  /* A phone camera needs several screen pixels per module to resolve one. */
+  max-width: 300px;
   border: 1px solid var(--border-card);
   border-radius: 8px;
   padding: 8px;
@@ -592,7 +593,7 @@
 
 .qrThumbnail {
   display: inline-block;
-  width: 96px;
+  width: 168px;
   border: 1px solid var(--border-card);
   border-radius: 6px;
   padding: 4px;
