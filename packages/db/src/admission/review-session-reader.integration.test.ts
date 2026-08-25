@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { deriveConfigSnapshotId } from "@review/domain/configuration";
 
+import { databaseUrlForTestRole } from "../test-support/database-role-url.js";
 import { createPostgresReviewSessionReader } from "./index.js";
 
 const execFileAsync = promisify(execFile);
@@ -26,10 +27,10 @@ function contextRuntimeDatabaseUrl(): string {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for database integration tests");
   }
-  const url = new URL(databaseUrl);
-  url.username = "context_runtime_svc";
-  url.password = "";
-  return url.toString();
+  return databaseUrlForTestRole({
+    databaseUrl,
+    role: "context_runtime_svc",
+  });
 }
 
 describeDatabase("US-01.3 PostgreSQL Review Session projection", () => {

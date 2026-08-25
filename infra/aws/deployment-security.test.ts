@@ -17,6 +17,35 @@ const between = (source: string, start: string, end: string): string => {
 };
 
 describe("student deployment security", () => {
+  it("authenticates disposable CI service roles without changing production role provisioning", () => {
+    const verify = read(".github/workflows/verify.yml");
+    const deploy = read(".github/workflows/deploy-student.yml");
+    const rolePasswords = read(
+      "infra/local/integration-service-role-passwords.sql",
+    );
+
+    for (const workflow of [verify, deploy]) {
+      expect(workflow).toContain(
+        "Provision disposable integration service-role passwords",
+      );
+      expect(workflow).toContain(
+        "../../infra/local/integration-service-role-passwords.sql",
+      );
+      expect(workflow).toContain(
+        "TEST_SERVICE_ROLE_PASSWORD: local_only_change_me",
+      );
+    }
+    for (const role of [
+      "context_svc",
+      "context_runtime_svc",
+      "console_control_svc",
+      "generation_svc",
+    ]) {
+      expect(rolePasswords).toContain(`ALTER ROLE ${role} PASSWORD`);
+    }
+    expect(rolePasswords).toContain("local_only_change_me");
+  });
+
   it("stores deployment variables and secrets only in the protected student environment", () => {
     const setup = read("scripts/setup-student-deployment.sh");
     const repair = read("scripts/repair-student-deploy-role.sh");

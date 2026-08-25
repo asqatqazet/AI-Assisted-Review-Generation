@@ -13,6 +13,7 @@ import {
   createPostgresConsoleControlPlaneStore as createAuthorizedPostgresConsoleControlPlaneStore,
 } from "./index.js";
 import { STUDENT_STRICT_ZERO_PROMPT_APPROVAL } from "../deployment/prompt-release-content-policy.js";
+import { databaseUrlForTestRole } from "../test-support/database-role-url.js";
 import {
   createStrictPromptEvaluationFixture,
   sqlLiteral,
@@ -69,10 +70,7 @@ function serviceDatabaseUrl(
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for database integration tests");
   }
-  const url = new URL(databaseUrl);
-  url.username = role;
-  url.password = "";
-  return url.toString();
+  return databaseUrlForTestRole({ databaseUrl, role });
 }
 
 async function runSqlAs(

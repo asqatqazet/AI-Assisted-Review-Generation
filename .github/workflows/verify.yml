@@ -48,6 +48,14 @@ jobs:
       - run: pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
         env:
           DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
+      - name: Provision disposable integration service-role passwords
+        run: >-
+          pnpm --dir packages/db exec prisma db execute
+          --schema prisma/schema.prisma
+          --file ../../infra/local/integration-service-role-passwords.sql
+        env:
+          DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
       - run: pnpm verify
         env:
           DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
+          TEST_SERVICE_ROLE_PASSWORD: local_only_change_me

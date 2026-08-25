@@ -114,11 +114,20 @@ jobs:
         env:
           DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
 
+      - name: Provision disposable integration service-role passwords
+        run: >-
+          pnpm --dir packages/db exec prisma db execute
+          --schema prisma/schema.prisma
+          --file ../../infra/local/integration-service-role-passwords.sql
+        env:
+          DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
+
       - name: Verify and build exactly once
         run: pnpm verify
         env:
           DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
           REVIEW_RELEASE_SHA: ${{ github.sha }}
+          TEST_SERVICE_ROLE_PASSWORD: local_only_change_me
 
       - name: Package immutable release artifacts
         shell: bash

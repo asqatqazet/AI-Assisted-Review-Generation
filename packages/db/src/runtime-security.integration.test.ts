@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createPostgresConsoleExecutionAuthorizationStore } from "./control-plane/index.js";
 import { createPostgresConsoleExecutionProjectionStore } from "./execution-plane/index.js";
+import { databaseUrlForTestRole } from "./test-support/database-role-url.js";
 
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
@@ -18,10 +19,7 @@ const asRole = (role: string): string => {
   if (databaseUrl === undefined) {
     throw new Error("DATABASE_URL is required for database integration tests");
   }
-  const url = new URL(databaseUrl);
-  url.username = role;
-  url.password = "";
-  return url.toString();
+  return databaseUrlForTestRole({ databaseUrl, role });
 };
 
 async function runSql(connectionUrl: string, sql: string): Promise<string> {

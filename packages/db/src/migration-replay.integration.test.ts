@@ -20,6 +20,7 @@ import {
   createPostgresReviewerDispositionStore,
 } from "./execution-plane/index.js";
 import { createPostgresReviewSessionProgressStore } from "./review-session/index.js";
+import { databaseUrlForTestRole } from "./test-support/database-role-url.js";
 
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
@@ -174,13 +175,14 @@ describeDatabase("PostgreSQL migration replay", () => {
         `,
       );
 
-      const consoleUrl = new URL(scratchUrl);
-      consoleUrl.username = "console_control_svc";
-      consoleUrl.password = "";
+      const consoleUrl = databaseUrlForTestRole({
+        databaseUrl: scratchUrl.toString(),
+        role: "console_control_svc",
+      });
       await expect(
         qualifyLocalStaticPromptFixture({
           migrationDatabaseUrl: scratchUrl.toString(),
-          consoleDatabaseUrl: consoleUrl.toString(),
+          consoleDatabaseUrl: consoleUrl,
           consoleDatabaseAuthoritySecret: consoleAuthoritySecret,
           operatorId: platformOperatorId,
         }),
@@ -191,7 +193,7 @@ describeDatabase("PostgreSQL migration replay", () => {
       await expect(
         qualifyLocalStaticPromptFixture({
           migrationDatabaseUrl: scratchUrl.toString(),
-          consoleDatabaseUrl: consoleUrl.toString(),
+          consoleDatabaseUrl: consoleUrl,
           consoleDatabaseAuthoritySecret: consoleAuthoritySecret,
           operatorId: platformOperatorId,
         }),
@@ -263,11 +265,12 @@ describeDatabase("PostgreSQL migration replay", () => {
         await consoleStore.disconnect();
       }
 
-      const legacyUrl = new URL(scratchUrl);
-      legacyUrl.username = "context_svc";
-      legacyUrl.password = "";
+      const legacyUrl = databaseUrlForTestRole({
+        databaseUrl: scratchUrl.toString(),
+        role: "context_svc",
+      });
       const legacyEntryStore = createPostgresEntryAdmissionStore({
-        databaseUrl: legacyUrl.toString(),
+        databaseUrl: legacyUrl,
       });
       try {
         const legacyRouteHandleHash = `sha256:legacy-entry-${randomUUID()}`;
@@ -284,15 +287,16 @@ describeDatabase("PostgreSQL migration replay", () => {
         await legacyEntryStore.disconnect();
       }
 
-      const runtimeUrl = new URL(scratchUrl);
-      runtimeUrl.username = "context_runtime_svc";
-      runtimeUrl.password = "";
+      const runtimeUrl = databaseUrlForTestRole({
+        databaseUrl: scratchUrl.toString(),
+        role: "context_runtime_svc",
+      });
       const entryStore = createPostgresEntryAdmissionStore({
-        databaseUrl: runtimeUrl.toString(),
+        databaseUrl: runtimeUrl,
       });
       const generationAdmission =
         createPostgresReviewerGenerationAdmissionStore({
-          databaseUrl: runtimeUrl.toString(),
+          databaseUrl: runtimeUrl,
           providerMode: "fake-only",
         });
       const entryRouteHandleHash = `sha256:entry-${randomUUID()}`;
@@ -563,20 +567,22 @@ describeDatabase("PostgreSQL migration replay", () => {
         scratchUrl.toString(),
         `UPDATE draft_revisions SET annotations = '{}'::jsonb WHERE draft_id = '${draftId}';`,
       );
-      const runtimeUrl = new URL(scratchUrl);
-      runtimeUrl.username = "context_runtime_svc";
-      runtimeUrl.password = "";
-      const generationUrl = new URL(scratchUrl);
-      generationUrl.username = "generation_svc";
-      generationUrl.password = "";
+      const runtimeUrl = databaseUrlForTestRole({
+        databaseUrl: scratchUrl.toString(),
+        role: "context_runtime_svc",
+      });
+      const generationUrl = databaseUrlForTestRole({
+        databaseUrl: scratchUrl.toString(),
+        role: "generation_svc",
+      });
       const progressStore = createPostgresReviewSessionProgressStore({
-        databaseUrl: runtimeUrl.toString(),
+        databaseUrl: runtimeUrl,
       });
       const terminalStore = createPostgresGenerationTerminalStore({
-        databaseUrl: generationUrl.toString(),
+        databaseUrl: generationUrl,
       });
       const dispositionStore = createPostgresReviewerDispositionStore({
-        databaseUrl: generationUrl.toString(),
+        databaseUrl: generationUrl,
       });
       try {
         await expect(

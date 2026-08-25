@@ -15,6 +15,7 @@ import { createWebBffApp } from "../apps/web-bff/src/app.js";
 import { createHmacCsrfProtector } from "../apps/web-bff/src/security/csrf-protector.js";
 import { deriveConfigSnapshotId } from "../packages/domain/src/configuration/config-snapshot.js";
 import { STUDENT_STRICT_ZERO_PROMPT_APPROVAL } from "../packages/db/src/deployment/prompt-release-content-policy.js";
+import { databaseUrlForTestRole } from "../packages/db/src/test-support/database-role-url.js";
 import {
   createStrictPromptEvaluationFixture,
   sqlLiteral,
@@ -293,12 +294,8 @@ function createJourneyApp(
     fakeFailure = false,
   }: { readonly fakeDelayMs?: number; readonly fakeFailure?: boolean } = {},
 ) {
-  const databaseUrlForRole = (role: string): string => {
-    const roleUrl = new URL(activeDatabaseUrl);
-    roleUrl.username = role;
-    roleUrl.password = "";
-    return roleUrl.toString();
-  };
+  const databaseUrlForRole = (role: string): string =>
+    databaseUrlForTestRole({ databaseUrl: activeDatabaseUrl, role });
   const contextKeys = generateKeyPairSync("ed25519");
   const consoleAuthorityKeys = generateKeyPairSync("ed25519");
   const generationKeys = generateKeyPairSync("ed25519");

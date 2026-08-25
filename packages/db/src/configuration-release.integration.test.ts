@@ -4,6 +4,8 @@ import { promisify } from "node:util";
 
 import { describe, expect, it } from "vitest";
 
+import { databaseUrlForTestRole } from "./test-support/database-role-url.js";
+
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
 const psql = process.env["PSQL_BIN"] ?? "psql";
@@ -14,10 +16,7 @@ const asRole = (role: string): string => {
   if (databaseUrl === undefined) {
     throw new Error("DATABASE_URL is required");
   }
-  const url = new URL(databaseUrl);
-  url.username = role;
-  url.password = "";
-  return url.toString();
+  return databaseUrlForTestRole({ databaseUrl, role });
 };
 
 const operatorProof = (operatorId: string, issuedAtMs: number, nonce: string) =>

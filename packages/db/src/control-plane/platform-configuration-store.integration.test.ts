@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { derivePromptVersionHash } from "@review/domain/experiment";
 
 import { STUDENT_STRICT_ZERO_PROMPT_APPROVAL } from "../deployment/prompt-release-content-policy.js";
+import { databaseUrlForTestRole } from "../test-support/database-role-url.js";
 import {
   createStrictPromptEvaluationFixture,
   sqlLiteral,
@@ -95,10 +96,10 @@ function serviceUrl(): string {
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required");
   }
-  const url = new URL(databaseUrl);
-  url.username = "console_control_svc";
-  url.password = "";
-  return url.toString();
+  return databaseUrlForTestRole({
+    databaseUrl,
+    role: "console_control_svc",
+  });
 }
 
 describeDatabase.sequential("Platform Configuration Draft PostgreSQL adapter", () => {

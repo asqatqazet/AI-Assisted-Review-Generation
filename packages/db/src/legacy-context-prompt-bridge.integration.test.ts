@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { derivePromptVersionHash } from "@review/domain/experiment";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { databaseUrlForTestRole } from "./test-support/database-role-url.js";
 import { resetIntegrationDatabase } from "./test-support/reset-integration-database.js";
 
 const execFileAsync = promisify(execFile);
@@ -61,10 +62,7 @@ function legacyUrl(): string {
   if (databaseUrl === undefined) {
     throw new Error("DATABASE_URL is required");
   }
-  const url = new URL(databaseUrl);
-  url.username = "context_svc";
-  url.password = "";
-  return url.toString();
+  return databaseUrlForTestRole({ databaseUrl, role: "context_svc" });
 }
 
 describeDatabase("legacy Context Prompt rollback bridge", () => {
