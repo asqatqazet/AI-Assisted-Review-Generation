@@ -102,6 +102,16 @@ interface NavigationSection {
   readonly items: readonly NavigationItem[];
 }
 
+declare const __RELEASE_SHA__: string;
+
+const RELEASE_SHA =
+  typeof __RELEASE_SHA__ === "string" && __RELEASE_SHA__ === "local-e2e"
+    ? __RELEASE_SHA__
+    : typeof __RELEASE_SHA__ === "string" &&
+        /^[0-9a-f]{7,40}$/u.test(__RELEASE_SHA__)
+      ? __RELEASE_SHA__.slice(0, 12)
+      : "local";
+
 /**
  * ADM-AUTH-03. Navigation is assembled from server-resolved capabilities, so a
  * Tenant operator is never offered a Platform screen. Hiding is presentation
@@ -110,60 +120,68 @@ interface NavigationSection {
 function navigationSections(
   capabilities: ConsoleBootstrapDto["capabilities"],
 ): readonly NavigationSection[] {
-  const sections: NavigationSection[] = [
-    {
-      heading: "Operate",
-      items: [
-        { to: "/console", label: "Overview", end: true },
-        ...(capabilities.canManageLocations
-          ? [
-              { to: "/console/locations", label: "Locations" },
-              { to: "/console/distribution", label: "Distribution" },
-              { to: "/console/settings/tenant", label: "Account settings" },
-            ]
-          : []),
-      ],
-    },
-  ];
-
-  if (capabilities.canManageConfiguration) {
-    sections.push({
-      heading: "Configure",
-      items: [
-        { to: "/console/configuration/context", label: "Business context" },
-        { to: "/console/configuration/keywords", label: "Fact options" },
-        { to: "/console/configuration/styles", label: "Review formats" },
-        { to: "/console/configuration/actions", label: "Drafting actions" },
-      ],
-    });
-  }
-
-  if (capabilities.canViewAnalytics) {
-    sections.push({
-      heading: "Analyse",
-      items: [{ to: "/console/analytics", label: "Analytics" }],
-    });
-  }
-
-  if (capabilities.canManageAiOperations) {
-    sections.push({
-      heading: "AI operations",
-      items: [
-        { to: "/console/ai/prompts", label: "Prompt versions" },
-        { to: "/console/ai/experiments", label: "Experiments" },
-        { to: "/console/ai/bench", label: "Bench" },
-      ],
-    });
-  }
+  const sections: NavigationSection[] = [];
 
   if (capabilities.canAccessPlatform) {
     sections.push({
       heading: "Platform",
       items: [
-        { to: "/console/platform/tenants", label: "Accounts" },
+        { to: "/console/platform/tenants", label: "Tenants" },
         { to: "/console/platform/providers", label: "Providers" },
-        { to: "/console/platform/styles", label: "Format catalogue" },
+        {
+          to: "/console/platform/styles",
+          label: "Review Format catalogue",
+        },
         { to: "/console/platform/settings", label: "Platform settings" },
+      ],
+    });
+  }
+
+  sections.push({
+    heading: "Operate",
+    items: [
+      { to: "/console", label: "Overview", end: true },
+      ...(capabilities.canManageAiOperations
+        ? [{ to: "/console/ai/bench", label: "Bench" }]
+        : []),
+      ...(capabilities.canViewAnalytics
+        ? [{ to: "/console/analytics", label: "Analytics" }]
+        : []),
+    ],
+  });
+
+  if (capabilities.canManageConfiguration) {
+    sections.push({
+      heading: "Tenant",
+      items: [
+        { to: "/console/configuration/context", label: "Business context" },
+        { to: "/console/configuration/keywords", label: "Fact Options" },
+        {
+          to: "/console/configuration/styles",
+          label: "Review Format enablement",
+        },
+        { to: "/console/configuration/actions", label: "Actions" },
+        { to: "/console/settings/tenant", label: "Tenant settings" },
+      ],
+    });
+  }
+
+  if (capabilities.canManageLocations) {
+    sections.push({
+      heading: "Location",
+      items: [
+        { to: "/console/locations", label: "Locations" },
+        { to: "/console/distribution", label: "Distribution" },
+      ],
+    });
+  }
+
+  if (capabilities.canManageAiOperations) {
+    sections.push({
+      heading: "Model",
+      items: [
+        { to: "/console/ai/prompts", label: "Prompt versions" },
+        { to: "/console/ai/experiments", label: "Experiments" },
       ],
     });
   }
@@ -302,6 +320,7 @@ function ConsoleWorkspace({
               </ul>
             </section>
           ))}
+          <p className={styles.release}>Release {RELEASE_SHA}</p>
         </nav>
         <main className={styles.main}>
           <Routes>
@@ -442,7 +461,7 @@ export default function OperatorConsole({
       onSignOut={() => {
         setSignOutFailed(false);
         void client.logout().then(
-          () => globalThis.location.assign("/console"),
+          (logoutUrl) => globalThis.location.assign(logoutUrl),
           () => setSignOutFailed(true),
         );
       }}

@@ -51,4 +51,57 @@ describe("TS-06 Role Grants Test", () => {
     expect(sql).not.toContain("context_svc_secret");
     expect(sql).not.toContain("generation_svc_secret");
   });
+
+  it("seals new Console and reviewer versions behind disjoint login roles while retaining the rollback bridge", () => {
+    const migrationPath = path.resolve(
+      __dirname,
+      "../prisma/migrations/20260823000019_operator_capability_rls/migration.sql",
+    );
+    const sql = fs.readFileSync(migrationPath, "utf8");
+
+    expect(sql).toMatch(/CREATE ROLE context_runtime_svc WITH LOGIN NOINHERIT/u);
+    expect(sql).toMatch(/CREATE ROLE console_control_svc WITH LOGIN NOINHERIT/u);
+    expect(sql).toContain(
+      "ALTER ROLE context_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;",
+    );
+    expect(sql).toContain(
+      "the historical shared login remains only for the bounded rollback bridge",
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION review_operator_has_tenant_capability\(uuid, text\)\s+TO context_runtime_svc, console_control_svc, context_svc;/u,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION review_operator_has_tenant_capability_privileged\(uuid, text\)\s+TO console_control_svc, context_svc;/u,
+    );
+    expect(sql).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION review_operator_has_tenant_capability_privileged\(uuid, text\) TO context_runtime_svc;/u,
+    );
+    expect(sql).not.toMatch(
+      /GRANT[^;]*(?:operators|tenant_access_grants|platform_access_grants)[^;]*TO context_runtime_svc;/u,
+    );
+    expect(sql).toMatch(
+      /GRANT SELECT, INSERT, UPDATE ON[^;]*(?:review_sessions|entry_challenges)[^;]*TO context_runtime_svc;/u,
+    );
+    expect(sql).toContain(
+      "current_user IN ('context_runtime_svc', 'context_svc')",
+    );
+  });
+
+  it("keeps FORCE RLS usable by the exact migration owner without widening a service role", () => {
+    const migrationPath = path.resolve(
+      __dirname,
+      "../prisma/migrations/20260823000019_operator_capability_rls/migration.sql",
+    );
+    const sql = fs.readFileSync(migrationPath, "utf8");
+
+    expect(sql).toContain("migration_owner_maintenance_policy");
+    expect(sql).toMatch(/class\.relowner\s*=\s*role\.oid/u);
+    expect(sql).toMatch(/role\.rolname\s*=\s*current_user/u);
+    expect(sql).toMatch(
+      /CREATE POLICY migration_owner_maintenance_policy ON %I FOR ALL TO %I/u,
+    );
+    expect(sql).not.toMatch(
+      /CREATE POLICY migration_owner_maintenance_policy[^;]*TO PUBLIC/u,
+    );
+  });
 });

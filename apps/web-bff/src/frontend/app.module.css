@@ -416,6 +416,18 @@
   border-radius: var(--radius-xs);
 }
 
+.verificationInput {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 12px 14px;
+  color: var(--text-body);
+  font: var(--type-body);
+  background: var(--surface-card);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-xs);
+}
+
 .factAssertionField {
   margin-top: 28px;
   padding-top: 20px;
@@ -454,6 +466,25 @@
   font: var(--type-micro);
 }
 
+.systemAnnotations {
+  margin-top: 12px;
+  padding: 12px 14px;
+  color: var(--text-muted);
+  background: var(--surface-wash-sand);
+  border-left: 3px solid var(--border-rule);
+  border-radius: var(--radius-xs);
+}
+
+.systemAnnotation {
+  margin: 0;
+  font: var(--type-caption);
+  white-space: pre-wrap;
+}
+
+.systemAnnotation + .systemAnnotation {
+  margin-top: 8px;
+}
+
 .editedState {
   margin: 6px 0 0;
   color: var(--text-body);
@@ -478,7 +509,16 @@
 }
 
 .provenance summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
   cursor: pointer;
+}
+
+.provenanceList {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-muted);
 }
 
 .resultActions {
@@ -518,7 +558,10 @@
 }
 
 .textButton {
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 10px 0;
   margin-top: 20px;
   color: var(--text-body);
   font: var(--type-caption);

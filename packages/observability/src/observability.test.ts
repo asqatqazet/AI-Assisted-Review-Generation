@@ -24,6 +24,48 @@ describe("TS-20 Observability & Redaction", () => {
     expect(redacted["status"]).toBe("completed");
   });
 
+  it("recursively redacts capabilities, credentials and model/customer content", () => {
+    const raw = {
+      headers: {
+        authorization: "Bearer operator-jwt",
+        cookie: "__Host-review_browser=browser-secret",
+      },
+      invocation: {
+        permit: "signed-generation-permit",
+        terminalReceipt: "signed-terminal-receipt",
+        snapshot: { providerRouting: { apiKey: "provider-secret" } },
+      },
+      attempts: [
+        {
+          candidateText: "unvalidated model bytes",
+          assertions: [{ proposition: "private customer fact" }],
+        },
+      ],
+      inputTokens: 150,
+      outputTokens: 35,
+    };
+
+    const serialized = JSON.stringify(redactDraftText(raw));
+    for (const secret of [
+      "operator-jwt",
+      "browser-secret",
+      "signed-generation-permit",
+      "signed-terminal-receipt",
+      "provider-secret",
+      "unvalidated model bytes",
+      "private customer fact",
+    ]) {
+      expect(serialized).not.toContain(secret);
+    }
+    expect(JSON.parse(serialized)).toMatchObject({
+      inputTokens: 150,
+      outputTokens: 35,
+      attempts: [
+        { candidateText: "[REDACTED]", assertions: "[REDACTED]" },
+      ],
+    });
+  });
+
   it("emits structured log without draft text", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 

@@ -1,4 +1,5 @@
 import { serve } from "@hono/node-server";
+import { readExecutionPlaneDatabaseCurrentUser } from "@review/db/execution-plane";
 import { Hono } from "hono";
 
 import { createGenerationRuntime } from "./src/runtime.js";
@@ -11,15 +12,30 @@ const required = (name: string): string => {
   return value;
 };
 
+const databaseUrl = required("GENERATION_DATABASE_URL");
 const invoke = createGenerationRuntime({
-  databaseUrl: required("GENERATION_DATABASE_URL"),
+  databaseUrl,
+  providerMode:
+    process.env["REVIEW_PROVIDER_MODE"] === "paid-enabled"
+      ? "paid-enabled"
+      : "fake-only",
   contextPublicKeyPem: required("CONTEXT_WORK_PUBLIC_KEY_PEM"),
+  consoleAuthorityPublicKeyPem: required(
+    "CONSOLE_AUTHORITY_PUBLIC_KEY_PEM",
+  ),
   generationPrivateKeyPem: required("GENERATION_WORK_PRIVATE_KEY_PEM"),
+  geminiApiKey: process.env["GEMINI_API_KEY"],
+  openaiApiKey: process.env["OPENAI_API_KEY"],
   fakeDelayMs: Number.parseInt(process.env["REVIEW_FAKE_DELAY_MS"] ?? "0", 10),
 });
 const app = new Hono();
 app.get("/health", (c) => c.json({ status: "ok", service: "generation-service" }));
+app.get("/__local/current-user", async (c) =>
+  c.json({
+    current_user: await readExecutionPlaneDatabaseCurrentUser({ databaseUrl }),
+  }),
+);
 app.post("/invoke", async (c) => c.json(await invoke(await c.req.json())));
 
 const port = Number.parseInt(process.env["PORT"] ?? "3002", 10);
-serve({ fetch: app.fetch, port });
+serve({ fetch: app.fetch, hostname: "127.0.0.1", port });

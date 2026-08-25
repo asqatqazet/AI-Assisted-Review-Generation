@@ -21,13 +21,22 @@ ON CONFLICT (key) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   credential_reference = EXCLUDED.credential_reference;
 
-INSERT INTO provider_models (id, provider_id, model_key)
+-- The strict-$0 student profile always routes through FakeProvider. Clear a
+-- previously selected paid primary before upserting the one required primary;
+-- migration 18 verifies the final transaction state with a deferred trigger.
+UPDATE provider_models
+SET routing_priority = NULL
+WHERE routing_priority = 1;
+
+INSERT INTO provider_models (id, provider_id, model_key, routing_priority)
 VALUES (
   '00000000-0000-4000-8000-000000000202',
   (SELECT id FROM providers WHERE key = 'fake'),
-  'fake-v1'
+  'fake-v1',
+  1
 )
-ON CONFLICT (provider_id, model_key) DO NOTHING;
+ON CONFLICT (provider_id, model_key) DO UPDATE SET
+  routing_priority = EXCLUDED.routing_priority;
 
 INSERT INTO price_rates (
   id,
@@ -64,7 +73,10 @@ INSERT INTO tenants (
   name,
   locale,
   default_entry_mode_key,
+  tone_guidelines,
+  banned_terms,
   monthly_budget_micros,
+  configuration_values,
   policy
 )
 VALUES (
@@ -73,15 +85,21 @@ VALUES (
   'Speicher Neun',
   'de-DE',
   'open-qr',
+  'Kurz, gesprochen, ohne Superlative. Nie ein Gericht beschreiben, das nicht bestellt wurde.',
+  ARRAY['bestes Restaurant der Stadt','gratis']::text[],
   0,
-  '{"maxActiveGenerations":1,"minimumFactSelections":2,"maximumCustomerAssertionChars":500}'::jsonb
+  '{"locale":"de-DE","toneGuidelines":"Kurz, gesprochen, ohne Superlative. Nie ein Gericht beschreiben, das nicht bestellt wurde.","entryMode":"open-qr","requireDisclosure":false,"requireVerifiedExperience":false,"maxReviewFormatsPerRequest":1,"minimumFactSelections":1,"maximumCustomerAssertionChars":500,"bannedTerms":["bestes Restaurant der Stadt","gratis"],"monthlyBudgetMicros":0,"alertThresholdPct":80}'::jsonb,
+  '{"maxActiveGenerations":1,"requireDisclosure":false,"requireVerifiedExperience":false,"maxReviewFormatsPerRequest":1,"minimumFactSelections":1,"maximumCustomerAssertionChars":500}'::jsonb
 )
 ON CONFLICT (id) DO UPDATE SET
   slug = EXCLUDED.slug,
   name = EXCLUDED.name,
   locale = EXCLUDED.locale,
   default_entry_mode_key = EXCLUDED.default_entry_mode_key,
+  tone_guidelines = EXCLUDED.tone_guidelines,
+  banned_terms = EXCLUDED.banned_terms,
   monthly_budget_micros = EXCLUDED.monthly_budget_micros,
+  configuration_values = EXCLUDED.configuration_values,
   policy = EXCLUDED.policy;
 
 INSERT INTO locations (id, tenant_id, slug, name)
@@ -94,6 +112,25 @@ VALUES (
 ON CONFLICT (id) DO UPDATE SET
   slug = EXCLUDED.slug,
   name = EXCLUDED.name;
+
+-- A manual production check left this known disposable Location behind.
+-- Delete it when unreferenced; otherwise preserve referential history under a
+-- neutral archived identity that cannot leak the garbage fixture into lists.
+DO $cleanup$
+BEGIN
+  DELETE FROM locations
+  WHERE tenant_id = '00000000-0000-4000-8000-000000000101'
+    AND slug = 'fsdfdsfsdfsd';
+EXCEPTION
+  WHEN foreign_key_violation THEN
+    UPDATE locations
+    SET status = 'INACTIVE',
+        name = 'Archived test Location',
+        slug = 'archived-' || replace(id::text, '-', '')
+    WHERE tenant_id = '00000000-0000-4000-8000-000000000101'
+      AND slug = 'fsdfdsfsdfsd';
+END
+$cleanup$;
 
 INSERT INTO posting_destination_types (id, key, external_id_schema, status)
 VALUES
@@ -137,9 +174,9 @@ VALUES
     '00000000-0000-4000-8000-000000000101',
     '00000000-0000-4000-8000-000000000102',
     (SELECT id FROM posting_destination_types WHERE key = 'tripadvisor'),
-    'Speicher Neun HafenCity',
-    'https://www.tripadvisor.com/Search?q=Speicher%20Neun%20HafenCity',
-    true
+    'unconfigured',
+    'https://www.tripadvisor.com/',
+    false
   )
 ON CONFLICT (tenant_id, location_id, destination_type_id) DO UPDATE SET
   external_id = EXCLUDED.external_id,
@@ -284,135 +321,29 @@ INSERT INTO prompt_versions (
   prompt_key,
   action,
   content_hash,
-  body
+  body,
+  variables,
+  version,
+  status
 )
 VALUES (
-  '00000000-0000-4000-8000-000000000107',
+  '00000000-0000-4000-8000-000000000136',
   '00000000-0000-4000-8000-000000000101',
-  'generate-v1',
+  'review.generate.release',
   'GENERATE',
-  'prompt-generate-v1',
-  'Use only supplied Assertions.'
+  'sha256:faf385e0cafc00a1b456dbedaa29828486d5fc2f2da8cb16a6debf871ae4fbeb',
+  'Use only supplied Assertions.',
+  ARRAY['locale','tone']::text[],
+  3,
+  'DRAFT'
 )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO effective_configuration_snapshots (
-  id,
-  tenant_id,
-  location_id,
-  schema_version,
-  content_hash,
-  payload,
-  provenance
-)
-VALUES (
-  '00000000-0000-4000-8000-000000000127',
-  '00000000-0000-4000-8000-000000000101',
-  '00000000-0000-4000-8000-000000000102',
-  2,
-  'sha256:speicher-neun-hafencity-v1',
-  '{
-    "snapshotId":"00000000-0000-4000-8000-000000000127",
-    "schemaVersion":2,
-    "tenantId":"00000000-0000-4000-8000-000000000101",
-    "locationId":"00000000-0000-4000-8000-000000000102",
-    "tenantName":"Speicher Neun",
-    "locationName":"Speicher Neun · HafenCity",
-    "provenance":{},
-    "settings":{
-      "locale":"de-DE",
-      "toneGuidelines":"Kurz, gesprochen, ohne Superlative. Nie ein Gericht beschreiben, das nicht bestellt wurde.",
-      "entryMode":"open-qr",
-      "requireDisclosure":false,
-      "requireVerifiedExperience":false,
-      "maxReviewFormatsPerRequest":1,
-      "bannedTerms":["bestes Restaurant der Stadt","gratis"],
-      "enabledReviewFormatVersionIds":["00000000-0000-4000-8000-000000000122","00000000-0000-4000-8000-000000000123"],
-      "enabledCommands":["generate"],
-      "monthlyBudgetMicros":0,
-      "alertThresholdPct":80
-    },
-    "factOptions":[
-      {"id":"00000000-0000-4000-8000-000000000130","version":"s1@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Frischer Fisch.","categoryId":"00000000-0000-4000-8000-000000000109","polarity":"positive","locale":"de-DE","active":true,"sortOrder":10},
-      {"id":"00000000-0000-4000-8000-000000000113","version":"s2@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Gut gewürzt.","categoryId":"00000000-0000-4000-8000-000000000109","polarity":"positive","locale":"de-DE","active":true,"sortOrder":20},
-      {"id":"00000000-0000-4000-8000-000000000114","version":"s3@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Essen war kalt.","categoryId":"00000000-0000-4000-8000-000000000109","polarity":"negative","locale":"de-DE","active":true,"sortOrder":30},
-      {"id":"00000000-0000-4000-8000-000000000115","version":"s4@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Aufmerksamer Service.","categoryId":"00000000-0000-4000-8000-000000000103","polarity":"positive","locale":"de-DE","active":true,"sortOrder":40},
-      {"id":"00000000-0000-4000-8000-000000000116","version":"s5@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Freundliches Personal.","categoryId":"00000000-0000-4000-8000-000000000103","polarity":"positive","locale":"de-DE","active":true,"sortOrder":50},
-      {"id":"00000000-0000-4000-8000-000000000117","version":"s6@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Lange Wartezeit.","categoryId":"00000000-0000-4000-8000-000000000112","polarity":"negative","locale":"de-DE","active":true,"sortOrder":60},
-      {"id":"00000000-0000-4000-8000-000000000118","version":"s7@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Essen kam schnell.","categoryId":"00000000-0000-4000-8000-000000000112","polarity":"positive","locale":"de-DE","active":true,"sortOrder":70},
-      {"id":"00000000-0000-4000-8000-000000000119","version":"s8@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Blick auf den Hafen.","categoryId":"00000000-0000-4000-8000-000000000110","polarity":"positive","locale":"de-DE","active":true,"sortOrder":80},
-      {"id":"00000000-0000-4000-8000-000000000120","version":"s9@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Zu laut.","categoryId":"00000000-0000-4000-8000-000000000110","polarity":"negative","locale":"de-DE","active":true,"sortOrder":90},
-      {"id":"00000000-0000-4000-8000-000000000121","version":"s10@1","owner":{"scope":"tenant","tenantId":"00000000-0000-4000-8000-000000000101"},"proposition":"Fairer Preis.","categoryId":"00000000-0000-4000-8000-000000000111","polarity":"positive","locale":"de-DE","active":true,"sortOrder":100}
-    ],
-    "reviewFormats":[
-      {"id":"00000000-0000-4000-8000-000000000122","key":"concise-blurb","version":"1.0.0","displayName":"Kurzer Text","targetPlatform":"google","locale":"any","description":{"de-DE":"Zwei oder drei Sätze. Was passiert ist, in der Reihenfolge, in der es passiert ist."},"sample":{"de-DE":"Frischer Fisch, gut gewürzt, und der Service war aufmerksam. Der Blick auf den Hafen hat den Abend gemacht."},"constraints":{"minChars":20,"maxChars":420,"paragraphs":1,"emojiPolicy":"none","secondPerson":false},"supportedCommands":["generate"]},
-      {"id":"00000000-0000-4000-8000-000000000123","key":"social-short","version":"1.0.0","displayName":"Kurz für Portale","targetPlatform":"tripadvisor","locale":"any","description":{"de-DE":"Eine Zeile, für Portale mit harter Zeichenbegrenzung."},"sample":{"de-DE":"Frischer Fisch, aufmerksamer Service, Blick auf den Hafen."},"constraints":{"minChars":20,"maxChars":140,"paragraphs":1,"emojiPolicy":"allowed","secondPerson":false},"supportedCommands":["generate"]}
-    ],
-    "promptVersions":[{
-      "id":"00000000-0000-4000-8000-000000000107",
-      "hash":"prompt-generate-v1",
-      "key":"review.generate",
-      "commandKind":"generate",
-      "body":"Use only supplied Assertions.",
-      "variables":["locale","tone"]
-    }],
-    "priceRates":[{
-      "id":"00000000-0000-4000-8000-000000000203",
-      "providerModelId":"00000000-0000-4000-8000-000000000202",
-      "provider":"fake",
-      "model":"fake-v1",
-      "inputPerMillionMicros":0,
-      "outputPerMillionMicros":0,
-      "currency":"EUR",
-      "unit":"token",
-      "effectiveFrom":"2026-08-01T00:00:00.000Z",
-      "effectiveTo":null
-    }],
-    "providerRouting":{
-      "version":"routing-v1",
-      "providerModelId":"00000000-0000-4000-8000-000000000202",
-      "primaryProvider":"fake",
-      "primaryModel":"fake-v1"
-    }
-  }'::jsonb,
-  '{}'::jsonb
-)
-ON CONFLICT (id) DO NOTHING;
-
--- The provider catalogue is shared across tenants. When this idempotent seed is
--- applied to a database that already contains the FakeProvider natural keys,
--- retain those canonical catalogue identities in the product snapshot instead of
--- the preferred bootstrap UUIDs above.
-WITH fake_catalogue AS (
-  SELECT
-    model.id AS provider_model_id,
-    rate.id AS price_rate_id
-  FROM providers AS provider
-  JOIN provider_models AS model ON model.provider_id = provider.id
-  JOIN price_rates AS rate ON rate.provider_model_id = model.id
-  WHERE provider.key = 'fake'
-    AND model.model_key = 'fake-v1'
-    AND rate.effective_from = '2026-08-01T00:00:00.000Z'::timestamptz
-)
-UPDATE effective_configuration_snapshots AS snapshot
-SET payload = jsonb_set(
-  jsonb_set(
-    jsonb_set(
-      snapshot.payload,
-      '{providerRouting,providerModelId}',
-      to_jsonb(fake_catalogue.provider_model_id::text)
-    ),
-    '{priceRates,0,providerModelId}',
-    to_jsonb(fake_catalogue.provider_model_id::text)
-  ),
-  '{priceRates,0,id}',
-  to_jsonb(fake_catalogue.price_rate_id::text)
-)
-FROM fake_catalogue
-WHERE snapshot.id = '00000000-0000-4000-8000-000000000127'
-  AND (
-    snapshot.payload #>> '{providerRouting,providerModelId}'
-  ) IS DISTINCT FROM fake_catalogue.provider_model_id::text;
+-- Base-only by design. A clean release checkout must append a persisted Prompt
+-- Evaluation Report, then the deployment-only qualification command creates the
+-- Candidacy Decision and publishes through the production configuration seam.
+-- This file must never manufacture Evaluation, Candidate, Deployment or Snapshot
+-- rows merely to make the assessment look ready.
 
 -- The Console's Drafting actions screen reads the Platform Action catalogue and
 -- this account's enablements. Neither existed, so the screen had nothing to
@@ -434,14 +365,16 @@ ON CONFLICT (action) DO UPDATE SET
 INSERT INTO tenant_action_enablements (tenant_id, action, enabled, sort_order)
 VALUES
   ('00000000-0000-4000-8000-000000000101', 'GENERATE', true, 0),
-  ('00000000-0000-4000-8000-000000000101', 'PARAPHRASE', true, 1),
-  ('00000000-0000-4000-8000-000000000101', 'REGENERATE', true, 2),
-  ('00000000-0000-4000-8000-000000000101', 'CONDENSE', true, 3),
+  ('00000000-0000-4000-8000-000000000101', 'PARAPHRASE', false, 1),
+  ('00000000-0000-4000-8000-000000000101', 'REGENERATE', false, 2),
+  ('00000000-0000-4000-8000-000000000101', 'CONDENSE', false, 3),
   ('00000000-0000-4000-8000-000000000101', 'REFORMAT', false, 4),
   ('00000000-0000-4000-8000-000000000101', 'EXPAND', false, 5),
   ('00000000-0000-4000-8000-000000000101', 'REVISE_WORDING', false, 6),
   ('00000000-0000-4000-8000-000000000101', 'ADD_FACT', false, 7)
-ON CONFLICT (tenant_id, action) DO NOTHING;
+ON CONFLICT (tenant_id, action) DO UPDATE SET
+  enabled = EXCLUDED.enabled,
+  sort_order = EXCLUDED.sort_order;
 
 -- Platform settings had no row at all, so the Console showed a policy of {} and
 -- every rate limit as zero, which reads as a broken deployment rather than a

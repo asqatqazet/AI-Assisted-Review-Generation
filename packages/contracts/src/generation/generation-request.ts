@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { EffectiveConfigurationSnapshotDtoSchema } from "../shared/effective-configuration-snapshot.js";
 import { IdentifierDtoSchema, IsoDateTimeDtoSchema } from "../shared/primitives.js";
+import { RecordReviewerDraftRevisionInvocationDtoSchema } from "./reviewer-draft-revision.js";
 import { RecordReviewerDispositionInvocationDtoSchema } from "./reviewer-disposition.js";
 
 const BoundHashDtoSchema = z.string().min(1).max(200);
@@ -235,7 +236,8 @@ export const GenerationExecutionScopeDtoSchema = z.strictObject({
 
 export const GenerationStatusInvocationDtoSchema = z.strictObject({
   operation: z.literal("status"),
-  scope: GenerationExecutionScopeDtoSchema,
+  permitJti: IdentifierDtoSchema,
+  workload: GenerationWorkloadDtoSchema,
 });
 
 export const CancelExpiredLeaseInvocationDtoSchema = z.strictObject({
@@ -251,6 +253,7 @@ export const GenerationFunctionInvocationDtoSchema = z.discriminatedUnion(
     ExecuteGenerationInvocationDtoSchema,
     GenerationStatusInvocationDtoSchema,
     CancelExpiredLeaseInvocationDtoSchema,
+    RecordReviewerDraftRevisionInvocationDtoSchema,
     RecordReviewerDispositionInvocationDtoSchema,
   ],
 );
@@ -263,15 +266,34 @@ export const PrepareGenerationResultDtoSchema = z.strictObject({
   leaseReceipt: z.string().min(1),
 });
 
-export const GenerationStatusResultDtoSchema = z.strictObject({
-  operation: z.literal("status"),
-  state: z.enum(["no-lease", "leased", "running", "cancelled", "terminal"]),
-  signedStatusReceipt: z.string().min(1),
-});
+export const GenerationStatusResultDtoSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    operation: z.literal("status"),
+    state: z.enum([
+      "no-lease",
+      "leased",
+      "running",
+      "indeterminate",
+      "cancelled",
+    ]),
+    signedStatusReceipt: z.string().min(1),
+  }),
+  z.strictObject({
+    operation: z.literal("status"),
+    state: z.literal("terminal"),
+    terminalReceipt: z.string().min(1),
+  }),
+]);
 
 export const CancelExpiredLeaseResultDtoSchema = z.strictObject({
   operation: z.literal("cancel-expired-lease"),
-  state: z.enum(["cancelled", "running", "terminal", "no-lease"]),
+  state: z.enum([
+    "cancelled",
+    "running",
+    "indeterminate",
+    "terminal",
+    "no-lease",
+  ]),
   signedStatusReceipt: z.string().min(1),
 });
 

@@ -1,9 +1,9 @@
 import type {
-  GenerationStatusInvocationDto,
+  CancelExpiredLeaseInvocationDto,
   GenerationWorkloadDto,
 } from "@review/contracts/generation";
 
-type GenerationExecutionScope = GenerationStatusInvocationDto["scope"];
+type GenerationExecutionScope = CancelExpiredLeaseInvocationDto["scope"];
 
 export type StaleGenerationCandidate =
   | {
@@ -37,18 +37,41 @@ export interface ReconciliationContextPort {
         readonly workload: GenerationWorkloadDto;
       }
   ): Promise<{ readonly status: "released" | "rejected" }>;
+  settle(input: {
+    readonly terminalReceipt: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<{ readonly status: "settled" | "rejected" }>;
 }
 
 export interface ReconciliationGenerationPort {
-  status(input: { readonly scope: GenerationExecutionScope }): Promise<{
-    readonly state: "no-lease" | "leased" | "running" | "cancelled" | "terminal";
-    readonly signedStatusReceipt: string;
-  }>;
+  status(input: {
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<
+    | {
+        readonly state:
+          | "no-lease"
+          | "leased"
+          | "running"
+          | "indeterminate"
+          | "cancelled";
+        readonly signedStatusReceipt: string;
+      }
+    | {
+        readonly state: "terminal";
+        readonly terminalReceipt: string;
+      }
+  >;
   cancelExpired(input: {
     readonly leaseId: string;
     readonly scope: GenerationExecutionScope;
   }): Promise<{
-    readonly state: "cancelled" | "running" | "terminal" | "no-lease";
+    readonly state:
+      | "cancelled"
+      | "running"
+      | "indeterminate"
+      | "terminal"
+      | "no-lease";
     readonly signedStatusReceipt: string;
   }>;
 }
@@ -64,6 +87,7 @@ export function createStaleGenerationReconciler({
 }): () => Promise<{
   readonly inspected: number;
   readonly released: number;
+  readonly settled: number;
   readonly deferred: number;
 }> {
   if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
@@ -73,7 +97,19 @@ export function createStaleGenerationReconciler({
   return async () => {
     const candidates = await context.listCandidates({ limit });
     let released = 0;
+    let settled = 0;
     let deferred = 0;
+
+    const settleTerminal = async (
+      terminalReceipt: string,
+      workload: GenerationWorkloadDto,
+    ): Promise<void> => {
+      const result = await context.settle({ terminalReceipt, workload });
+      if (result.status !== "settled") {
+        throw new Error("RECONCILIATION_SETTLEMENT_REJECTED");
+      }
+      settled += 1;
+    };
 
     for (const candidate of candidates) {
       const bindings = candidate.workload.bindings;
@@ -85,8 +121,19 @@ export function createStaleGenerationReconciler({
         generationId: bindings.generationId,
         permitJti: candidate.permitJti,
       };
+      const observed = await generation.status({
+        permitJti: candidate.permitJti,
+        workload: candidate.workload,
+      });
+      if (observed.state === "terminal") {
+        await settleTerminal(
+          observed.terminalReceipt,
+          candidate.workload,
+        );
+        continue;
+      }
       if (candidate.kind === "never-leased") {
-        const status = await generation.status({ scope });
+        const status = observed;
         if (status.state !== "no-lease") {
           deferred += 1;
           continue;
@@ -104,10 +151,33 @@ export function createStaleGenerationReconciler({
         continue;
       }
 
+      if (
+        observed.state === "running" ||
+        observed.state === "indeterminate"
+      ) {
+        deferred += 1;
+        continue;
+      }
+
       const status = await generation.cancelExpired({
         leaseId: candidate.leaseId,
         scope,
       });
+      if (status.state === "terminal") {
+        const recovered = await generation.status({
+          permitJti: candidate.permitJti,
+          workload: candidate.workload,
+        });
+        if (recovered.state === "terminal") {
+          await settleTerminal(
+            recovered.terminalReceipt,
+            candidate.workload,
+          );
+          continue;
+        }
+        deferred += 1;
+        continue;
+      }
       if (status.state !== "cancelled") {
         deferred += 1;
         continue;
@@ -128,6 +198,7 @@ export function createStaleGenerationReconciler({
     return {
       inspected: candidates.length,
       released,
+      settled,
       deferred,
     };
   };

@@ -1,6 +1,7 @@
 node_modules/
 .nx/
 dist/
+release/
 coverage/
 .env
 .DS_Store
@@ -12,3 +13,6 @@ terraform.tfstate.*
 .terraform/
 *.tfplan
 packages/db/src/generated/
+.agents
+.idea/
+.pnpm-store/

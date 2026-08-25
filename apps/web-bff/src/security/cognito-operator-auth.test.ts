@@ -63,7 +63,7 @@ describe("US-04.1 Cognito OIDC adapter", () => {
       .setAudience("client-123")
       .setSubject("cognito-subject-123")
       .setIssuedAt(issuedAt)
-      .setExpirationTime(issuedAt + 300)
+      .setExpirationTime(issuedAt + 3600)
       .sign(privateKey);
     let tokenRequestBody = "";
     const fetch: typeof globalThis.fetch = async (input, init) => {
@@ -73,6 +73,7 @@ describe("US-04.1 Cognito OIDC adapter", () => {
         return Response.json({
           access_token: "provider-access-token",
           id_token: idToken,
+          refresh_token: "provider-refresh-token",
           token_type: "Bearer",
           expires_in: 3600,
         });
@@ -119,9 +120,12 @@ describe("US-04.1 Cognito OIDC adapter", () => {
     await expect(
       auth.readSession({ sessionCookie: completed.sessionCookie }),
     ).resolves.toEqual({
-      issuer,
-      subject: "cognito-subject-123",
-      email: "owner@example.com",
+      identity: {
+        issuer,
+        subject: "cognito-subject-123",
+        email: "owner@example.com",
+      },
+      refreshedSessionCookie: null,
     });
 
     const replacementPoolAuth = createCognitoOperatorAuth({
@@ -142,5 +146,163 @@ describe("US-04.1 Cognito OIDC adapter", () => {
         sessionCookie: completed.sessionCookie,
       }),
     ).resolves.toBeNull();
+  });
+
+  it("validates a refreshed ID token and rotates the encrypted refresh token", async () => {
+    const issuer =
+      "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_pool";
+    const { publicKey, privateKey } = await generateKeyPair("RS256");
+    const publicJwk = await exportJWK(publicKey);
+    let current = new Date("2026-08-18T12:00:00.000Z");
+    const token = async (expiresAt: number, nonce?: string) =>
+      await new SignJWT({
+        email: "owner@example.com",
+        email_verified: true,
+        token_use: "id",
+        ...(nonce === undefined ? {} : { nonce }),
+      })
+        .setProtectedHeader({ alg: "RS256", kid: "key-1" })
+        .setIssuer(issuer)
+        .setAudience("client-123")
+        .setSubject("cognito-subject-123")
+        .setIssuedAt(Math.floor(current.getTime() / 1000))
+        .setExpirationTime(expiresAt)
+        .sign(privateKey);
+    const initial = await token(Math.floor(current.getTime() / 1000) + 300, "nonce-123");
+    const refreshed = await token(Math.floor(current.getTime() / 1000) + 3600);
+    const tokenBodies: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      if ((init?.method ?? "GET") === "GET") {
+        expect(String(input)).toBe(`${issuer}/.well-known/jwks.json`);
+        return Response.json({
+          keys: [{ ...publicJwk, kid: "key-1", alg: "RS256", use: "sig" }],
+        });
+      }
+      tokenBodies.push(String(init?.body ?? ""));
+      return tokenBodies.length === 1
+        ? Response.json({
+            id_token: initial,
+            refresh_token: "refresh-one",
+            access_token: "access-one",
+          })
+        : Response.json({
+            id_token: refreshed,
+            refresh_token: "refresh-two",
+            access_token: "access-two",
+          });
+    };
+    const auth = createCognitoOperatorAuth({
+      authorizationEndpoint: "https://review.auth.example/oauth2/authorize",
+      tokenEndpoint: "https://review.auth.example/oauth2/token",
+      issuer,
+      jwksUri: `${issuer}/.well-known/jwks.json`,
+      clientId: "client-123",
+      redirectUri: "https://d111.cloudfront.net/auth/callback",
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      newState: () => "state-123",
+      newNonce: () => "nonce-123",
+      newCodeVerifier: () => "verifier-123",
+      now: () => current,
+      fetch,
+    });
+    const login = await auth.begin({ returnTo: "/console" });
+    const completed = await auth.complete({
+      code: "code-123",
+      state: "state-123",
+      transactionCookie: login.transactionCookie,
+    });
+
+    current = new Date("2026-08-18T12:00:01.000Z");
+    const session = await auth.readSession({
+      sessionCookie: completed.sessionCookie,
+    });
+
+    expect(new URLSearchParams(tokenBodies[1])).toEqual(
+      new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: "client-123",
+        refresh_token: "refresh-one",
+      }),
+    );
+    expect(session?.identity).toMatchObject({
+      subject: "cognito-subject-123",
+      email: "owner@example.com",
+    });
+    expect(session?.refreshedSessionCookie).toEqual(expect.any(String));
+    expect(session?.refreshedSessionCookie).not.toContain("refresh-two");
+  });
+
+  it("revokes the refresh token and returns the Cognito browser logout URL", async () => {
+    const issuer =
+      "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_pool";
+    const { publicKey, privateKey } = await generateKeyPair("RS256");
+    const publicJwk = await exportJWK(publicKey);
+    const now = new Date("2026-08-18T12:00:00.000Z");
+    const issuedAt = Math.floor(now.getTime() / 1000);
+    const idToken = await new SignJWT({
+      email: "owner@example.com",
+      email_verified: true,
+      nonce: "nonce-123",
+      token_use: "id",
+    })
+      .setProtectedHeader({ alg: "RS256", kid: "key-1" })
+      .setIssuer(issuer)
+      .setAudience("client-123")
+      .setSubject("cognito-subject-123")
+      .setIssuedAt(issuedAt)
+      .setExpirationTime(issuedAt + 3600)
+      .sign(privateKey);
+    const posts: { url: string; body: string }[] = [];
+    let revokeStatus = 200;
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      if ((init?.method ?? "GET") === "GET") {
+        return Response.json({
+          keys: [{ ...publicJwk, kid: "key-1", alg: "RS256", use: "sig" }],
+        });
+      }
+      posts.push({ url: String(input), body: String(init?.body ?? "") });
+      return posts.length === 1
+        ? Response.json({ id_token: idToken, refresh_token: "refresh-one" })
+        : new Response(null, { status: revokeStatus });
+    };
+    const auth = createCognitoOperatorAuth({
+      authorizationEndpoint: "https://review.auth.example/oauth2/authorize",
+      tokenEndpoint: "https://review.auth.example/oauth2/token",
+      issuer,
+      jwksUri: `${issuer}/.well-known/jwks.json`,
+      clientId: "client-123",
+      redirectUri: "https://d111.cloudfront.net/auth/callback",
+      sessionSecret: "0123456789abcdef0123456789abcdef",
+      newState: () => "state-123",
+      newNonce: () => "nonce-123",
+      newCodeVerifier: () => "verifier-123",
+      now: () => now,
+      fetch,
+    });
+    const login = await auth.begin({ returnTo: "/console" });
+    const completed = await auth.complete({
+      code: "code-123",
+      state: "state-123",
+      transactionCookie: login.transactionCookie,
+    });
+
+    await expect(
+      auth.logout({ sessionCookie: completed.sessionCookie }),
+    ).resolves.toEqual({
+      logoutUrl:
+        "https://review.auth.example/logout?client_id=client-123&logout_uri=https%3A%2F%2Fd111.cloudfront.net%2Fconsole",
+    });
+    expect(posts[1]).toEqual({
+      url: "https://review.auth.example/oauth2/revoke",
+      body: "token=refresh-one&client_id=client-123",
+    });
+
+    revokeStatus = 503;
+    await expect(
+      auth.logout({ sessionCookie: completed.sessionCookie }),
+    ).resolves.toEqual({
+      logoutUrl:
+        "https://review.auth.example/logout?client_id=client-123&logout_uri=https%3A%2F%2Fd111.cloudfront.net%2Fconsole",
+    });
   });
 });

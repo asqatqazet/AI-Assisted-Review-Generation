@@ -146,6 +146,13 @@
   text-transform: uppercase;
 }
 
+.release {
+  margin: 28px 20px 0;
+  color: var(--text-meta);
+  font: var(--type-micro);
+  font-family: var(--font-mono);
+}
+
 .navigationList {
   display: grid;
   gap: 2px;

@@ -105,12 +105,14 @@ export interface CondenseGroundingPostcondition {
   readonly kind: "condense";
   readonly sourceClaims: readonly GroundedSourceClaim[];
   readonly sourceDraftCharacterLength: number;
+  readonly targetMaxChars: number;
 }
 
 export interface ExpandGroundingPostcondition {
   readonly kind: "expand";
   readonly sourceClaims: readonly GroundedSourceClaim[];
   readonly sourceDraftCharacterLength: number;
+  readonly targetMinChars: number;
 }
 
 export interface ReviseWordingGroundingPostcondition {
@@ -156,10 +158,13 @@ export type GroundingRejectionCode =
   | "grounding-polarity-conflict"
   | "claim-added-by-transformation"
   | "required-claim-missing"
+  | "required-assertion-missing"
   | "transitive-grounding-mismatch"
   | "source-revision-mismatch"
   | "condense-not-shorter"
-  | "expand-not-longer";
+  | "condense-target-not-met"
+  | "expand-not-longer"
+  | "expand-target-not-met";
 
 export interface GroundingRejectionReason {
   readonly code: GroundingRejectionCode;
@@ -544,6 +549,23 @@ function validatePostcondition(
   );
 
   if (postcondition.kind === "paraphrase") {
+    const usedAssertionIds = new Set(
+      input.candidate.claims.flatMap((claim) =>
+        claim.grounding.flatMap((reference) =>
+          reference.kind === "assertion" ? [reference.assertionId] : [],
+        ),
+      ),
+    );
+    for (const assertionId of postcondition.allowedAssertionIds) {
+      if (!usedAssertionIds.has(assertionId)) {
+        reasons.push(
+          reason(
+            "required-assertion-missing",
+            "This paraphrase left out a proposition from the immutable source text.",
+          ),
+        );
+      }
+    }
     validateRequiredSemanticSet(
       candidateSemanticIds,
       new Set(postcondition.requiredSemanticIds),
@@ -581,9 +603,13 @@ function validatePostcondition(
     if (sourceReferences === undefined) {
       continue;
     }
+    const candidateReferences = new Set(
+      claim.grounding.map(groundingReferenceKey),
+    );
     if (
-      claim.grounding.some(
-        (reference) => !sourceReferences.has(groundingReferenceKey(reference)),
+      candidateReferences.size !== sourceReferences.size ||
+      [...candidateReferences].some(
+        (reference) => !sourceReferences.has(reference),
       )
     ) {
       reasons.push(
@@ -625,6 +651,17 @@ function validatePostcondition(
     );
   }
   if (
+    postcondition.kind === "condense" &&
+    candidateCharacterLength > postcondition.targetMaxChars
+  ) {
+    reasons.push(
+      reason(
+        "condense-target-not-met",
+        "The condensed version did not meet the requested maximum length.",
+      ),
+    );
+  }
+  if (
     postcondition.kind === "expand" &&
     candidateCharacterLength <= postcondition.sourceDraftCharacterLength
   ) {
@@ -632,6 +669,17 @@ function validatePostcondition(
       reason(
         "expand-not-longer",
         "The expanded version was not longer than the source review.",
+      ),
+    );
+  }
+  if (
+    postcondition.kind === "expand" &&
+    candidateCharacterLength < postcondition.targetMinChars
+  ) {
+    reasons.push(
+      reason(
+        "expand-target-not-met",
+        "The expanded version did not meet the requested minimum length.",
       ),
     );
   }

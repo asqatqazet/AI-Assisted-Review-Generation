@@ -7,6 +7,13 @@ import type {
   ReviewerGenerationExecutionPort,
 } from "./ports/reviewer-generation.port.js";
 
+const allowedPublicSource = {
+  sourceRateLimitPort: {
+    consume: async () => ({ status: "allowed" as const }),
+  },
+  resolveTrustedViewerSource: () => "203.0.113.8",
+};
+
 const workload = GenerationWorkloadDtoSchema.parse({
   bindings: {
     tenantId: "tenant-a",
@@ -41,6 +48,8 @@ const workload = GenerationWorkloadDtoSchema.parse({
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 1,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: [],
       enabledReviewFormatVersionIds: ["format-concise-v1"],
       enabledCommands: ["generate"],
@@ -138,11 +147,13 @@ describe("US-01.3 reviewer Generation BFF", () => {
             generationId: "generation-a",
             revision: 1,
             text: "The team was attentive.",
+            systemAnnotations: [],
           },
         };
       },
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       reviewerGenerationContextPort: context,
       reviewerGenerationExecutionPort: generation,
       publicOrigin: "https://reviews.example.test",
@@ -183,6 +194,7 @@ describe("US-01.3 reviewer Generation BFF", () => {
           generationId: "generation-a",
           revision: 1,
           text: "The team was attentive.",
+          systemAnnotations: [],
         },
       },
     ]);

@@ -1,5 +1,6 @@
 import {
   ReviewerGenerationCommandDtoSchema,
+  type ReviewerGenerationCommandDto,
   ReviewerGenerationEventDtoSchema,
   type ReviewerGenerationEventDto,
 } from "@review/contracts/generation";
@@ -9,9 +10,11 @@ import { readBffClientError } from "./bff-error.js";
 export interface StartReviewerGenerationInput {
   readonly reviewSessionHandle: string;
   readonly idempotencyKey: string;
-  readonly factOptionIds: readonly string[];
-  readonly reviewFormatId: string;
+  readonly factOptionIds?: readonly string[] | undefined;
+  readonly sourceText?: string | undefined;
+  readonly reviewFormatId?: string | undefined;
   readonly customerAssertion?: string | undefined;
+  readonly command?: ReviewerGenerationCommandDto | undefined;
 }
 
 export interface GenerationClient {
@@ -24,19 +27,37 @@ export interface GenerationClient {
 export class GenerationTransportError extends Error {
   readonly code: "EDGE_THROTTLED" | "GENERATION_UNAVAILABLE";
   readonly retryable: boolean;
+  readonly retryAfterSeconds: number | undefined;
 
   constructor(
     code: "EDGE_THROTTLED" | "GENERATION_UNAVAILABLE",
     retryable: boolean,
+    retryAfterSeconds?: number | undefined,
   ) {
     super(code);
     this.name = "GenerationTransportError";
     this.code = code;
     this.retryable = retryable;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
 const encoder = new TextEncoder();
+
+function retryAfterSeconds(value: string | null): number | undefined {
+  if (value === null) {
+    return undefined;
+  }
+  const seconds = Number(value);
+  if (Number.isInteger(seconds) && seconds >= 0) {
+    return seconds;
+  }
+  const retryAt = Date.parse(value);
+  if (Number.isNaN(retryAt)) {
+    return undefined;
+  }
+  return Math.max(0, Math.ceil((retryAt - Date.now()) / 1_000));
+}
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest(
@@ -102,13 +123,21 @@ export function createHttpGenerationClient(
       if (input.idempotencyKey.length < 1 || input.idempotencyKey.length > 200) {
         throw new Error("INVALID_IDEMPOTENCY_KEY");
       }
-      const command = ReviewerGenerationCommandDtoSchema.parse({
-        factOptionIds: input.factOptionIds,
-        reviewFormatId: input.reviewFormatId,
-        ...(input.customerAssertion === undefined
-          ? {}
-          : { customerAssertion: input.customerAssertion }),
-      });
+      const command = ReviewerGenerationCommandDtoSchema.parse(
+        input.command ??
+          (input.sourceText === undefined
+            ? {
+                factOptionIds: input.factOptionIds,
+                reviewFormatId: input.reviewFormatId,
+                ...(input.customerAssertion === undefined
+                  ? {}
+                  : { customerAssertion: input.customerAssertion }),
+              }
+            : {
+                sourceText: input.sourceText,
+                reviewFormatId: input.reviewFormatId,
+              }),
+      );
       const serializedCommand = JSON.stringify(command);
       const response = await fetchFn(
         `/api/v1/review-sessions/${encodeURIComponent(input.reviewSessionHandle)}/generations`,
@@ -128,7 +157,11 @@ export function createHttpGenerationClient(
       );
 
       if (response.status === 429) {
-        throw new GenerationTransportError("EDGE_THROTTLED", true);
+        throw new GenerationTransportError(
+          "EDGE_THROTTLED",
+          true,
+          retryAfterSeconds(response.headers.get("Retry-After")),
+        );
       }
       if (!response.ok || response.body === null) {
         if (!response.ok) {

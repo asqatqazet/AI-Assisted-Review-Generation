@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { IdentifierDtoSchema } from "../shared/primitives.js";
-import { ConsoleScopeDtoSchema } from "./primitives.js";
+import {
+  ConfigurationEtagDtoSchema,
+  ConsoleScopeDtoSchema,
+} from "./primitives.js";
+import { ConsoleConfigurationDraftChangeDtoSchema } from "./configuration-draft.js";
 
 export const ConsoleEntryModeDtoSchema = z.enum(["invite", "open-qr", "both"]);
 
@@ -31,10 +35,67 @@ export const ConsoleLocationListDtoSchema = z.strictObject({
 
 const SettingValueDtoSchema = z.union([
   z.string(),
-  z.number(),
+  z.number().finite(),
   z.boolean(),
   z.array(z.string()).max(200),
 ]);
+
+const BannedTermsDtoSchema = z
+  .array(z.string().trim().min(1).max(120))
+  .max(500)
+  .refine((terms) => new Set(terms).size === terms.length, {
+    error: "banned terms must be unique",
+  });
+
+/**
+ * A setting key determines its value type and range. Keeping this as a
+ * discriminated union means an invalid key/value pair cannot cross the wire
+ * and become an unsafe JSON/number coercion in the control-plane adapter.
+ */
+export const ConsoleTenantSettingChangeDtoSchema = z.discriminatedUnion("key", [
+  z.strictObject({ key: z.literal("locale"), value: z.enum(["en-GB", "de-DE"]) }),
+  z.strictObject({
+    key: z.literal("toneGuidelines"),
+    value: z.string().trim().min(1).max(20_000),
+  }),
+  z.strictObject({ key: z.literal("entryMode"), value: ConsoleEntryModeDtoSchema }),
+  z.strictObject({ key: z.literal("requireVerifiedExperience"), value: z.boolean() }),
+  z.strictObject({ key: z.literal("requireDisclosure"), value: z.boolean() }),
+  z.strictObject({
+    key: z.literal("maxReviewFormatsPerRequest"),
+    value: z.number().finite().int().min(1).max(8),
+  }),
+  z.strictObject({ key: z.literal("bannedTerms"), value: BannedTermsDtoSchema }),
+  z.strictObject({
+    key: z.literal("monthlyBudgetMicros"),
+    value: z.number().finite().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  }),
+  z.strictObject({
+    key: z.literal("alertThresholdPct"),
+    value: z.number().finite().int().min(0).max(100),
+  }),
+]);
+
+export const ConsoleLocationOverrideChangeDtoSchema = z.discriminatedUnion("key", [
+  z.strictObject({ key: z.literal("entryMode"), value: ConsoleEntryModeDtoSchema }),
+  z.strictObject({ key: z.literal("requireVerifiedExperience"), value: z.boolean() }),
+  z.strictObject({ key: z.literal("requireDisclosure"), value: z.boolean() }),
+  z.strictObject({
+    key: z.literal("maxReviewFormatsPerRequest"),
+    value: z.number().finite().int().min(1).max(8),
+  }),
+  z.strictObject({ key: z.literal("bannedTerms"), value: BannedTermsDtoSchema }),
+]);
+
+export const ConsoleConfigurationStateDtoSchema = z.strictObject({
+  etag: ConfigurationEtagDtoSchema,
+  draft: z
+    .strictObject({
+      baseEtag: ConfigurationEtagDtoSchema,
+      changes: z.array(ConsoleConfigurationDraftChangeDtoSchema).max(1000),
+    })
+    .nullable(),
+});
 
 export const ConsoleSettingKindDtoSchema = z.enum([
   "boolean",
@@ -61,8 +122,9 @@ export const InheritedSettingDtoSchema = z.strictObject({
   kind: ConsoleSettingKindDtoSchema,
   ownerScope: z.literal("tenant"),
   effectiveValue: SettingValueDtoSchema,
-  source: z.enum(["tenant", "location"]),
-  tenantValue: SettingValueDtoSchema,
+  source: z.enum(["platform", "tenant", "location"]),
+  platformDefault: SettingValueDtoSchema.nullable().optional(),
+  tenantValue: SettingValueDtoSchema.nullable(),
   locationOverride: SettingValueDtoSchema.nullable(),
   overridable: z.boolean(),
 });
@@ -70,6 +132,7 @@ export const InheritedSettingDtoSchema = z.strictObject({
 export const ConsoleLocationSettingsDtoSchema = z.strictObject({
   scope: ConsoleScopeDtoSchema,
   editable: z.boolean(),
+  configuration: ConsoleConfigurationStateDtoSchema,
   settings: z.array(InheritedSettingDtoSchema).max(100),
 });
 
@@ -82,14 +145,17 @@ export const TenantSettingDtoSchema = z.strictObject({
   group: z.string().min(1).max(80),
   kind: ConsoleSettingKindDtoSchema,
   ownerScope: z.enum(["platform", "tenant"]),
+  source: z.enum(["platform", "tenant"]).optional(),
   value: SettingValueDtoSchema,
   platformDefault: SettingValueDtoSchema.nullable(),
+  tenantValue: SettingValueDtoSchema.nullable().optional(),
   editable: z.boolean(),
 });
 
 export const ConsoleTenantSettingsDtoSchema = z.strictObject({
   scope: ConsoleScopeDtoSchema,
   editable: z.boolean(),
+  configuration: ConsoleConfigurationStateDtoSchema,
   settings: z.array(TenantSettingDtoSchema).max(100),
   keywordCategories: z
     .array(
@@ -190,6 +256,12 @@ export type ConsoleReviewDestinationDto = z.infer<
 >;
 export type ConsoleEntryModeDto = z.infer<typeof ConsoleEntryModeDtoSchema>;
 export type ConsoleSettingValueDto = z.infer<typeof SettingValueDtoSchema>;
+export type ConsoleTenantSettingChangeDto = z.infer<
+  typeof ConsoleTenantSettingChangeDtoSchema
+>;
+export type ConsoleLocationOverrideChangeDto = z.infer<
+  typeof ConsoleLocationOverrideChangeDtoSchema
+>;
 
 export { SettingValueDtoSchema as ConsoleSettingValueDtoSchema };
 export type ConsoleDistributionOverviewDto = z.infer<

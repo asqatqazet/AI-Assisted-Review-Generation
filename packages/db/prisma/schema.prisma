@@ -97,6 +97,13 @@ enum PromptVersionStatus {
   @@map("prompt_version_status")
 }
 
+enum PromptCandidacyDecisionKind {
+  CANDIDATE
+  RETIRED
+
+  @@map("prompt_candidacy_decision_kind")
+}
+
 enum ExperimentStatus {
   DRAFT
   RUNNING
@@ -112,6 +119,17 @@ enum ReviewSessionStatus {
   REVOKED
 
   @@map("review_session_status")
+}
+
+enum ReviewSessionJourneyPhase {
+  FACTS
+  PARAPHRASE_INPUT
+  FORMAT
+  RESULTS
+  EDITING
+  DONE
+
+  @@map("review_session_journey_phase")
 }
 
 enum AssertionSource {
@@ -144,6 +162,7 @@ enum GenerationStatus {
 
 enum ProviderAttemptStatus {
   RUNNING
+  CHECKPOINTED
   SUCCEEDED
   FAILED
   TIMED_OUT
@@ -208,6 +227,49 @@ model PlatformSettings {
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   @@map("platform_settings")
+}
+
+/** Published Platform aggregate revision, independent of Tenant scopes. */
+model PlatformConfigurationState {
+  singleton         Boolean  @id @default(true)
+  publishedRevision BigInt   @default(1) @map("published_revision")
+  updatedAt         DateTime @default(dbgenerated("clock_timestamp()")) @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_configuration_states")
+}
+
+/** The single mutable Platform Configuration Draft. */
+model PlatformConfigurationDraft {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  singleton            Boolean  @unique @default(true)
+  baseRevision         BigInt   @map("base_revision")
+  revision             BigInt   @default(1)
+  changes              Json
+  requiredCapabilities String[] @default(dbgenerated()) @map("required_capabilities")
+  createdBy            String   @map("created_by") @db.Uuid
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime @default(dbgenerated("clock_timestamp()")) @map("updated_at") @db.Timestamptz(6)
+  actor                Operator @relation("PlatformConfigurationDraftActor", fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@map("platform_configuration_drafts")
+}
+
+/** Append-only evidence for an atomically published Platform Draft. */
+model PlatformConfigurationPublication {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  publishedRevision    BigInt   @unique @map("published_revision")
+  draftId              String   @map("draft_id") @db.Uuid
+  draftRevision        BigInt   @map("draft_revision")
+  changes              Json
+  requiredCapabilities String[] @default(dbgenerated()) @map("required_capabilities")
+  snapshotIds          String[] @default([]) @map("snapshot_ids") @db.Uuid
+  configurationReleaseId String? @map("configuration_release_id") @db.Uuid
+  actorId              String   @map("actor_id") @db.Uuid
+  publishedAt          DateTime @default(now()) @map("published_at") @db.Timestamptz(6)
+  actor                Operator @relation("PlatformConfigurationPublicationActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@unique([draftId, draftRevision])
+  @@map("platform_configuration_publications")
 }
 
 model Provider {
@@ -281,19 +343,20 @@ model ActionDefinition {
 }
 
 model ReviewFormatVersion {
-  id               String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  formatKey        String                   @map("format_key") @db.VarChar(100)
-  version          Int
-  locale           String                   @db.VarChar(35)
-  targetPlatform   String                   @map("target_platform") @db.VarChar(100)
-  constraints      Json
-  localizedText    Json                     @map("localized_text")
-  supportedActions GenerationAction[]       @map("supported_actions")
-  contentHash      String                   @map("content_hash") @db.VarChar(128)
-  status           CatalogStatus            @default(ACTIVE)
-  createdAt        DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
-  enablements      ReviewFormatEnablement[]
-  generations      Generation[]
+  id                       String                   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  formatKey                String                   @map("format_key") @db.VarChar(100)
+  version                  Int
+  locale                   String                   @db.VarChar(35)
+  targetPlatform           String                   @map("target_platform") @db.VarChar(100)
+  constraints              Json
+  localizedText            Json                     @map("localized_text")
+  supportedActions         GenerationAction[]       @map("supported_actions")
+  contentHash              String                   @map("content_hash") @db.VarChar(128)
+  status                   CatalogStatus            @default(ACTIVE)
+  createdAt                DateTime                 @default(now()) @map("created_at") @db.Timestamptz(6)
+  enablements              ReviewFormatEnablement[]
+  generations              Generation[]
+  selectedByReviewSessions ReviewSession[]          @relation("ReviewSessionSelectedFormat")
 
   @@unique([formatKey, version])
   @@unique([contentHash])
@@ -358,6 +421,7 @@ model Tenant {
   monthlyBudgetMicros          BigInt                           @default(0) @map("monthly_budget_micros")
   alertThresholdPercent        Int                              @default(80) @map("alert_threshold_percent")
   configRevision               BigInt                           @default(1) @map("config_revision")
+  configurationValues          Json                             @default("{}") @map("configuration_values")
   defaultEntryModeKey          String?                          @map("default_entry_mode_key") @db.VarChar(80)
   createdAt                    DateTime                         @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                    DateTime                         @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -369,6 +433,11 @@ model Tenant {
   factOptionVersions           FactOptionVersion[]
   reviewFormatEnablements      ReviewFormatEnablement[]
   promptVersions               PromptVersion[]
+  promptDeployments            PromptDeployment[]
+  promptEvaluationResults      PromptEvaluationResult[]
+  promptCandidacyDecisions     PromptCandidacyDecision[]
+  configurationDrafts          ConfigurationDraft[]
+  configurationAuditEvents     ConfigurationAuditEvent[]
   experiments                  Experiment[]
   experimentVariants           ExperimentVariant[]
   experimentAssignments        ExperimentAssignment[]
@@ -414,15 +483,21 @@ model TenantContextVersion {
 }
 
 model Operator {
-  id                   String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email                String                @unique @db.Citext
-  externalIssuer       String?               @map("external_issuer") @db.VarChar(500)
-  externalSubject      String?               @map("external_subject") @db.VarChar(255)
-  passwordHash         String?               @map("password_hash")
-  status               OperatorStatus        @default(ACTIVE)
-  createdAt            DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
-  accessGrants         TenantAccessGrant[]
-  platformAccessGrants PlatformAccessGrant[]
+  id                         String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                      String                    @unique @db.Citext
+  externalIssuer             String?                   @map("external_issuer") @db.VarChar(500)
+  externalSubject            String?                   @map("external_subject") @db.VarChar(255)
+  passwordHash               String?                   @map("password_hash")
+  status                     OperatorStatus            @default(ACTIVE)
+  createdAt                  DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  accessGrants               TenantAccessGrant[]
+  platformAccessGrants       PlatformAccessGrant[]
+  promptDeployments          PromptDeployment[]
+  promptCandidacyDecisions   PromptCandidacyDecision[]
+  createdConfigurationDrafts ConfigurationDraft[]      @relation("ConfigurationDraftActor")
+  configurationAuditEvents   ConfigurationAuditEvent[] @relation("ConfigurationAuditActor")
+  createdPlatformConfigurationDrafts PlatformConfigurationDraft[] @relation("PlatformConfigurationDraftActor")
+  platformConfigurationPublications PlatformConfigurationPublication[] @relation("PlatformConfigurationPublicationActor")
 
   @@unique([externalIssuer, externalSubject])
   @@map("operators")
@@ -597,31 +672,153 @@ model ReviewFormatEnablement {
 }
 
 model PromptVersion {
-  id                    String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId              String                 @map("tenant_id") @db.Uuid
-  promptKey             String                 @map("prompt_key") @db.VarChar(100)
+  id                    String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId              String                    @map("tenant_id") @db.Uuid
+  promptKey             String                    @map("prompt_key") @db.VarChar(100)
   action                GenerationAction
-  contentHash           String                 @map("content_hash") @db.VarChar(128)
+  contentHash           String                    @map("content_hash") @db.VarChar(128)
   body                  String
+  variables             String[]                  @default([])
   /// Raw-SQL writers may omit this; the assign_prompt_version_ordinal trigger
   /// fills it in. Prisma writers state it so the ordinal stays deliberate.
   version               Int
-  status                PromptVersionStatus    @default(DRAFT)
-  evaluationScore       Decimal?               @map("evaluation_score") @db.Decimal(5, 4)
-  createdBy             String?                @map("created_by") @db.Uuid
-  derivedFromTemplateId String?                @map("derived_from_template_id") @db.Uuid
-  createdAt             DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
-  retiredAt             DateTime?              @map("retired_at") @db.Timestamptz(6)
-  tenant                Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  derivedFromTemplate   PromptTemplateVersion? @relation(fields: [derivedFromTemplateId], references: [id], onDelete: Restrict)
+  status                PromptVersionStatus       @default(DRAFT)
+  evaluationScore       Decimal?                  @map("evaluation_score") @db.Decimal(5, 4)
+  createdBy             String?                   @map("created_by") @db.Uuid
+  derivedFromTemplateId String?                   @map("derived_from_template_id") @db.Uuid
+  createdAt             DateTime                  @default(now()) @map("created_at") @db.Timestamptz(6)
+  retiredAt             DateTime?                 @map("retired_at") @db.Timestamptz(6)
+  tenant                Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  derivedFromTemplate   PromptTemplateVersion?    @relation(fields: [derivedFromTemplateId], references: [id], onDelete: Restrict)
   experimentVariants    ExperimentVariant[]
   generations           Generation[]
+  deployments           PromptDeployment[]
+  evaluations           PromptEvaluationResult[]
+  candidacyDecisions    PromptCandidacyDecision[]
 
   @@unique([tenantId, promptKey, action, contentHash])
   @@unique([tenantId, action, version])
   @@unique([id, tenantId])
+  @@unique([id, tenantId, action])
+  @@unique([id, tenantId, contentHash])
   @@index([tenantId])
   @@map("prompt_versions")
+}
+
+/**
+ * Mutable deployment state is deliberately separate from immutable Prompt content.
+ */
+model PromptDeployment {
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  action          GenerationAction
+  promptVersionId String           @map("prompt_version_id") @db.Uuid
+  revision        BigInt           @default(1)
+  deployedBy      String?          @map("deployed_by") @db.Uuid
+  deployedAt      DateTime         @default(now()) @map("deployed_at") @db.Timestamptz(6)
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  promptVersion   PromptVersion    @relation(fields: [promptVersionId, tenantId, action], references: [id, tenantId, action], onDelete: Restrict)
+  operator        Operator?        @relation(fields: [deployedBy], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, action])
+  @@index([tenantId])
+  @@map("prompt_deployments")
+}
+
+/**
+ * Append-only evidence produced by an offline deterministic evaluation run.
+ */
+model PromptEvaluationResult {
+  id                  String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId            String                    @map("tenant_id") @db.Uuid
+  promptVersionId     String                    @map("prompt_version_id") @db.Uuid
+  promptVersionHash   String                    @map("prompt_version_hash") @db.VarChar(128)
+  reportHash          String                    @map("report_hash") @db.VarChar(128)
+  evaluatedCases      Int                       @map("evaluated_cases")
+  passedCases         Int                       @map("passed_cases")
+  evaluatorReleaseSha String?                   @map("evaluator_release_sha") @db.VarChar(64)
+  suiteName           String?                   @map("suite_name") @db.VarChar(200)
+  suiteManifestHash   String?                   @map("suite_manifest_hash") @db.VarChar(128)
+  reportDocument      Json?                     @map("report_document")
+  reportCanonical     String?                   @map("report_canonical")
+  evaluatedAt         DateTime                  @map("evaluated_at") @db.Timestamptz(6)
+  recordedAt          DateTime                  @default(now()) @map("recorded_at") @db.Timestamptz(6)
+  tenant              Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  promptVersion       PromptVersion             @relation(fields: [promptVersionId, tenantId, promptVersionHash], references: [id, tenantId, contentHash], onDelete: Restrict)
+  candidacyDecisions  PromptCandidacyDecision[]
+
+  @@unique([tenantId, promptVersionId, reportHash])
+  @@unique([id, tenantId, promptVersionId, promptVersionHash])
+  @@index([tenantId, promptVersionId, evaluatedAt])
+  @@map("prompt_evaluation_results")
+}
+
+/**
+ * Append-only lifecycle evidence. Evaluation proves quality; this separate
+ * decision records that the immutable Prompt was deliberately made eligible.
+ */
+model PromptCandidacyDecision {
+  id                 String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId           String                      @map("tenant_id") @db.Uuid
+  promptVersionId    String                      @map("prompt_version_id") @db.Uuid
+  promptVersionHash  String                      @map("prompt_version_hash") @db.VarChar(128)
+  decision           PromptCandidacyDecisionKind
+  evaluationResultId String?                     @map("evaluation_result_id") @db.Uuid
+  decidedBy          String?                     @map("decided_by") @db.Uuid
+  reason             String?                     @db.VarChar(500)
+  decidedAt          DateTime                    @default(now()) @map("decided_at") @db.Timestamptz(6)
+  tenant             Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  promptVersion      PromptVersion               @relation(fields: [promptVersionId, tenantId, promptVersionHash], references: [id, tenantId, contentHash], onDelete: Restrict)
+  evaluationResult   PromptEvaluationResult?     @relation(fields: [evaluationResultId, tenantId, promptVersionId, promptVersionHash], references: [id, tenantId, promptVersionId, promptVersionHash], onDelete: Restrict)
+  operator           Operator?                   @relation(fields: [decidedBy], references: [id], onDelete: Restrict)
+
+  // Candidate-by-Evaluation and permanent Retirement uniqueness are partial
+  // indexes managed by migration 20260824000032; Prisma cannot express them.
+  @@index([tenantId, promptVersionId, decision, evaluationResultId], map: "prompt_candidacy_decisions_evaluation_lookup_idx")
+  @@index([tenantId, promptVersionId, decidedAt])
+  @@map("prompt_candidacy_decisions")
+}
+
+/**
+ * One mutable work-in-progress per Tenant or Location scope.
+ */
+model ConfigurationDraft {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  locationId   String?  @map("location_id") @db.Uuid
+  baseRevision BigInt   @map("base_revision")
+  revision     BigInt   @default(1)
+  changes      Json
+  createdBy    String   @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor        Operator @relation("ConfigurationDraftActor", fields: [createdBy], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, locationId])
+  @@map("configuration_drafts")
+}
+
+/**
+ * Append-only record of the actor and exact changes in each published revision.
+ */
+model ConfigurationAuditEvent {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  locationId    String?  @map("location_id") @db.Uuid
+  revision      BigInt
+  draftId       String?  @map("draft_id") @db.Uuid
+  draftRevision BigInt?  @map("draft_revision")
+  changes       Json
+  snapshotIds   String[] @default([]) @map("snapshot_ids") @db.Uuid
+  configurationReleaseId String? @map("configuration_release_id") @db.Uuid
+  actorId       String   @map("actor_id") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant        Tenant   @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  actor         Operator @relation("ConfigurationAuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, locationId, revision])
+  @@map("configuration_audit_events")
 }
 
 model Experiment {
@@ -640,6 +837,7 @@ model Experiment {
   @@unique([tenantId, key])
   @@unique([id, tenantId])
   @@index([tenantId])
+  @@index([tenantId, action, status])
   @@map("experiments")
 }
 
@@ -656,6 +854,7 @@ model ExperimentVariant {
   assignments       ExperimentAssignment[]
 
   @@unique([experimentId, key])
+  @@unique([experimentId, promptVersionId])
   @@unique([id, tenantId, experimentId])
   @@index([tenantId])
   @@map("experiment_variants")
@@ -673,6 +872,7 @@ model Visit {
   location                 Location          @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
   invitationTokens         InvitationToken[]
   reviewSessions           ReviewSession[]
+  entryChallenges          EntryChallenge[]
 
   @@unique([id, tenantId, locationId])
   @@index([tenantId, locationId])
@@ -680,18 +880,19 @@ model Visit {
 }
 
 model InvitationToken {
-  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId      String         @map("tenant_id") @db.Uuid
-  locationId    String         @map("location_id") @db.Uuid
-  visitId       String?        @map("visit_id") @db.Uuid
-  tokenHash     String         @unique @map("token_hash") @db.VarChar(128)
-  issuedAt      DateTime       @default(now()) @map("issued_at") @db.Timestamptz(6)
-  expiresAt     DateTime       @map("expires_at") @db.Timestamptz(6)
-  consumedAt    DateTime?      @map("consumed_at") @db.Timestamptz(6)
-  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location      Location       @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  visit         Visit?         @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  reviewSession ReviewSession?
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  locationId      String           @map("location_id") @db.Uuid
+  visitId         String?          @map("visit_id") @db.Uuid
+  tokenHash       String           @unique @map("token_hash") @db.VarChar(128)
+  issuedAt        DateTime         @default(now()) @map("issued_at") @db.Timestamptz(6)
+  expiresAt       DateTime         @map("expires_at") @db.Timestamptz(6)
+  consumedAt      DateTime?        @map("consumed_at") @db.Timestamptz(6)
+  tenant          Tenant           @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location        Location         @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  visit           Visit?           @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  reviewSession   ReviewSession?
+  entryChallenges EntryChallenge[]
 
   @@unique([id, tenantId, locationId])
   @@index([tenantId, locationId])
@@ -699,38 +900,45 @@ model InvitationToken {
 }
 
 model ReviewSession {
-  id                        String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId                  String                        @map("tenant_id") @db.Uuid
-  locationId                String                        @map("location_id") @db.Uuid
-  visitId                   String?                       @map("visit_id") @db.Uuid
-  invitationTokenId         String?                       @unique @map("invitation_token_id") @db.Uuid
-  status                    ReviewSessionStatus           @default(OPEN)
-  rating                    Int?
-  selectedAction            GenerationAction?             @map("selected_action")
-  sessionVersion            Int                           @default(1) @map("session_version")
-  openedAt                  DateTime                      @default(now()) @map("opened_at") @db.Timestamptz(6)
-  expiresAt                 DateTime                      @map("expires_at") @db.Timestamptz(6)
-  closedAt                  DateTime?                     @map("closed_at") @db.Timestamptz(6)
-  tenant                    Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location                  Location                      @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
-  visit                     Visit?                        @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  invitationToken           InvitationToken?              @relation(fields: [invitationTokenId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
-  experimentAssignments     ExperimentAssignment[]
-  sourceTextRevisions       SourceTextRevision[]
-  assertions                Assertion[]
-  budgetReservations        BudgetReservation[]
-  generationBatches         GenerationBatch[]
-  generationBatchAssertions GenerationBatchAssertion[]
-  generations               Generation[]
-  executionLeases           ExecutionLease[]
-  providerAttempts          ProviderAttempt[]
-  claims                    Claim[]
-  claimGroundings           ClaimGrounding[]
-  unsupportedOutputs        UnsupportedOutput[]
-  drafts                    Draft[]
-  draftRevisions            DraftRevision[]
-  dispositions              Disposition[]
-  browserBindings           ReviewSessionBrowserBinding[]
+  id                            String                        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                      String                        @map("tenant_id") @db.Uuid
+  locationId                    String                        @map("location_id") @db.Uuid
+  visitId                       String?                       @map("visit_id") @db.Uuid
+  invitationTokenId             String?                       @unique @map("invitation_token_id") @db.Uuid
+  status                        ReviewSessionStatus           @default(OPEN)
+  rating                        Int?
+  selectedAction                GenerationAction?             @map("selected_action")
+  configurationSnapshotId       String?                       @map("configuration_snapshot_id") @db.Uuid
+  sessionVersion                Int                           @default(1) @map("session_version")
+  journeyPhase                  ReviewSessionJourneyPhase     @default(FACTS) @map("journey_phase")
+  selectedFactOptionIds         String[]                      @default([]) @map("selected_fact_option_ids") @db.Uuid
+  customerAssertion             String                        @default("") @map("customer_assertion")
+  sourceText                    String                        @default("") @map("source_text")
+  selectedReviewFormatVersionId String?                       @map("selected_review_format_version_id") @db.Uuid
+  openedAt                      DateTime                      @default(now()) @map("opened_at") @db.Timestamptz(6)
+  expiresAt                     DateTime                      @map("expires_at") @db.Timestamptz(6)
+  closedAt                      DateTime?                     @map("closed_at") @db.Timestamptz(6)
+  tenant                        Tenant                        @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location                      Location                      @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  visit                         Visit?                        @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  invitationToken               InvitationToken?              @relation(fields: [invitationTokenId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  experimentAssignments         ExperimentAssignment[]
+  sourceTextRevisions           SourceTextRevision[]
+  assertions                    Assertion[]
+  budgetReservations            BudgetReservation[]
+  generationBatches             GenerationBatch[]
+  generationBatchAssertions     GenerationBatchAssertion[]
+  generations                   Generation[]
+  executionLeases               ExecutionLease[]
+  providerAttempts              ProviderAttempt[]
+  claims                        Claim[]
+  claimGroundings               ClaimGrounding[]
+  unsupportedOutputs            UnsupportedOutput[]
+  drafts                        Draft[]
+  draftRevisions                DraftRevision[]
+  dispositions                  Disposition[]
+  browserBindings               ReviewSessionBrowserBinding[]
+  selectedReviewFormatVersion   ReviewFormatVersion?          @relation("ReviewSessionSelectedFormat", fields: [selectedReviewFormatVersionId], references: [id], onDelete: Restrict)
 
   @@unique([id, tenantId, locationId])
   @@unique([invitationTokenId, tenantId, locationId])
@@ -759,19 +967,33 @@ model ReviewSessionBrowserBinding {
 }
 
 model EntryChallenge {
-  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  tenantId              String    @map("tenant_id") @db.Uuid
-  locationId            String    @map("location_id") @db.Uuid
-  routeHandleHash       String    @unique @map("route_handle_hash") @db.VarChar(128)
-  browserCapabilityHash String    @map("browser_capability_hash") @db.VarChar(128)
-  expiresAt             DateTime  @map("expires_at") @db.Timestamptz(6)
-  consumedAt            DateTime? @map("consumed_at") @db.Timestamptz(6)
-  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  tenant                Tenant    @relation(fields: [tenantId], references: [id], onDelete: Restrict)
-  location              Location  @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  id                       String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tenantId                 String            @map("tenant_id") @db.Uuid
+  locationId               String            @map("location_id") @db.Uuid
+  invitationTokenId        String?           @map("invitation_token_id") @db.Uuid
+  visitId                  String?           @map("visit_id") @db.Uuid
+  entryModeKey             String            @default("open-qr") @map("entry_mode_key") @db.VarChar(80)
+  routeHandleHash          String            @unique @map("route_handle_hash") @db.VarChar(128)
+  browserCapabilityHash    String            @map("browser_capability_hash") @db.VarChar(128)
+  tableRefHash             String?           @map("table_ref_hash") @db.VarChar(128)
+  verificationRequired     Boolean           @default(false) @map("verification_required")
+  provisionalRating        Int?              @map("provisional_rating")
+  provisionalAction        GenerationAction? @map("provisional_action")
+  verificationFailedAt     DateTime?         @map("verification_failed_at") @db.Timestamptz(6)
+  verificationFailureCount Int               @default(0) @map("verification_failure_count")
+  configurationReleaseId   String?           @map("configuration_release_id") @db.Uuid
+  configurationSnapshotId  String?           @map("configuration_snapshot_id") @db.Uuid
+  expiresAt                DateTime          @map("expires_at") @db.Timestamptz(6)
+  consumedAt               DateTime?         @map("consumed_at") @db.Timestamptz(6)
+  createdAt                DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  tenant                   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  location                 Location          @relation(fields: [locationId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  invitationToken          InvitationToken?  @relation(fields: [invitationTokenId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
+  visit                    Visit?            @relation(fields: [visitId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
 
   @@unique([id, tenantId, locationId])
   @@index([tenantId, locationId, browserCapabilityHash])
+  @@index([invitationTokenId])
   @@map("entry_challenges")
 }
 
@@ -885,10 +1107,22 @@ model BudgetReservation {
   snapshot                EffectiveConfigurationSnapshot @relation(fields: [snapshotId, tenantId, locationId], references: [id, tenantId, locationId], onDelete: Restrict)
   generationBatch         GenerationBatch?
   reconciliationQueueItem ReconciliationQueueItem?
+  platformAdmission       PlatformGenerationAdmission?
 
   @@unique([id, tenantId, locationId, reviewSessionId])
   @@index([tenantId, locationId])
   @@map("budget_reservations")
+}
+
+model PlatformGenerationAdmission {
+  reservationId String            @id @map("reservation_id") @db.Uuid
+  admittedAt    DateTime          @default(dbgenerated("clock_timestamp()")) @map("admitted_at") @db.Timestamptz(6)
+  funded        Boolean
+  active        Boolean           @default(true)
+  reservation   BudgetReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@index([admittedAt], map: "platform_generation_admissions_admitted_idx")
+  @@map("platform_generation_admissions")
 }
 
 model ReconciliationQueueItem {
@@ -989,7 +1223,7 @@ model Generation {
   reviewFormatVersionId String                         @map("review_format_version_id") @db.Uuid
   action                GenerationAction
   status                GenerationStatus
-  providerOutput        String?                        @map("provider_output")
+  providerOutput        Json?                          @map("provider_output")
   groundedOutput        String?                        @map("grounded_output")
   groundingVerdict      GroundingVerdict               @map("grounding_verdict")
   policyResult          Json                           @map("policy_result")
@@ -1032,7 +1266,11 @@ model ProviderAttempt {
   attemptOrdinal   Int                   @map("attempt_ordinal")
   status           ProviderAttemptStatus
   requestPayload   Json                  @map("request_payload")
+  providerOutput   Json?                 @map("provider_output")
   providerResponse Json?                 @map("provider_response")
+  resultCheckpoint Json?                 @map("result_checkpoint")
+  resultCheckpointedAt DateTime?         @map("result_checkpointed_at") @db.Timestamptz(6)
+  resultDeadlineAt DateTime              @map("result_deadline_at") @db.Timestamptz(6)
   inputTokens      Int?                  @map("input_tokens")
   outputTokens     Int?                  @map("output_tokens")
   costMicros       BigInt                @default(0) @map("cost_micros")

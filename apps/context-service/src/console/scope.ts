@@ -25,6 +25,7 @@ export type ScopeShape =
   | "tenant"
   | "location"
   | "platform"
+  | "tenant-or-location"
   | "tenant-or-platform";
 
 export interface ScopePolicy {
@@ -71,6 +72,11 @@ export const COMMAND_POLICIES: Readonly<
   "create-location": { shape: "tenant", capability: "tenant:configure" },
   "update-location": { shape: "tenant", capability: "tenant:configure" },
   "save-tenant-settings": { shape: "tenant", capability: "tenant:configure" },
+  "stage-configuration-changes": {
+    shape: "tenant-or-location",
+    capability: "tenant:configure",
+  },
+  "stage-platform-configuration-changes": { shape: "platform" },
   "set-location-override": { shape: "location", capability: "tenant:configure" },
   "reset-location-override": {
     shape: "location",
@@ -81,6 +87,16 @@ export const COMMAND_POLICIES: Readonly<
     shape: "location",
     capability: "tenant:configure",
   },
+  "cancel-configuration-draft": {
+    shape: "tenant-or-location",
+    capability: "tenant:configure",
+  },
+  "publish-configuration": {
+    shape: "tenant-or-location",
+    capability: "tenant:configure",
+  },
+  "cancel-platform-configuration-draft": { shape: "platform" },
+  "publish-platform-configuration": { shape: "platform" },
   "publish-context-version": { shape: "tenant", capability: "tenant:configure" },
   "create-keyword": { shape: "tenant", capability: "tenant:configure" },
   "update-keyword": { shape: "tenant", capability: "tenant:configure" },
@@ -91,6 +107,7 @@ export const COMMAND_POLICIES: Readonly<
   "validate-style": { shape: "tenant" },
   "set-action-enablement": { shape: "tenant", capability: "tenant:configure" },
   "create-prompt-version": { shape: "tenant", capability: "ai:operate" },
+  "promote-prompt-version": { shape: "tenant", capability: "ai:operate" },
   "create-experiment": { shape: "tenant", capability: "ai:operate" },
   "start-experiment": { shape: "tenant", capability: "ai:operate" },
   "stop-experiment": { shape: "tenant", capability: "ai:operate" },

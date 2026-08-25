@@ -146,6 +146,7 @@ describe("evaluateGrounding Action postconditions", () => {
           },
         ],
         sourceDraftCharacterLength: 200,
+        targetMaxChars: 100,
       }),
     );
 
@@ -158,6 +159,7 @@ describe("evaluateGrounding Action postconditions", () => {
         kind: "condense",
         sourceClaims,
         sourceDraftCharacterLength: 10,
+        targetMaxChars: 100,
       }),
     );
 
@@ -171,6 +173,7 @@ describe("evaluateGrounding Action postconditions", () => {
           kind: "expand",
           sourceClaims,
           sourceDraftCharacterLength: 10,
+          targetMinChars: 20,
         },
         {
           candidate: serviceCandidate(
@@ -220,6 +223,7 @@ describe("evaluateGrounding Action postconditions", () => {
           kind: "expand",
           sourceClaims,
           sourceDraftCharacterLength: 10,
+          targetMinChars: 20,
         },
         {
           candidate: discountCandidate,
@@ -243,6 +247,7 @@ describe("evaluateGrounding Action postconditions", () => {
           },
         ],
         sourceDraftCharacterLength: 10,
+        targetMinChars: 20,
       }),
     );
 
@@ -255,10 +260,44 @@ describe("evaluateGrounding Action postconditions", () => {
         kind: "expand",
         sourceClaims,
         sourceDraftCharacterLength: 100,
+        targetMinChars: 20,
       }),
     );
 
     expectRejectedFor(result, "expand-not-longer");
+  });
+
+  it("rejects Condense when it is shorter but misses the requested maximum", () => {
+    const result = evaluateGrounding(
+      actionInput({
+        kind: "condense",
+        sourceClaims,
+        sourceDraftCharacterLength: 200,
+        targetMaxChars: 10,
+      }),
+    );
+
+    expectRejectedFor(result, "condense-target-not-met");
+  });
+
+  it("rejects Expand when it is longer but misses the requested minimum", () => {
+    const result = evaluateGrounding(
+      actionInput(
+        {
+          kind: "expand",
+          sourceClaims,
+          sourceDraftCharacterLength: 10,
+          targetMinChars: 100,
+        },
+        {
+          candidate: serviceCandidate(
+            "The service was attentive throughout my appointment.",
+          ),
+        },
+      ),
+    );
+
+    expectRejectedFor(result, "expand-target-not-met");
   });
 
   it("rejects Revise Wording when a presentation instruction becomes a fact", () => {
@@ -298,6 +337,38 @@ describe("evaluateGrounding Action postconditions", () => {
     expectRejectedFor(result, "source-revision-mismatch");
   });
 
+  it("rejects Paraphrase when any in-scope source Assertion is omitted", () => {
+    const secondSourceAssertion: GenerationAssertion = {
+      ...serviceAssertion,
+      id: "assertion-service-follow-up",
+      version: "assertion-service-follow-up-v1",
+      source: {
+        kind: "reviewer-text",
+        sourceRevisionId: "source-text-v1",
+        start: 23,
+        end: 48,
+        quotedText: "They answered my questions.",
+      },
+    };
+
+    const result = evaluateGrounding(
+      actionInput(
+        {
+          kind: "paraphrase",
+          sourceRevisionId: "source-text-v1",
+          allowedAssertionIds: [
+            "assertion-service",
+            "assertion-service-follow-up",
+          ],
+          requiredSemanticIds: ["service-attentive"],
+        },
+        { assertions: [serviceAssertion, secondSourceAssertion] },
+      ),
+    );
+
+    expectRejectedFor(result, "required-assertion-missing");
+  });
+
   it("lets Resample use the originating grounding set, not only the prior sample", () => {
     const result = evaluateGrounding(
       actionInput(
@@ -329,6 +400,22 @@ describe("evaluateGrounding Action postconditions", () => {
           },
         },
       ),
+    );
+
+    expectRejectedFor(result, "transitive-grounding-mismatch");
+  });
+
+  it("rejects a derived Claim that drops part of its transitive grounding", () => {
+    const result = evaluateGrounding(
+      actionInput({
+        kind: "reformat",
+        sourceClaims: [
+          {
+            semanticId: "service-attentive",
+            grounding: [...serviceGrounding, ...parkingClaim.grounding],
+          },
+        ],
+      }),
     );
 
     expectRejectedFor(result, "transitive-grounding-mismatch");

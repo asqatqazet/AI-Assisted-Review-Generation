@@ -3,6 +3,13 @@ import { describe, expect, it } from "vitest";
 import { createWebBffApp } from "./app.js";
 import type { AdvanceEntryInput, ContextPort } from "./ports/context.port.js";
 
+const allowedPublicSource = {
+  sourceRateLimitPort: {
+    consume: async () => ({ status: "allowed" as const }),
+  },
+  resolveTrustedViewerSource: () => "203.0.113.8",
+};
+
 describe("reviewer entry admission", () => {
   it("redirects an admitted browser-bound Entry Challenge to its Review Session", async () => {
     let received: AdvanceEntryInput | undefined;
@@ -19,6 +26,7 @@ describe("reviewer entry admission", () => {
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       publicOrigin: "http://localhost",
       csrfProtector: {
@@ -62,6 +70,63 @@ describe("reviewer entry admission", () => {
     });
   });
 
+  it("keeps a provisional choice browser-bound when verification is required", async () => {
+    let received: AdvanceEntryInput | undefined;
+    const contextPort: ContextPort = {
+      prepareEntry: async () => ({ status: "unavailable" }),
+      readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async (input) => {
+        received = input;
+        return { status: "verification-required" };
+      },
+      verifyEntry: async () => ({ status: "unavailable" }),
+      readReviewSession: async () => ({ status: "unavailable" }),
+    };
+    const app = createWebBffApp({
+      ...allowedPublicSource,
+      contextPort,
+      publicOrigin: "http://localhost",
+      csrfProtector: {
+        issue: async () => "csrf-token-with-at-least-thirty-two-characters",
+        verify: async () => true,
+      },
+    });
+
+    const response = await app.request(
+      "/api/v1/entry-challenges/entry-challenge-demo/start",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Cookie: "__Host-review_browser=existing-browser-capability-123",
+          Origin: "http://localhost",
+        },
+        body: JSON.stringify({
+          rating: 4,
+          action: "paraphrase",
+          csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+        }),
+      },
+    );
+
+    expect({
+      status: response.status,
+      location: response.headers.get("location"),
+      body: await response.json(),
+      received,
+    }).toEqual({
+      status: 202,
+      location: null,
+      body: { status: "verification-required" },
+      received: {
+        entryChallengeHandle: "entry-challenge-demo",
+        browserCapability: "existing-browser-capability-123",
+        rating: 4,
+        action: "paraphrase",
+      },
+    });
+  });
+
   it("accepts the production browser form encoding for an admitted Start", async () => {
     let received: AdvanceEntryInput | undefined;
     const contextPort: ContextPort = {
@@ -77,6 +142,7 @@ describe("reviewer entry admission", () => {
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       publicOrigin: "http://localhost",
       csrfProtector: {
@@ -133,6 +199,7 @@ describe("reviewer entry admission", () => {
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       publicOrigin: "http://localhost",
       newRequestId: () => "request-a",
@@ -192,6 +259,7 @@ describe("reviewer entry admission", () => {
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       publicOrigin: "https://reviews.example.test",
       csrfProtector: {

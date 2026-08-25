@@ -1,12 +1,23 @@
+import { ConsoleBenchInvocationDtoSchema } from "@review/contracts/console-bench";
+import { ConsoleReadInvocationDtoSchema } from "@review/contracts/console-read";
 import type { GenerationWorkloadDto } from "@review/contracts/generation";
 import {
+  createPostgresConsoleExecutionProjectionStore,
   createPostgresGenerationLeaseJournal,
   createPostgresGenerationTerminalStore,
   createPostgresReviewerDispositionStore,
 } from "@review/db/execution-plane";
-import { GeminiProvider } from "@review/llm";
+import { GeminiProvider, OpenAIProvider } from "@review/llm";
 
 import { createPaidWorkAttemptPreparer } from "./application/paid-work-attempt.js";
+import { createPostgresConsoleExecutionReader } from "./adapters/postgres-console-execution-reader.js";
+import { createConsoleReadHandler } from "./console-read-handler.js";
+import { createConsoleReadVerifier } from "./console-read-verifier.js";
+import {
+  createConsoleBenchHandler,
+  createNonPersistentConsoleBenchSink,
+} from "./console-bench-handler.js";
+import { createConsoleBenchVerifier } from "./console-bench-verifier.js";
 import type {
   ModelGatewayPort,
   ModelGatewayRequest,
@@ -17,6 +28,7 @@ import { createPersistentGenerationLeaseJournal } from "./transport/lambda/persi
 import { createPersistentGenerationTerminalStore } from "./transport/lambda/persistent-terminal-store.js";
 import { createPersistentTerminalTailer } from "./transport/lambda/persistent-terminal-tailer.js";
 import { createReviewerDispositionHandler } from "./transport/lambda/reviewer-disposition-handler.js";
+import { createReviewerDraftRevisionHandler } from "./transport/lambda/reviewer-draft-revision-handler.js";
 
 const waitFor = async (
   milliseconds: number,
@@ -95,23 +107,42 @@ export function createAssessmentFakeGateway(
 export { selectGateway as selectGatewayForTest };
 
 function selectGateway({
-  routedProvider,
   workload,
+  providerMode,
   geminiApiKey,
+  openaiApiKey,
   fakeDelayMs,
   fakeFailure,
 }: {
-  readonly routedProvider: string;
   readonly workload: GenerationWorkloadDto;
+  readonly providerMode: "fake-only" | "paid-enabled";
   readonly geminiApiKey: string | undefined;
+  readonly openaiApiKey?: string | undefined;
   readonly fakeDelayMs: number;
   readonly fakeFailure: boolean;
 }): ModelGatewayPort {
+  const routedProvider = workload.snapshot.providerRouting.primaryProvider;
+  if (providerMode === "fake-only" && routedProvider !== "fake") {
+    throw new Error("LIVE_PROVIDER_DISABLED");
+  }
   if (routedProvider === "fake") {
     return createAssessmentFakeGateway(workload, {
       delayMs: fakeDelayMs,
       fail: fakeFailure,
     });
+  }
+  const routedRate = workload.snapshot.priceRates.find(
+    (rate) => rate.id === workload.bindings.priceRateId,
+  );
+  if (
+    workload.snapshot.settings.monthlyBudgetMicros <= 0 ||
+    routedRate === undefined ||
+    routedRate.providerModelId !==
+      workload.snapshot.providerRouting.providerModelId ||
+    routedRate.provider !== routedProvider ||
+    routedRate.model !== workload.snapshot.providerRouting.primaryModel
+  ) {
+    throw new Error("GENERATION_PROVIDER_DISABLED");
   }
   if (routedProvider === "gemini") {
     if (geminiApiKey === undefined || geminiApiKey.length === 0) {
@@ -119,25 +150,41 @@ function selectGateway({
     }
     return new GeminiProvider({ apiKey: geminiApiKey });
   }
+  if (routedProvider === "openai") {
+    if (openaiApiKey === undefined || openaiApiKey.length === 0) {
+      throw new Error("GENERATION_PROVIDER_CREDENTIAL_MISSING");
+    }
+    return new OpenAIProvider({ apiKey: openaiApiKey });
+  }
   throw new Error("GENERATION_PROVIDER_NOT_AVAILABLE");
 }
 
 export function createGenerationRuntime({
   databaseUrl,
+  providerMode,
   contextPublicKeyPem,
+  consoleAuthorityPublicKeyPem,
   generationPrivateKeyPem,
   geminiApiKey,
+  openaiApiKey,
   fakeDelayMs = 0,
   fakeFailure = false,
 }: {
   readonly databaseUrl: string;
+  readonly providerMode: "fake-only" | "paid-enabled";
   readonly contextPublicKeyPem: string;
+  readonly consoleAuthorityPublicKeyPem: string;
   readonly generationPrivateKeyPem: string;
   /**
-   * Absent unless an operator installed a key. Without one the deployment
-   * keeps using the deterministic provider and makes no paid call.
+   * Absent unless an operator installed a key. A snapshot routed to Gemini
+   * fails closed when this secret is absent; it never falls back.
    */
   readonly geminiApiKey?: string | undefined;
+  /**
+   * Injected independently from the immutable configuration snapshot. Merely
+   * installing it does not route work to OpenAI.
+   */
+  readonly openaiApiKey?: string | undefined;
   readonly fakeDelayMs?: number;
   readonly fakeFailure?: boolean;
 }): (event: unknown) => Promise<unknown> {
@@ -146,6 +193,9 @@ export function createGenerationRuntime({
     databaseUrl,
   });
   const reviewerDispositionStore = createPostgresReviewerDispositionStore({
+    databaseUrl,
+  });
+  const consoleProjectionStore = createPostgresConsoleExecutionProjectionStore({
     databaseUrl,
   });
   const leaseJournal = createPersistentGenerationLeaseJournal(databaseJournal);
@@ -157,7 +207,7 @@ export function createGenerationRuntime({
     generationPrivateKeyPem,
   });
 
-  return createPaidWorkGenerationHandler({
+  const paidWorkHandler = createPaidWorkGenerationHandler({
     permitVerifier: {
       verify: async (permit, workload) =>
         await authority.verifyPermit(permit, workload),
@@ -178,20 +228,49 @@ export function createGenerationRuntime({
          * deterministic provider — the model name would not even exist there.
          */
         gateway: selectGateway({
-          routedProvider: workload.snapshot.providerRouting.primaryProvider,
           workload,
+          providerMode,
           geminiApiKey,
+          openaiApiKey,
           fakeDelayMs,
           fakeFailure,
         }),
       })(workload),
     tailExisting: createPersistentTerminalTailer({
-      databaseStore: databaseTerminalStore,
+      terminalStore,
       receiptSigner: authority,
     }),
     recordDisposition: createReviewerDispositionHandler({
       verifier: authority,
       store: reviewerDispositionStore,
     }),
+    recordDraftRevision: createReviewerDraftRevisionHandler({
+      verifier: authority,
+      store: reviewerDispositionStore,
+    }),
   });
+  const consoleReadHandler = createConsoleReadHandler({
+    verifier: createConsoleReadVerifier({ consoleAuthorityPublicKeyPem }),
+    reader: createPostgresConsoleExecutionReader(consoleProjectionStore),
+  });
+  const consoleBenchHandler = createConsoleBenchHandler({
+    verifier: createConsoleBenchVerifier({ consoleAuthorityPublicKeyPem }),
+    prepareAttempt: async (workload) =>
+      await createPaidWorkAttemptPreparer({
+        // Bench has its own signed fake-only route and can never select a paid
+        // gateway merely because a provider credential is installed.
+        gateway: createAssessmentFakeGateway(workload, {
+          delayMs: fakeDelayMs,
+          fail: fakeFailure,
+        }),
+      })(workload),
+    sink: createNonPersistentConsoleBenchSink(),
+  });
+
+  return async (event: unknown): Promise<unknown> =>
+    ConsoleReadInvocationDtoSchema.safeParse(event).success
+      ? await consoleReadHandler(event)
+      : ConsoleBenchInvocationDtoSchema.safeParse(event).success
+        ? await consoleBenchHandler(event)
+      : await paidWorkHandler(event);
 }

@@ -7,15 +7,21 @@
   "targets": {
     "serve": {
       "executor": "nx:run-commands",
-      "options": { "command": "PORT=3001 tsx watch apps/context-service/dev.ts" }
+      "options": {
+        "commands": [
+          "PORT=3001 tsx watch apps/context-service/reviewer-dev.ts",
+          "PORT=3003 tsx watch apps/context-service/console-dev.ts"
+        ],
+        "parallel": true
+      }
     },
     "build": {
       "executor": "nx:run-commands",
       "outputs": ["{workspaceRoot}/dist/apps/context-service"],
       "options": {
         "commands": [
-          "tsup apps/context-service/src/main.ts --format esm --config infra/aws/lambda-server.tsup.config.ts --out-dir dist/apps/context-service --clean",
-          "node --no-experimental-detect-module --input-type=module --eval \"await import('./dist/apps/context-service/main.js')\""
+          "tsup apps/context-service/src/main.ts apps/context-service/src/reviewer-main.ts apps/context-service/src/console-main.ts --format esm --config infra/aws/lambda-server.tsup.config.ts --out-dir dist/apps/context-service --clean",
+          "node --no-experimental-detect-module --input-type=module --eval \"await Promise.all([import('./dist/apps/context-service/main.js'), import('./dist/apps/context-service/reviewer-main.js'), import('./dist/apps/context-service/console-main.js')])\""
         ],
         "parallel": false
       }

@@ -6,6 +6,11 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import type { ConsoleClient } from "../console-client.js";
+import {
+  ConfigurationDraftPanel,
+  tenantConfigurationScope,
+  useConfigurationDraftController,
+} from "../configuration-draft-panel.js";
 import { useConsoleCommand, useConsoleView } from "../console-queries.js";
 import {
   DataTable,
@@ -34,6 +39,18 @@ export function PromptsView({
     scope: scopeController.scope,
     params: { action: actionFilter },
   });
+  const configurationScope = tenantConfigurationScope(scopeController.scope);
+  const tenantSettings = useConsoleView({
+    client,
+    view: "tenant-settings",
+    scope: configurationScope,
+    enabled: configurationScope.tenantId !== null,
+  });
+  const deploymentDraft = useConfigurationDraftController({
+    client,
+    scope: configurationScope,
+    configuration: tenantSettings.data?.configuration,
+  });
   const [selection, setSelection] = useState<readonly string[]>([]);
   const comparison = useConsoleView({
     client,
@@ -48,9 +65,9 @@ export function PromptsView({
   const command = useConsoleCommand({ client, scope: scopeController.scope });
   const [draft, setDraft] = useState({ action: "", body: "" });
 
-  // The filter narrows the table; publishing chooses its own Action so a
-  // prompt for any Action can be written while looking at all of them.
-  const publishAction =
+  // The filter narrows the table; Draft creation chooses its own Action so a
+  // Prompt for any Action can be authored while looking at all of them.
+  const draftAction =
     draft.action ||
     actionFilter ||
     prompts.data?.actions[0]?.key ||
@@ -69,7 +86,7 @@ export function PromptsView({
       <ViewHeader
         eyebrow="AI operations"
         title="Prompt versions"
-        meta="Every version is immutable; editing publishes a new one"
+        meta="Every version is immutable; creation starts as a Draft"
       />
 
       <div className={styles.toolbar}>
@@ -143,8 +160,85 @@ export function PromptsView({
                 render: (row) =>
                   row.evaluationScore === null ? "—" : percent(row.evaluationScore),
               },
+              {
+                key: "release",
+                header: "Release step",
+                render: (row) => {
+                  if (!prompts.data.editable) {
+                    return "—";
+                  }
+                  if (row.status === "draft") {
+                    if (row.evaluationScore !== 1) {
+                      return "Requires a 100% evaluation";
+                    }
+                    const isMarking =
+                      command.isPending &&
+                      command.variables?.command === "promote-prompt-version" &&
+                      command.variables.promptVersionId === row.id;
+                    return (
+                      <button
+                        type="button"
+                        className={styles.button}
+                        disabled={command.isPending || deploymentDraft.isPending}
+                        onClick={() =>
+                          command.mutate({
+                            command: "promote-prompt-version",
+                            promptVersionId: row.id,
+                          })
+                        }
+                      >
+                        {isMarking ? "Marking candidate…" : "Mark candidate"}
+                      </button>
+                    );
+                  }
+                  if (row.status === "candidate") {
+                    return (
+                      <button
+                        type="button"
+                        className={styles.buttonPrimary}
+                        disabled={
+                          tenantSettings.data === undefined ||
+                          command.isPending ||
+                          deploymentDraft.isPending
+                        }
+                        onClick={() =>
+                          deploymentDraft.stage([
+                            {
+                              operation: "deploy-prompt-version",
+                              action: row.action,
+                              promptVersionId: row.id,
+                            },
+                          ])
+                        }
+                      >
+                        {deploymentDraft.pendingCommand ===
+                        "stage-configuration-changes"
+                          ? "Staging deployment…"
+                          : "Stage deployment"}
+                      </button>
+                    );
+                  }
+                  return row.status === "published" ? "Deployed" : "Unavailable";
+                },
+              },
             ]}
           />
+
+          <p className={styles.settingSource}>
+            Candidate means the Prompt passed its evaluation gate. It is not
+            deployed until its change is staged and the Tenant configuration
+            Draft is published.
+          </p>
+          <RejectionNotice error={command.error} />
+          <QueryState query={tenantSettings} label="the Tenant configuration Draft" />
+          {tenantSettings.data === undefined ? null : (
+            <ConfigurationDraftPanel
+              configuration={tenantSettings.data.configuration}
+              controller={deploymentDraft}
+              editable={prompts.data.editable && tenantSettings.data.editable}
+              scopeKind="tenant"
+            />
+          )}
 
           {selection.length === 2 ? (
             <>
@@ -173,18 +267,18 @@ export function PromptsView({
                 event.preventDefault();
                 command.mutate({
                   command: "create-prompt-version",
-                  action: publishAction as ConsoleActionKeyDto,
+                  action: draftAction as ConsoleActionKeyDto,
                   body: draft.body,
                   variables: [],
                 });
                 setDraft((current) => ({ ...current, body: "" }));
               }}
             >
-              <h2 className={styles.sectionLabel}>Publish a new version</h2>
+              <h2 className={styles.sectionLabel}>Create a draft version</h2>
               <label className={styles.field}>
                 Action
                 <select
-                  value={publishAction}
+                  value={draftAction}
                   onChange={(event) =>
                     setDraft((current) => ({
                       ...current,
@@ -218,10 +312,9 @@ export function PromptsView({
                   type="submit"
                   disabled={command.isPending}
                 >
-                  Publish draft version
+                  Create draft version
                 </button>
               </p>
-              <RejectionNotice error={command.error} />
             </form>
           ) : null}
         </>
@@ -474,19 +567,31 @@ export function BenchView({
   const command = useConsoleCommand({ client, scope: scopeController.scope });
   const [result, setResult] = useState<ConsoleBenchResultDto | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [keywordOverride, setKeywordOverride] = useState<readonly string[] | null>(
+    null,
+  );
 
   const prefill = form.data?.prefill ?? null;
   const action = (overrides["action"] ??
     prefill?.action ??
     form.data?.actions[0]?.key ??
     "generate") as ConsoleActionKeyDto;
-  const styleId =
-    overrides["styleId"] ?? prefill?.styleId ?? form.data?.styles[0]?.id ?? "";
-  const promptVersionId =
-    overrides["promptVersionId"] ??
-    prefill?.promptVersionId ??
-    form.data?.promptVersions[0]?.id ??
-    "";
+  const compatibleStyles =
+    form.data?.styles.filter((style) => style.supportedActions.includes(action)) ??
+    [];
+  const compatiblePrompts =
+    form.data?.promptVersions.filter((prompt) => prompt.action === action) ?? [];
+  const requestedStyleId = overrides["styleId"] ?? prefill?.styleId ?? "";
+  const styleId = compatibleStyles.some((style) => style.id === requestedStyleId)
+    ? requestedStyleId
+    : (compatibleStyles[0]?.id ?? "");
+  const requestedPromptVersionId =
+    overrides["promptVersionId"] ?? prefill?.promptVersionId ?? "";
+  const promptVersionId = compatiblePrompts.some(
+    (prompt) => prompt.id === requestedPromptVersionId,
+  )
+    ? requestedPromptVersionId
+    : (compatiblePrompts[0]?.id ?? "");
   const provider =
     overrides["provider"] ??
     prefill?.provider ??
@@ -495,9 +600,31 @@ export function BenchView({
     "";
   const freeText = overrides["freeText"] ?? prefill?.freeText ?? "";
   const sourceText = overrides["sourceText"] ?? prefill?.sourceText ?? "";
+  const keywordIds = keywordOverride ?? prefill?.keywordIds ?? [];
   const requiredInputs =
     form.data?.actions.find((candidate) => candidate.key === action)
       ?.requiredInputs ?? [];
+  const hasCompatiblePipeline = styleId !== "" && promptVersionId !== "";
+  const hasImmutableEvidence =
+    action === "generate" || action === "paraphrase";
+  const hasRequiredSource =
+    action === "generate"
+      ? keywordIds.length > 0 || freeText.trim() !== ""
+      : action === "paraphrase"
+        ? sourceText.trim() !== ""
+        : false;
+  const isFakeProvider =
+    provider === "fake" &&
+    form.data?.providers.some(
+      (candidate) => candidate.key === provider && candidate.isTestProvider,
+    ) === true;
+  const hasLocation = scopeController.scope.locationId !== null;
+  const canRun =
+    hasLocation &&
+    hasCompatiblePipeline &&
+    hasImmutableEvidence &&
+    hasRequiredSource &&
+    isFakeProvider;
 
   return (
     <>
@@ -522,6 +649,9 @@ export function BenchView({
             className={styles.form}
             onSubmit={(event) => {
               event.preventDefault();
+              if (!canRun) {
+                return;
+              }
               command.mutate(
                 {
                   command: "run-bench",
@@ -530,7 +660,7 @@ export function BenchView({
                     styleId,
                     promptVersionId,
                     provider,
-                    keywordIds: [],
+                    keywordIds: [...keywordIds],
                     freeText,
                     sourceText,
                   },
@@ -560,6 +690,8 @@ export function BenchView({
                     setOverrides((current) => ({
                       ...current,
                       action: event.target.value,
+                      styleId: "",
+                      promptVersionId: "",
                     }))
                   }
                 >
@@ -581,9 +713,7 @@ export function BenchView({
                     }))
                   }
                 >
-                  {form.data.styles
-                    .filter((style) => style.supportedActions.includes(action))
-                    .map((style) => (
+                  {compatibleStyles.map((style) => (
                       <option key={style.id} value={style.id}>
                         {style.name}
                       </option>
@@ -601,11 +731,9 @@ export function BenchView({
                     }))
                   }
                 >
-                  {form.data.promptVersions
-                    .filter((prompt) => prompt.action === action)
-                    .map((prompt) => (
+                  {compatiblePrompts.map((prompt) => (
                       <option key={prompt.id} value={prompt.id}>
-                        v{prompt.version} · {prompt.hash}
+                        {prompt.key} · {prompt.hash}
                       </option>
                     ))}
                 </select>
@@ -647,28 +775,81 @@ export function BenchView({
               </label>
             ) : null}
 
-            <label className={styles.field}>
-              Free-text assertion
-              <input
-                value={freeText}
-                onChange={(event) =>
-                  setOverrides((current) => ({
-                    ...current,
-                    freeText: event.target.value,
-                  }))
-                }
-              />
-            </label>
+            {action === "generate" ? (
+              <>
+                {form.data.keywords.length === 0 ? null : (
+                  <fieldset className={styles.field}>
+                    <legend>Fact Options</legend>
+                    {form.data.keywords.map((keyword) => (
+                      <label key={keyword.id}>
+                        <input
+                          type="checkbox"
+                          checked={keywordIds.includes(keyword.id)}
+                          onChange={(event) =>
+                            setKeywordOverride((current) => {
+                              const selected = current ?? keywordIds;
+                              return event.target.checked
+                                ? [...new Set([...selected, keyword.id])]
+                                : selected.filter((id) => id !== keyword.id);
+                            })
+                          }
+                        />{" "}
+                        {keyword.label}
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+                <label className={styles.field}>
+                  Free-text assertion
+                  <input
+                    value={freeText}
+                    onChange={(event) =>
+                      setOverrides((current) => ({
+                        ...current,
+                        freeText: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+              </>
+            ) : null}
 
             <p className={styles.buttonRow}>
               <button
                 className={styles.buttonPrimary}
                 type="submit"
-                disabled={command.isPending}
+                disabled={command.isPending || !canRun}
               >
                 Run on the bench
               </button>
             </p>
+            {!hasCompatiblePipeline ? (
+              <p role="status" className={styles.alertCritical}>
+                No compatible Review Format and Prompt Version are available for
+                this Action.
+              </p>
+            ) : null}
+            {!hasLocation ? (
+              <p role="status" className={styles.alertCritical}>
+                Select a Location to run the bench.
+              </p>
+            ) : null}
+            {hasCompatiblePipeline && !hasImmutableEvidence ? (
+              <p role="status" className={styles.alertCritical}>
+                This Action needs immutable source Generation evidence, which
+                the bench cannot resolve yet.
+              </p>
+            ) : null}
+            {hasImmutableEvidence && !hasRequiredSource ? (
+              <p role="status" className={styles.alertCritical}>
+                Select a Fact Option or enter the required source text.
+              </p>
+            ) : null}
+            {!isFakeProvider ? (
+              <p role="status" className={styles.alertCritical}>
+                Bench execution is available through FakeProvider only.
+              </p>
+            ) : null}
             <RejectionNotice error={command.error} />
           </form>
 
@@ -688,6 +869,11 @@ export function BenchView({
                 <dd>{money(result.estimatedCost)}</dd>
                 <dt>Recorded as</dt>
                 <dd>Bench run — excluded from analytics, experiments and billing</dd>
+                <dt>Grounding guard</dt>
+                <dd>
+                  Passed · {result.guard.supportedClaimIds.length} supported Claim
+                  {result.guard.supportedClaimIds.length === 1 ? "" : "s"}
+                </dd>
               </dl>
               <pre className={styles.codeBlock}>{result.output}</pre>
 

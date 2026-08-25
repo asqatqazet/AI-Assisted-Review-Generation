@@ -6,6 +6,7 @@ import {
   IsoDateTimeDtoSchema,
   LocaleDtoSchema,
   ReviewFormatLocaleDtoSchema,
+  Sha256DigestDtoSchema,
 } from "./primitives.js";
 
 export const ConfigurationProvenanceDtoSchema = z.strictObject({
@@ -21,6 +22,8 @@ export const EffectiveSettingsDtoSchema = z.strictObject({
   requireDisclosure: z.boolean(),
   requireVerifiedExperience: z.boolean(),
   maxReviewFormatsPerRequest: z.number().int().positive(),
+  minimumFactSelections: z.number().int().min(1).max(20),
+  maximumCustomerAssertionChars: z.number().int().min(1).max(5_000),
   bannedTerms: z.array(z.string().min(1)),
   enabledReviewFormatVersionIds: z.array(IdentifierDtoSchema),
   enabledCommands: z.array(
@@ -52,6 +55,8 @@ export const FactOptionOwnerDtoSchema = z.discriminatedUnion("scope", [
 export const FactOptionVersionDtoSchema = z.strictObject({
   id: IdentifierDtoSchema,
   version: IdentifierDtoSchema,
+  label: z.string().min(1).optional(),
+  categoryLabel: z.string().min(1).optional(),
   owner: FactOptionOwnerDtoSchema,
   proposition: z.string().min(1),
   categoryId: IdentifierDtoSchema,
@@ -98,7 +103,7 @@ export const ReviewFormatVersionDtoSchema = z.strictObject({
 
 export const PromptVersionDtoSchema = z.strictObject({
   id: IdentifierDtoSchema,
-  hash: IdentifierDtoSchema,
+  hash: Sha256DigestDtoSchema,
   key: IdentifierDtoSchema,
   commandKind: z.enum([
     "generate",

@@ -8,6 +8,7 @@ import {
 } from "../shared/primitives.js";
 import { ConsoleActionKeyDtoSchema } from "./overview.js";
 import { MoneyDtoSchema } from "./primitives.js";
+import { ConsolePlatformConfigurationStateDtoSchema } from "./platform-configuration-draft.js";
 
 export const PlatformTenantRowDtoSchema = z.strictObject({
   id: IdentifierDtoSchema,
@@ -58,6 +59,7 @@ export const PlatformPriceVersionDtoSchema = z.strictObject({
 
 export const PlatformProvidersDtoSchema = z.strictObject({
   scope: z.literal("platform"),
+  configuration: ConsolePlatformConfigurationStateDtoSchema,
   models: z.array(PlatformProviderModelDtoSchema).max(200),
   priceVersions: z.array(PlatformPriceVersionDtoSchema).max(1000),
 });
@@ -82,6 +84,7 @@ export const PlatformStylesDtoSchema = z.strictObject({
 
 export const PlatformSettingsDtoSchema = z.strictObject({
   scope: z.literal("platform"),
+  configuration: ConsolePlatformConfigurationStateDtoSchema,
   defaultPolicyTemplate: z.string().max(50_000),
   globalRateLimits: z.strictObject({
     perReviewSessionPerHour: z.number().int().min(0),

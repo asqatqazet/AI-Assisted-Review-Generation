@@ -8,6 +8,7 @@ import {
   type SourceProvenance,
   type TenantConfiguration,
 } from "./effective-config.js";
+import { resolveExecutableGenerationActions } from "../generation/action-capabilities.js";
 
 export const CONFIG_SNAPSHOT_SCHEMA_VERSION = 2;
 
@@ -100,6 +101,16 @@ export interface ResolvedConfigSnapshot extends ConfigSnapshotPayload {
   readonly snapshotId: `sha256:${string}`;
 }
 
+/**
+ * Persistence may use a row identifier while retaining the canonical content
+ * hash beside it. Canonicalization intentionally ignores that identifier.
+ */
+export interface PersistedConfigSnapshotDocument
+  extends Omit<ConfigSnapshotPayload, "provenance"> {
+  readonly snapshotId: string;
+  readonly provenance: Readonly<Record<string, SourceProvenance>>;
+}
+
 export type ConfigSnapshotErrorCode =
   | "duplicate-review-format-id"
   | "duplicate-review-format-version"
@@ -108,6 +119,7 @@ export type ConfigSnapshotErrorCode =
   | "invalid-price-rate-interval"
   | "overlapping-price-rate-interval"
   | "missing-enabled-review-format"
+  | "no-executable-action"
   | "unpriced-provider-route"
   | "provider-model-identity-mismatch";
 
@@ -202,6 +214,10 @@ const copyFactOwner = (owner: FactOption["owner"]): FactOption["owner"] =>
 const copyFactOption = (option: FactOption): FactOption => ({
   id: option.id,
   version: option.version,
+  ...(option.label === undefined ? {} : { label: option.label }),
+  ...(option.categoryLabel === undefined
+    ? {}
+    : { categoryLabel: option.categoryLabel }),
   owner: copyFactOwner(option.owner),
   categoryId: option.categoryId,
   proposition: option.proposition,
@@ -310,6 +326,29 @@ function validateInputs(
     }
   }
 
+  const enabledFormatIds = new Set(
+    resolvedSettings.enabledReviewFormatVersionIds,
+  );
+  const localeCompatibleFormats = input.reviewFormats.filter(
+    (format) =>
+      enabledFormatIds.has(format.id) &&
+      (format.locale === "any" || format.locale === resolvedSettings.locale),
+  );
+  if (
+    resolveExecutableGenerationActions({
+      enabledActions: resolvedSettings.enabledCommands,
+      promptActions: input.promptVersions.map((prompt) => prompt.commandKind),
+      reviewFormats: localeCompatibleFormats.map((format) => ({
+        supportedActions: format.supportedCommands,
+      })),
+    }).length === 0
+  ) {
+    throw new ConfigSnapshotError(
+      "no-executable-action",
+      "No executable Action has exactly one Prompt and a locale-compatible Review Format.",
+    );
+  }
+
   const primaryModelKey = `${input.providerRouting.primaryProvider}:${input.providerRouting.primaryModel}`;
   if (!ratesByModel.has(primaryModelKey) || (ratesByModel.get(primaryModelKey)?.length ?? 0) === 0) {
     throw new ConfigSnapshotError(
@@ -344,6 +383,9 @@ function buildPayload(input: BuildConfigSnapshotInput): ConfigSnapshotPayload {
     requireDisclosure: resolved.value.requireDisclosure,
     requireVerifiedExperience: resolved.value.requireVerifiedExperience,
     maxReviewFormatsPerRequest: resolved.value.maxReviewFormatsPerRequest,
+    minimumFactSelections: resolved.value.minimumFactSelections,
+    maximumCustomerAssertionChars:
+      resolved.value.maximumCustomerAssertionChars,
     bannedTerms: sortedStrings(resolved.value.bannedTerms),
     enabledReviewFormatVersionIds: sortedStrings(
       resolved.value.enabledReviewFormatVersionIds,
@@ -426,7 +468,10 @@ function canonicalJson(value: JsonValue): string {
 }
 
 export function canonicalizeConfigSnapshotPayload(
-  snapshot: ConfigSnapshotPayload | ResolvedConfigSnapshot,
+  snapshot:
+    | ConfigSnapshotPayload
+    | ResolvedConfigSnapshot
+    | PersistedConfigSnapshotDocument,
 ): string {
   const { snapshotId: _snapshotId, ...payload } = snapshot as ResolvedConfigSnapshot;
   void _snapshotId;
@@ -544,7 +589,10 @@ function deepFreeze<Value>(value: Value): Value {
 }
 
 export function deriveConfigSnapshotId(
-  snapshot: ConfigSnapshotPayload | ResolvedConfigSnapshot,
+  snapshot:
+    | ConfigSnapshotPayload
+    | ResolvedConfigSnapshot
+    | PersistedConfigSnapshotDocument,
 ): `sha256:${string}` {
   return `sha256:${sha256(canonicalizeConfigSnapshotPayload(snapshot))}`;
 }

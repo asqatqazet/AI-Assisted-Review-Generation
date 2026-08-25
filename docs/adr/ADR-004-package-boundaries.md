@@ -59,7 +59,6 @@ flowchart LR
   GENERATION --> DBG["packages/db/execution-plane"]
   GENERATION --> OBS
 
-  LLM --> DOMAIN
   DBC --> DOMAIN
   DBG --> DOMAIN
 ```
@@ -73,7 +72,7 @@ The exact direct-import matrix is:
 | `generation-service` | yes | yes | yes | no | yes | yes | no |
 | `domain` | self only | no | no | no | no | no | no |
 | `contracts` | no | self only | no | no | no | no | no |
-| `llm` | yes | no | self only | no | no | no | no |
+| `llm` | no | no | self only | no | no | no | no |
 | `db` | yes | no | no | internal only | internal only | no | no |
 | `observability` | no | no | no | no | no | self only | no |
 
@@ -175,6 +174,12 @@ interface ModelGateway {
 ```
 
 The package owns provider SDKs and invocation usage reporting. It does **not** own Price Rates, prompts, grounding, policy, Review Formats, or Generation persistence. Price Rates arrive in the Effective Configuration Snapshot and pure domain code calculates cost.
+
+The Provider request/candidate/error types belong to this package's small public
+interface. `llm` imports neither `domain` nor `contracts`; Generation maps its
+application/domain values at the adapter boundary. This keeps provider SDK
+changes from reaching back into business policy and makes the package usable in
+provider contract tests without pulling in the domain graph.
 
 Diagnostics are injected into the gateway; `llm` does not import `observability`.
 

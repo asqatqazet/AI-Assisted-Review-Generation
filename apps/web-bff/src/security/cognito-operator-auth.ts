@@ -24,6 +24,8 @@ interface CognitoOperatorAuthOptions {
 }
 
 const encoder = new TextEncoder();
+const SESSION_TTL_SECONDS = 24 * 60 * 60;
+const REFRESH_AHEAD_SECONDS = 5 * 60;
 
 function randomBase64Url(): string {
   const bytes = new Uint8Array(32);
@@ -70,6 +72,79 @@ export function createCognitoOperatorAuth(
         headers: init.headers,
       }),
   });
+  const logoutUri = new URL("/console", options.redirectUri).toString();
+  const logoutEndpoint = new URL("/logout", options.authorizationEndpoint);
+  const revocationEndpoint = new URL("/oauth2/revoke", options.tokenEndpoint);
+
+  const identityClaims = async (
+    idToken: string,
+    currentDate: Date,
+    expected: {
+      readonly nonce?: string | undefined;
+      readonly subject?: string | undefined;
+      readonly email?: string | undefined;
+    } = {},
+  ) => {
+    const verified = await jwtVerify(idToken, remoteKeySet, {
+      issuer: options.issuer,
+      audience: options.clientId,
+      algorithms: ["RS256"],
+      currentDate,
+    });
+    const claims = verified.payload;
+    const email =
+      typeof claims["email"] === "string"
+        ? claims["email"].toLowerCase()
+        : null;
+    if (
+      claims["token_use"] !== "id" ||
+      (expected.nonce !== undefined && claims["nonce"] !== expected.nonce) ||
+      typeof claims.sub !== "string" ||
+      email === null ||
+      claims["email_verified"] !== true ||
+      typeof claims.exp !== "number" ||
+      (expected.subject !== undefined && claims.sub !== expected.subject) ||
+      (expected.email !== undefined && email !== expected.email)
+    ) {
+      throw new Error("OIDC identity claims are invalid");
+    }
+    return {
+      issuer: options.issuer,
+      subject: claims.sub,
+      email,
+      providerExpiresAt: claims.exp,
+    };
+  };
+
+  const sealSession = async ({
+    identity,
+    refreshToken,
+    providerExpiresAt,
+    sessionExpiresAt,
+    currentDate,
+  }: {
+    readonly identity: {
+      readonly issuer: string;
+      readonly subject: string;
+      readonly email: string;
+    };
+    readonly refreshToken: string;
+    readonly providerExpiresAt: number;
+    readonly sessionExpiresAt: number;
+    readonly currentDate: Date;
+  }): Promise<string> =>
+    await new EncryptJWT({
+      purpose: "operator-session",
+      issuer: identity.issuer,
+      subject: identity.subject,
+      email: identity.email,
+      refreshToken,
+      providerExpiresAt,
+    })
+      .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
+      .setIssuedAt(Math.floor(currentDate.getTime() / 1000))
+      .setExpirationTime(sessionExpiresAt)
+      .encrypt(await key);
 
   return {
     async begin({ returnTo }) {
@@ -146,47 +221,33 @@ export function createCognitoOperatorAuth(
         typeof tokenPayload !== "object" ||
         tokenPayload === null ||
         !("id_token" in tokenPayload) ||
-        typeof tokenPayload.id_token !== "string"
+        typeof tokenPayload.id_token !== "string" ||
+        !("refresh_token" in tokenPayload) ||
+        typeof tokenPayload.refresh_token !== "string" ||
+        tokenPayload.refresh_token.length === 0
       ) {
         throw new Error("OIDC token response is invalid");
       }
-
-      const verified = await jwtVerify(tokenPayload.id_token, remoteKeySet, {
-        issuer: options.issuer,
-        audience: options.clientId,
-        algorithms: ["RS256"],
+      const identity = await identityClaims(tokenPayload.id_token, currentDate, {
+        nonce: transaction["nonce"],
+      });
+      const issuedAt = Math.floor(currentDate.getTime() / 1000);
+      const sessionCookie = await sealSession({
+        identity,
+        refreshToken: tokenPayload.refresh_token,
+        providerExpiresAt: identity.providerExpiresAt,
+        sessionExpiresAt: issuedAt + SESSION_TTL_SECONDS,
         currentDate,
       });
-      const claims = verified.payload;
-      if (
-        claims["token_use"] !== "id" ||
-        claims["nonce"] !== transaction["nonce"] ||
-        typeof claims.sub !== "string" ||
-        typeof claims["email"] !== "string" ||
-        claims["email_verified"] !== true
-      ) {
-        throw new Error("OIDC identity claims are invalid");
-      }
-
-      const issuedAt = Math.floor(currentDate.getTime() / 1000);
-      const sessionCookie = await new EncryptJWT({
-        purpose: "operator-session",
-        issuer: options.issuer,
-        subject: claims.sub,
-        email: claims["email"].toLowerCase(),
-      })
-        .setProtectedHeader({ alg: "dir", enc: "A256GCM" })
-        .setIssuedAt(issuedAt)
-        .setExpirationTime(issuedAt + 3600)
-        .encrypt(await key);
 
       return { sessionCookie, returnTo: transaction["returnTo"] };
     },
 
     async readSession({ sessionCookie }) {
       try {
+        const currentDate = now();
         const { payload } = await jwtDecrypt(sessionCookie, await key, {
-          currentDate: now(),
+          currentDate,
           keyManagementAlgorithms: ["dir"],
           contentEncryptionAlgorithms: ["A256GCM"],
         });
@@ -194,18 +255,108 @@ export function createCognitoOperatorAuth(
           payload["purpose"] !== "operator-session" ||
           payload["issuer"] !== options.issuer ||
           typeof payload["subject"] !== "string" ||
-          typeof payload["email"] !== "string"
+          typeof payload["email"] !== "string" ||
+          typeof payload["refreshToken"] !== "string" ||
+          typeof payload["providerExpiresAt"] !== "number" ||
+          typeof payload.exp !== "number"
         ) {
           return null;
         }
-        return {
+        const identity = {
           issuer: payload["issuer"],
           subject: payload["subject"],
           email: payload["email"],
         };
+        const nowSeconds = Math.floor(currentDate.getTime() / 1000);
+        if (payload["providerExpiresAt"] - nowSeconds > REFRESH_AHEAD_SECONDS) {
+          return { identity, refreshedSessionCookie: null };
+        }
+
+        const tokenResponse = await fetch(options.tokenEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grant_type: "refresh_token",
+            client_id: options.clientId,
+            refresh_token: payload["refreshToken"],
+          }),
+          signal: AbortSignal.timeout(5_000),
+        });
+        if (!tokenResponse.ok) {
+          return payload["providerExpiresAt"] > nowSeconds
+            ? { identity, refreshedSessionCookie: null }
+            : null;
+        }
+        const tokenPayload = (await tokenResponse.json()) as unknown;
+        if (
+          typeof tokenPayload !== "object" ||
+          tokenPayload === null ||
+          !("id_token" in tokenPayload) ||
+          typeof tokenPayload.id_token !== "string"
+        ) {
+          return null;
+        }
+        const refreshedIdentity = await identityClaims(
+          tokenPayload.id_token,
+          currentDate,
+          { subject: identity.subject, email: identity.email },
+        );
+        const rotatedRefreshToken =
+          "refresh_token" in tokenPayload &&
+          typeof tokenPayload.refresh_token === "string" &&
+          tokenPayload.refresh_token.length > 0
+            ? tokenPayload.refresh_token
+            : payload["refreshToken"];
+        return {
+          identity,
+          refreshedSessionCookie: await sealSession({
+            identity: refreshedIdentity,
+            refreshToken: rotatedRefreshToken,
+            providerExpiresAt: refreshedIdentity.providerExpiresAt,
+            sessionExpiresAt: payload.exp,
+            currentDate,
+          }),
+        };
       } catch {
         return null;
       }
+    },
+
+    async logout({ sessionCookie }) {
+      try {
+        const { payload } = await jwtDecrypt(sessionCookie, await key, {
+          currentDate: now(),
+          keyManagementAlgorithms: ["dir"],
+          contentEncryptionAlgorithms: ["A256GCM"],
+        });
+        if (
+          payload["purpose"] === "operator-session" &&
+          payload["issuer"] === options.issuer &&
+          typeof payload["refreshToken"] === "string"
+        ) {
+          const response = await fetch(revocationEndpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams({
+              token: payload["refreshToken"],
+              client_id: options.clientId,
+            }),
+            signal: AbortSignal.timeout(5_000),
+          });
+          if (!response.ok) {
+            throw new Error("OIDC token revocation failed");
+          }
+        }
+      } catch {
+        // No trustworthy provider token can be recovered from an invalid or
+        // expired local cookie, and a transient revoke failure must not block
+        // browser SSO logout. The BFF has already expired its local cookie.
+      }
+      logoutEndpoint.search = new URLSearchParams({
+        client_id: options.clientId,
+        logout_uri: logoutUri,
+      }).toString();
+      return { logoutUrl: logoutEndpoint.toString() };
     },
   };
 }

@@ -53,14 +53,16 @@ export function useConsoleView<TView extends ConsoleViewName>({
 export function useConsoleCommand({
   client,
   scope,
+  ifMatch,
 }: {
   readonly client: ConsoleClient;
   readonly scope: ConsoleScopeRequestDto;
+  readonly ifMatch?: string | undefined;
 }): UseMutationResult<unknown, Error, ConsoleCommandDto> {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (command: ConsoleCommandDto) =>
-      client.runCommand({ command, scope }),
+      client.runCommand({ command, scope, ifMatch }),
     onSuccess: async () => {
       // A control-plane change can alter any scoped projection, so the whole
       // Console cache is refetched rather than guessed at.

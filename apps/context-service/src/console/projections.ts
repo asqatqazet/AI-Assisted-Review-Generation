@@ -1,5 +1,6 @@
 import type {
   ConsoleActionsDto,
+  ConsoleConfigurationDraftChangeDto,
   ConsoleContextDto,
   ConsoleDistributionDto,
   ConsoleKeywordsDto,
@@ -28,6 +29,8 @@ import type {
 } from "./store.port.js";
 
 const PLATFORM_OWNED_SETTINGS = new Set(["logRetentionDays"]);
+const hasOwn = (value: object, key: PropertyKey): boolean =>
+  Object.prototype.hasOwnProperty.call(value, key);
 
 export function projectLocations({
   scope,
@@ -66,20 +69,43 @@ export function projectTenantSettings({
   scope,
   tenant,
   editable,
+  configuration,
 }: {
   readonly scope: ConsoleScopeDto;
   readonly tenant: ConsoleTenantRecord;
   readonly editable: boolean;
+  readonly configuration: {
+    readonly etag: string;
+    readonly draft: {
+      readonly baseEtag: string;
+      readonly changes: readonly ConsoleConfigurationDraftChangeDto[];
+    } | null;
+  };
 }): ConsoleTenantSettingsDto {
   return {
     scope,
     editable,
+    configuration: {
+      etag: configuration.etag,
+      draft:
+        configuration.draft === null
+          ? null
+          : {
+              baseEtag: configuration.draft.baseEtag,
+              changes: [...configuration.draft.changes],
+            },
+    },
     settings: CONSOLE_SETTING_DEFINITIONS.flatMap((definition) => {
       const value = tenant.settings[definition.key];
       if (value === undefined) {
         return [];
       }
       const platformOwned = PLATFORM_OWNED_SETTINGS.has(definition.key);
+      const platformDefault = tenant.platformDefaults[definition.key];
+      if (platformDefault === undefined) {
+        return [];
+      }
+      const tenantHasValue = hasOwn(tenant.tenantValues, definition.key);
       return [
         {
           key: definition.key,
@@ -88,8 +114,15 @@ export function projectTenantSettings({
           group: definition.group,
           kind: definition.kind,
           ownerScope: platformOwned ? ("platform" as const) : ("tenant" as const),
+          source:
+            platformOwned || !tenantHasValue
+              ? ("platform" as const)
+              : ("tenant" as const),
           value,
-          platformDefault: null,
+          platformDefault,
+          tenantValue: tenantHasValue
+            ? (tenant.tenantValues[definition.key] ?? null)
+            : null,
           editable: editable && !platformOwned,
         },
       ];
@@ -107,33 +140,68 @@ export function projectLocationSettings({
   tenant,
   location,
   editable,
+  configuration,
 }: {
   readonly scope: ConsoleScopeDto;
   readonly tenant: ConsoleTenantRecord;
   readonly location: ConsoleLocationRecord;
   readonly editable: boolean;
+  readonly configuration: {
+    readonly etag: string;
+    readonly draft: {
+      readonly baseEtag: string;
+      readonly changes: readonly ConsoleConfigurationDraftChangeDto[];
+    } | null;
+  };
 }): ConsoleLocationSettingsDto {
   return {
     scope,
     editable,
+    configuration: {
+      etag: configuration.etag,
+      draft:
+        configuration.draft === null
+          ? null
+          : {
+              baseEtag: configuration.draft.baseEtag,
+              changes: [...configuration.draft.changes],
+            },
+    },
     settings: resolveInheritedSettings({
       tenantSettings: tenant.settings as Readonly<
         Record<string, ConsoleSettingValue>
       >,
       locationOverrides: location.overrides,
-    }).map((setting) => ({
-      key: setting.key,
-      label: setting.label,
-      description: setting.description,
-      group: setting.group,
-      kind: setting.kind,
-      ownerScope: "tenant" as const,
-      effectiveValue: setting.effectiveValue as never,
-      source: setting.source,
-      tenantValue: setting.tenantValue as never,
-      locationOverride: setting.locationOverride as never,
-      overridable: setting.overridable,
-    })),
+    }).flatMap((setting) => {
+      const platformDefault = tenant.platformDefaults[setting.key];
+      if (platformDefault === undefined) {
+        return [];
+      }
+      const tenantHasValue = hasOwn(tenant.tenantValues, setting.key);
+      return [
+        {
+          key: setting.key,
+          label: setting.label,
+          description: setting.description,
+          group: setting.group,
+          kind: setting.kind,
+          ownerScope: "tenant" as const,
+          effectiveValue: setting.effectiveValue as never,
+          source:
+            setting.source === "location"
+              ? ("location" as const)
+              : tenantHasValue
+                ? ("tenant" as const)
+                : ("platform" as const),
+          platformDefault,
+          tenantValue: tenantHasValue
+            ? (tenant.tenantValues[setting.key] ?? null)
+            : null,
+          locationOverride: setting.locationOverride as never,
+          overridable: setting.overridable,
+        },
+      ];
+    }),
   };
 }
 

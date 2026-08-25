@@ -18,14 +18,32 @@ describe("US-01.3 Generation production composition", () => {
       new Set([
         "GENERATION_DATABASE_URL_PARAMETER",
         "CONTEXT_WORK_PUBLIC_KEY_PARAMETER",
+        "CONSOLE_AUTHORITY_PUBLIC_KEY_PEM_PARAMETER",
         "GENERATION_WORK_PRIVATE_KEY_PARAMETER",
+        "REVIEW_PROVIDER_MODE",
         "REVIEW_FAKE_DELAY_MS",
       ]),
     );
     expect(source).toContain("GetParameterCommand");
     expect(source).toContain("WithDecryption: true");
     expect(source).not.toMatch(/required\(["'](?:DATABASE_URL|.*KEY_B64)["']/);
-    expect(source).not.toMatch(/PROVIDER|MODEL|PROMPT|FORMAT|PRICE|SNAPSHOT/);
+    expect(source).not.toMatch(/PRIMARY_PROVIDER|MODEL|PROMPT|FORMAT|PRICE|SNAPSHOT/);
+    expect(source).toMatch(
+      /providerMode === "paid-enabled"[\s\S]*?optionalParameter\("GEMINI_API_KEY_PARAMETER"\)/u,
+    );
+    const runtimeSource = fs.readFileSync(
+      new URL("./runtime.ts", import.meta.url),
+      "utf8",
+    );
+    expect(runtimeSource).toMatch(
+      /createGenerationEd25519WorkAuthority\(\{[\s\S]*?contextPublicKeyPem/u,
+    );
+    expect(runtimeSource).toContain(
+      "createConsoleReadVerifier({ consoleAuthorityPublicKeyPem })",
+    );
+    expect(runtimeSource).toContain(
+      "createConsoleBenchVerifier({ consoleAuthorityPublicKeyPem })",
+    );
   });
 
   it("creates deterministic grounded FakeProvider output from the supplied workload", async () => {

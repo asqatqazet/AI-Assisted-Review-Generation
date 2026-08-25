@@ -83,7 +83,7 @@ export class GeminiProvider implements ModelGateway {
   readonly #defaultTimeoutMs: number;
 
   public constructor(options: GeminiProviderOptions = {}) {
-    this.#apiKey = options.apiKey ?? process.env["GEMINI_API_KEY"] ?? "";
+    this.#apiKey = options.apiKey ?? "";
     this.#baseUrl =
       options.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
     this.#fetchFn = options.fetchFn ?? globalThis.fetch;
@@ -140,7 +140,7 @@ export class GeminiProvider implements ModelGateway {
           signal: activeSignal,
         },
       );
-    } catch (error) {
+    } catch {
       if (isAborted(signal)) {
         throw new ModelGatewayError("cancellation", "Model generation was cancelled.");
       }
@@ -149,7 +149,7 @@ export class GeminiProvider implements ModelGateway {
       }
       throw new ModelGatewayError(
         "unavailable",
-        error instanceof Error ? error.message : "Network error contacting Gemini.",
+        "Gemini service could not be reached.",
       );
     }
 
@@ -175,14 +175,26 @@ export class GeminiProvider implements ModelGateway {
       );
     }
 
-    const completion = (await response.json()) as GeminiGenerateContentResponse;
-    const candidate = completion.candidates?.[0];
-    if (candidate === undefined) {
+    let completion: GeminiGenerateContentResponse;
+    try {
+      completion = (await response.json()) as GeminiGenerateContentResponse;
+    } catch {
       throw new ModelGatewayError(
         "invalid-output",
-        completion.promptFeedback?.blockReason === undefined
-          ? "Gemini returned no candidate."
-          : `Gemini refused the request (${completion.promptFeedback.blockReason}).`,
+        "Gemini returned a malformed response envelope.",
+      );
+    }
+    const candidate = completion.candidates?.[0];
+    if (candidate === undefined) {
+      if (completion.promptFeedback?.blockReason !== undefined) {
+        throw new ModelGatewayError(
+          "content-filter",
+          "Gemini refused to produce the requested structured output.",
+        );
+      }
+      throw new ModelGatewayError(
+        "invalid-output",
+        "Gemini returned no candidate.",
       );
     }
     const outputText = (candidate.content?.parts ?? [])

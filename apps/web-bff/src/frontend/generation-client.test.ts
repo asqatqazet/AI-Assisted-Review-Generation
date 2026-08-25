@@ -23,7 +23,11 @@ function streamResponse(chunks: readonly string[]): Response {
 describe("HTTP reviewer Generation client", () => {
   it("normalizes an origin Lambda 429 before any BFF event exists", async () => {
     const client = createHttpGenerationClient(
-      async () => new Response(null, { status: 429 }),
+      async () =>
+        new Response(null, {
+          status: 429,
+          headers: { "Retry-After": "30" },
+        }),
     );
 
     await expect(async () => {
@@ -41,6 +45,34 @@ describe("HTTP reviewer Generation client", () => {
     }).rejects.toMatchObject({
       code: "EDGE_THROTTLED",
       retryable: true,
+      retryAfterSeconds: 30,
+    });
+  });
+
+  it("posts Paraphrase source text without manufacturing Fact Option input", async () => {
+    let body: unknown;
+    const client = createHttpGenerationClient(async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as unknown;
+      return streamResponse([
+        'data: {"type":"terminal","status":"rejected","code":"PROVIDER_UNAVAILABLE","retryable":true}\n\n',
+      ]);
+    });
+
+    for await (const event of client.start(
+      {
+        reviewSessionHandle: "review-session-demo",
+        idempotencyKey: "paraphrase-request-a",
+        sourceText: "The team was kind and the waiting area was quiet.",
+        reviewFormatId: "format-concise-v1",
+      },
+      new AbortController().signal,
+    )) {
+      void event;
+    }
+
+    expect(body).toEqual({
+      sourceText: "The team was kind and the waiting area was quiet.",
+      reviewFormatId: "format-concise-v1",
     });
   });
 
@@ -56,7 +88,7 @@ describe("HTTP reviewer Generation client", () => {
         ': heartbeat\n\n',
         'data: {"type":"progress","phase":"valid',
         'ating","elapsedSeconds":12}\n\n',
-        'data: {"type":"terminal","status":"completed","draft":{"id":"draft-a","generationId":"generation-a","revision":1,"text":"The team was attentive."}}\n\n',
+        'data: {"type":"terminal","status":"completed","draft":{"id":"draft-a","generationId":"generation-a","revision":1,"text":"The team was attentive.","systemAnnotations":[]}}\n\n',
       ]);
     });
 
@@ -104,6 +136,7 @@ describe("HTTP reviewer Generation client", () => {
           generationId: "generation-a",
           revision: 1,
           text: "The team was attentive.",
+          systemAnnotations: [],
         },
       },
     ]);

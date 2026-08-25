@@ -19,12 +19,22 @@ on:
         description: Email invited as the initial Console operator
         required: true
         type: string
+      tenant_operator_email:
+        description: Distinct Tenant-only Console assessment operator email
+        required: true
+        type: string
+      bootstrap_initial_operator:
+        description: First deployment only; create the initial Operator and Access Grants
+        required: true
+        type: boolean
+        default: false
       acknowledge_provider_cost:
         description: >-
           I accept that venues routed to a live provider bill the credential I
           installed. Venues routed to the deterministic provider stay free.
         required: true
         type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -41,6 +51,7 @@ env:
 
 jobs:
   deploy:
+    environment: student
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
@@ -61,27 +72,36 @@ jobs:
       # Declining used to skip the whole job, which reported a green run that
       # had deployed nothing and said nothing about why.
       - name: Require the provider cost acknowledgement
-        if: ${{ !inputs.acknowledge_provider_cost }}
+        if: ${{ inputs.deployment_profile == 'reserved-concurrency' && !inputs.acknowledge_provider_cost }}
         run: |
           echo "::error::Deployment stopped: the provider cost acknowledgement was not given." >&2
           echo "Tick 'acknowledge_provider_cost' to deploy. Nothing was changed." >&2
           exit 1
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: 11.19.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: pnpm
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
           terraform_version: 1.14.7
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           role-session-name: review-generation-student-deploy
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Allocate the immutable candidate configuration release
+        id: release_identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          RELEASE_ID="$(node -e 'process.stdout.write(crypto.randomUUID())')"
+          [[ "$RELEASE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
+          echo "id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
 
       - name: Install the locked workspace
         run: pnpm install --frozen-lockfile
@@ -98,13 +118,26 @@ jobs:
         run: pnpm verify
         env:
           DATABASE_URL: postgresql://review_owner:local_only_change_me@localhost:5432/assisted_reviews
+          REVIEW_RELEASE_SHA: ${{ github.sha }}
 
       - name: Package immutable release artifacts
         shell: bash
+        env:
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+          REVIEW_TEARDOWN_DATE: ${{ inputs.teardown_date }}
         run: |
           set -euo pipefail
           mkdir -p "$RELEASE_DIR/ui"
           cp -R dist/apps/web-bff/ui/. "$RELEASE_DIR/ui/"
+          jq -n \
+            --arg releaseSha "$GITHUB_SHA" \
+            '{releaseSha:$releaseSha}' \
+            > "$RELEASE_DIR/ui/release.json"
+          UI_SHA="$(
+            cd "$RELEASE_DIR/ui"
+            find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d ' ' -f 1
+          )"
+          printf '%s\n' "$UI_SHA" > "$RELEASE_DIR/canonical-ui.sha256"
           test -f dist/apps/web-bff/main.js
           test -f dist/apps/web-bff/stream-main.js
           test -f dist/apps/web-bff/reconcile-main.js
@@ -113,6 +146,8 @@ jobs:
           node --no-experimental-detect-module --check dist/apps/web-bff/stream-main.js
           node --no-experimental-detect-module --check dist/apps/web-bff/reconcile-main.js
           node --no-experimental-detect-module --check dist/apps/context-service/main.js
+          node --no-experimental-detect-module --check dist/apps/context-service/reviewer-main.js
+          node --no-experimental-detect-module --check dist/apps/context-service/console-main.js
           node --no-experimental-detect-module --check dist/apps/generation-service/main.js
           (cd dist/apps/web-bff && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/web-bff.zip" . -x 'ui/*')
           (cd dist/apps/context-service && zip -q -r "$GITHUB_WORKSPACE/$RELEASE_DIR/context-service.zip" .)
@@ -124,13 +159,17 @@ jobs:
           unzip -l "$RELEASE_DIR/context-service.zip" | grep -F "schema.prisma" >/dev/null
           unzip -l "$RELEASE_DIR/generation-service.zip" | grep -F "libquery_engine-rhel-openssl-3.0.x.so.node" >/dev/null
           unzip -l "$RELEASE_DIR/generation-service.zip" | grep -F "schema.prisma" >/dev/null
-          shasum -a 256 "$RELEASE_DIR"/*.zip > "$RELEASE_DIR/checksums.sha256"
+          (cd "$RELEASE_DIR" && shasum -a 256 *.zip > checksums.sha256)
           jq -n \
             --arg releaseId "$GITHUB_SHA" \
+            --arg configurationCandidateReleaseId "${{ steps.release_identity.outputs.id }}" \
+            --arg deploymentProfile "$REVIEW_DEPLOYMENT_PROFILE" \
+            --arg teardownDate "$REVIEW_TEARDOWN_DATE" \
             --arg webBff "$(shasum -a 256 "$RELEASE_DIR/web-bff.zip" | cut -d ' ' -f 1)" \
             --arg context "$(shasum -a 256 "$RELEASE_DIR/context-service.zip" | cut -d ' ' -f 1)" \
             --arg generation "$(shasum -a 256 "$RELEASE_DIR/generation-service.zip" | cut -d ' ' -f 1)" \
-            '{releaseId:$releaseId,sha256:{webBff:$webBff,context:$context,generation:$generation}}' \
+            --arg ui "$UI_SHA" \
+            '{releaseId:$releaseId,configurationCandidateReleaseId:$configurationCandidateReleaseId,deploymentProfile:$deploymentProfile,teardownDate:$teardownDate,dbCompatibility:{phase:"expand",legacyContextFunction:"review-context-service-student",legacyContextVersion:null,contractMigration:null},sha256:{webBff:$webBff,context:$context,generation:$generation,ui:$ui}}' \
             > "$RELEASE_DIR/release-manifest.json"
 
       - name: Refuse an unsafe AWS account or concurrency allocation
@@ -139,37 +178,159 @@ jobs:
           REVIEW_TEARDOWN_DATE: ${{ inputs.teardown_date }}
           REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
 
+      - name: Freeze Generation before low-quota mutation
+        id: low_quota_freeze
+        if: ${{ inputs.deployment_profile == 'student-low-quota' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=review-generation-service-student
+          ERROR_FILE="$RUNNER_TEMP/generation-get-function.error"
+          if aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>"$ERROR_FILE"; then
+            PROVIDER_MODE="$(aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --qualifier live \
+              --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
+              --output text 2>/dev/null || printf '%s' unknown)"
+            aws lambda get-function-concurrency --function-name "$FUNCTION_NAME" \
+              | jq --arg providerMode "$PROVIDER_MODE" \
+                '{functionExisted:true,providerMode:$providerMode,reservedConcurrentExecutions:(.ReservedConcurrentExecutions // null)}' \
+              > "$RELEASE_DIR/generation-concurrency-before-low.json"
+            aws lambda put-function-concurrency --function-name "$FUNCTION_NAME" --reserved-concurrent-executions 0 >/dev/null
+          elif grep -q 'ResourceNotFoundException' "$ERROR_FILE"; then
+            jq -n '{functionExisted:false,providerMode:null,reservedConcurrentExecutions:null}' \
+              > "$RELEASE_DIR/generation-concurrency-before-low.json"
+          else
+            cat "$ERROR_FILE" >&2
+            exit 1
+          fi
+
+      - name: Probe the rollback Context before database expansion
+        id: legacy_context
+        shell: bash
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=review-context-service-student
+          ERROR_FILE="$RUNNER_TEMP/legacy-context-get-alias.error"
+          if LEGACY_VERSION="$(aws lambda get-alias \
+            --function-name "$FUNCTION_NAME" \
+            --name live \
+            --query FunctionVersion \
+            --output text 2>"$ERROR_FILE")"; then
+            [[ "$LEGACY_VERSION" =~ ^[1-9][0-9]*$ ]]
+            LEGACY_VERSION_ARN="$(aws lambda get-function \
+              --function-name "$FUNCTION_NAME" \
+              --qualifier "$LEGACY_VERSION" \
+              --query Configuration.FunctionArn \
+              --output text)"
+            test "${LEGACY_VERSION_ARN##*:}" = "$LEGACY_VERSION"
+            LEGACY_CONTEXT_VERSION_ARN="$LEGACY_VERSION_ARN"
+            PROBE_PHASE=before-migration
+            export LEGACY_CONTEXT_VERSION_ARN PROBE_PHASE
+            scripts/probe-legacy-context-generation.sh
+            MANIFEST_TEMP="$(mktemp "$RELEASE_DIR/release-manifest.XXXXXX")"
+            jq --arg legacyVersion "$LEGACY_VERSION" \
+              '.dbCompatibility.legacyContextVersion = $legacyVersion' \
+              "$RELEASE_DIR/release-manifest.json" > "$MANIFEST_TEMP"
+            mv "$MANIFEST_TEMP" "$RELEASE_DIR/release-manifest.json"
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            echo "version=$LEGACY_VERSION" >> "$GITHUB_OUTPUT"
+            echo "version_arn=$LEGACY_VERSION_ARN" >> "$GITHUB_OUTPUT"
+          elif grep -Eq 'ResourceNotFoundException|ResourceNotFound' "$ERROR_FILE"; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            cat "$ERROR_FILE" >&2
+            exit 1
+          fi
+
+      - name: Apply database migrations to the product database
+        id: product_migration
+        run: pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+
+      - name: Provision Console database authority
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          CONSOLE_DATABASE_AUTHORITY_SECRET: ${{ secrets.CONSOLE_DATABASE_AUTHORITY_SECRET }}
+        run: scripts/provision-console-database-authority.sh
+
+      - name: Verify sealed runtime database roles before deployment
+        shell: bash
+        env:
+          CONTEXT_RUNTIME_DATABASE_URL: ${{ secrets.NEON_CONTEXT_RUNTIME_DATABASE_URL }}
+          CONSOLE_CONTROL_DATABASE_URL: ${{ secrets.NEON_CONSOLE_CONTROL_DATABASE_URL }}
+          GENERATION_DATABASE_URL: ${{ secrets.NEON_GENERATION_DATABASE_URL }}
+        run: scripts/verify-runtime-database-roles.sh
+
+      - name: Probe the rollback Context after database expansion
+        if: ${{ steps.legacy_context.outputs.present == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          LEGACY_CONTEXT_VERSION_ARN="${{ steps.legacy_context.outputs.version_arn }}"
+          PROBE_PHASE=after-migration
+          export LEGACY_CONTEXT_VERSION_ARN PROBE_PHASE
+          scripts/probe-legacy-context-generation.sh
+
+      - name: Authorize Operator bootstrap state
+        id: operator_state
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          OPERATOR_EMAIL: ${{ inputs.operator_email }}
+          TENANT_OPERATOR_EMAIL: ${{ inputs.tenant_operator_email }}
+          REQUESTED_BOOTSTRAP: ${{ inputs.bootstrap_initial_operator }}
+        run: scripts/authorize-student-operator-state.sh
+
       - name: Store operational secrets outside Terraform state
         shell: bash
         env:
-          CONTEXT_DATABASE_URL: ${{ secrets.NEON_CONTEXT_DATABASE_URL }}
+          CONTEXT_RUNTIME_DATABASE_URL: ${{ secrets.NEON_CONTEXT_RUNTIME_DATABASE_URL }}
+          CONSOLE_CONTROL_DATABASE_URL: ${{ secrets.NEON_CONSOLE_CONTROL_DATABASE_URL }}
           GENERATION_DATABASE_URL: ${{ secrets.NEON_GENERATION_DATABASE_URL }}
           REVIEW_CSRF_SECRET: ${{ secrets.REVIEW_CSRF_SECRET }}
+          PUBLIC_SOURCE_RATE_HMAC_SECRET: ${{ secrets.PUBLIC_SOURCE_RATE_HMAC_SECRET }}
           CONTEXT_PRIVATE_KEY: ${{ secrets.CONTEXT_WORK_PRIVATE_KEY_PEM }}
           CONTEXT_PUBLIC_KEY: ${{ secrets.CONTEXT_WORK_PUBLIC_KEY_PEM }}
+          CONSOLE_AUTHORITY_PRIVATE_KEY: ${{ secrets.CONSOLE_AUTHORITY_PRIVATE_KEY_PEM }}
+          CONSOLE_AUTHORITY_PUBLIC_KEY: ${{ secrets.CONSOLE_AUTHORITY_PUBLIC_KEY_PEM }}
+          CONSOLE_DATABASE_AUTHORITY_SECRET: ${{ secrets.CONSOLE_DATABASE_AUTHORITY_SECRET }}
           GENERATION_PRIVATE_KEY: ${{ secrets.GENERATION_WORK_PRIVATE_KEY_PEM }}
           GENERATION_PUBLIC_KEY: ${{ secrets.GENERATION_WORK_PUBLIC_KEY_PEM }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
         run: |
           set -euo pipefail
-          test -n "$CONTEXT_DATABASE_URL"
+          test -n "$CONTEXT_RUNTIME_DATABASE_URL"
+          test -n "$CONSOLE_CONTROL_DATABASE_URL"
           test -n "$GENERATION_DATABASE_URL"
           test -n "$REVIEW_CSRF_SECRET"
+          test -n "$PUBLIC_SOURCE_RATE_HMAC_SECRET"
           test -n "$CONTEXT_PRIVATE_KEY"
           test -n "$CONTEXT_PUBLIC_KEY"
+          test -n "$CONSOLE_AUTHORITY_PRIVATE_KEY"
+          test -n "$CONSOLE_AUTHORITY_PUBLIC_KEY"
+          test -n "$CONSOLE_DATABASE_AUTHORITY_SECRET"
           test -n "$GENERATION_PRIVATE_KEY"
           test -n "$GENERATION_PUBLIC_KEY"
-          aws ssm put-parameter --name /review-gen/student/context-database-url --type SecureString --value "$CONTEXT_DATABASE_URL" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/context-runtime-database-url --type SecureString --value "$CONTEXT_RUNTIME_DATABASE_URL" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/console-control-database-url --type SecureString --value "$CONSOLE_CONTROL_DATABASE_URL" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/generation-database-url --type SecureString --value "$GENERATION_DATABASE_URL" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/review-csrf-secret --type SecureString --value "$REVIEW_CSRF_SECRET" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/public-source-rate-hmac-secret --type SecureString --value "$PUBLIC_SOURCE_RATE_HMAC_SECRET" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/context-work-private-key --type SecureString --value "$CONTEXT_PRIVATE_KEY" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/context-work-public-key --type SecureString --value "$CONTEXT_PUBLIC_KEY" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/console-authority-private-key --type SecureString --value "$CONSOLE_AUTHORITY_PRIVATE_KEY" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/console-authority-public-key --type SecureString --value "$CONSOLE_AUTHORITY_PUBLIC_KEY" --overwrite >/dev/null
+          aws ssm put-parameter --name /review-gen/student/console-database-authority-secret --type SecureString --value "$CONSOLE_DATABASE_AUTHORITY_SECRET" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/generation-work-private-key --type SecureString --value "$GENERATION_PRIVATE_KEY" --overwrite >/dev/null
           aws ssm put-parameter --name /review-gen/student/generation-work-public-key --type SecureString --value "$GENERATION_PUBLIC_KEY" --overwrite >/dev/null
           # Optional. Supplied, it turns the live Gemini route on; absent, the
           # deployment keeps using the deterministic provider and the Console
           # shows the credential as missing.
-          if [ -n "${GEMINI_API_KEY:-}" ]; then
+          if [ "$REVIEW_DEPLOYMENT_PROFILE" = "reserved-concurrency" ] && [ -n "${GEMINI_API_KEY:-}" ]; then
             aws ssm put-parameter --name /review-gen/student/gemini-api-key --type SecureString --value "$GEMINI_API_KEY" --overwrite >/dev/null
           fi
           if ! aws ssm get-parameter --name /review-gen/student/operator-session-secret --with-decryption >/dev/null 2>&1; then
@@ -177,18 +338,21 @@ jobs:
             aws ssm put-parameter --name /review-gen/student/operator-session-secret --type SecureString --value "$OPERATOR_SESSION_SECRET" >/dev/null
           fi
 
-      - name: Apply database migrations to the product database
-        run: pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
-        env:
-          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
-
-      - name: Install the idempotent prototype-aligned product configuration
+      - name: Install the base-only prototype-aligned product configuration
         run: >-
           pnpm --dir packages/db exec prisma db execute
           --schema prisma/schema.prisma
           --file "$GITHUB_WORKSPACE/infra/aws/seed-student.sql"
         env:
           DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+
+      - name: Append release-bound Prompt evaluation evidence
+        run: >-
+          pnpm eval:prompt --
+          --prompt-version-id 00000000-0000-4000-8000-000000000136
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          REVIEW_RELEASE_SHA: ${{ github.sha }}
 
       # Migrations run under the migration role while the Lambdas connect under
       # their own. If those point at different databases the runtime sees a
@@ -198,38 +362,41 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          missing="$(psql "$CONTEXT_DATABASE_URL" -X -A -t -c "
-            SELECT string_agg(name, ', ')
-            FROM (
-              SELECT 'tenant_context_versions table' AS name
-              WHERE to_regclass('public.tenant_context_versions') IS NULL
-              UNION ALL
-              SELECT 'prompt_versions.version'
-              WHERE NOT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'prompt_versions' AND column_name = 'version'
-              )
-              UNION ALL
-              SELECT 'provider_models.routing_priority'
-              WHERE NOT EXISTS (
-                SELECT 1 FROM information_schema.columns
-                WHERE table_name = 'provider_models' AND column_name = 'routing_priority'
-              )
-              UNION ALL
-              SELECT 'entry mode definitions'
-              WHERE (SELECT count(*) FROM entry_mode_definitions) < 3
-            ) AS checks;
-          ")"
-          if [ -n "$missing" ]; then
-            echo "::error::The runtime database is missing: $missing" >&2
-            echo "Migrations were applied to NEON_MIGRATION_DATABASE_URL, but the" >&2
-            echo "Lambdas connect through NEON_CONTEXT_DATABASE_URL. Point both at" >&2
-            echo "the same database (different roles are fine) and redeploy." >&2
-            exit 1
-          fi
-          echo "Runtime database carries the migrated schema."
+          for database_url in "$CONTEXT_RUNTIME_DATABASE_URL" "$CONSOLE_CONTROL_DATABASE_URL"; do
+            missing="$(psql "$database_url" -X -A -t -c "
+              SELECT string_agg(name, ', ')
+              FROM (
+                SELECT 'tenant_context_versions table' AS name
+                WHERE to_regclass('public.tenant_context_versions') IS NULL
+                UNION ALL
+                SELECT 'prompt_versions.version'
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'prompt_versions' AND column_name = 'version'
+                )
+                UNION ALL
+                SELECT 'provider_models.routing_priority'
+                WHERE NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns
+                  WHERE table_name = 'provider_models' AND column_name = 'routing_priority'
+                )
+                UNION ALL
+                SELECT 'entry mode definitions'
+                WHERE (SELECT count(*) FROM entry_mode_definitions) < 3
+              ) AS checks;
+            ")"
+            if [ -n "$missing" ]; then
+              echo "::error::A Context connection is missing: $missing" >&2
+              echo "Migrations were applied to NEON_MIGRATION_DATABASE_URL, but" >&2
+              echo "the sealed runtime/Console URLs point elsewhere. Point all" >&2
+              echo "three at one database with different roles and redeploy." >&2
+              exit 1
+            fi
+          done
+          echo "Both Context connections carry the migrated schema."
         env:
-          CONTEXT_DATABASE_URL: ${{ secrets.NEON_CONTEXT_DATABASE_URL }}
+          CONTEXT_RUNTIME_DATABASE_URL: ${{ secrets.NEON_CONTEXT_RUNTIME_DATABASE_URL }}
+          CONSOLE_CONTROL_DATABASE_URL: ${{ secrets.NEON_CONSOLE_CONTROL_DATABASE_URL }}
 
       - name: Record which live provider credentials are installed
         shell: bash
@@ -237,19 +404,40 @@ jobs:
           set -euo pipefail
           # The control plane cannot read SSM, so the Console's
           # configured/missing state comes from this reference being set.
-          if [ -n "${GEMINI_API_KEY:-}" ]; then
+          if [ "$REVIEW_DEPLOYMENT_PROFILE" = "reserved-concurrency" ] && [ -n "${GEMINI_API_KEY:-}" ]; then
             REFERENCE="ssm:/review-gen/student/gemini-api-key"
           else
             REFERENCE=""
           fi
           pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin <<SQL
           UPDATE providers
-          SET credential_reference = '$REFERENCE'
+          SET
+            credential_reference = '$REFERENCE',
+            status = CASE
+              WHEN '$REVIEW_DEPLOYMENT_PROFILE' = 'student-low-quota'
+                THEN 'RETIRED'::catalog_status
+              ELSE 'ACTIVE'::catalog_status
+            END
           WHERE key = 'gemini';
+
+          UPDATE provider_models
+          SET
+            status = CASE
+              WHEN '$REVIEW_DEPLOYMENT_PROFILE' = 'student-low-quota'
+                THEN 'RETIRED'::catalog_status
+              ELSE 'ACTIVE'::catalog_status
+            END,
+            routing_priority = NULL,
+            fallback_priority = CASE
+              WHEN '$REVIEW_DEPLOYMENT_PROFILE' = 'student-low-quota' THEN NULL
+              ELSE fallback_priority
+            END
+          WHERE provider_id = (SELECT id FROM providers WHERE key = 'gemini');
           SQL
         env:
           DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
 
       - name: Bootstrap encrypted remote Terraform state
         id: state
@@ -266,10 +454,48 @@ jobs:
           fi
           echo "bucket=$STATE_BUCKET" >> "$GITHUB_OUTPUT"
 
+      - name: Capture rollback BFF service version pins
+        id: rollback_service_pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXPECTED='[]'
+          FOUND=false
+          for function_name in \
+            review-web-bff-fast-student \
+            review-web-bff-stream-student \
+            review-web-bff-reconcile-student; do
+            ERROR_FILE="$RUNNER_TEMP/${function_name}-live.error"
+            if CONFIGURATION="$(aws lambda get-function-configuration \
+              --function-name "$function_name" \
+              --qualifier live \
+              --output json 2>"$ERROR_FILE")"; then
+              PINS="$(jq -c '[
+                .Environment.Variables.CONTEXT_REVIEWER_FUNCTION_ALIAS_ARN,
+                .Environment.Variables.CONTEXT_CONSOLE_FUNCTION_ALIAS_ARN,
+                .Environment.Variables.GENERATION_FUNCTION_ALIAS_ARN
+              ] | map(select(type == "string" and test(":review-(context-reviewer|context-console|generation-(service|canary))-student:[1-9][0-9]*$"))) | unique' <<< "$CONFIGURATION")"
+              if [ "$FOUND" = false ]; then
+                EXPECTED="$PINS"
+                FOUND=true
+              else
+                test "$PINS" = "$EXPECTED"
+              fi
+            elif grep -Eq 'ResourceNotFoundException|ResourceNotFound' "$ERROR_FILE"; then
+              test "$FOUND" = false
+            else
+              cat "$ERROR_FILE" >&2
+              exit 1
+            fi
+          done
+          echo "arns=$EXPECTED" >> "$GITHUB_OUTPUT"
+
       - name: Plan the exact release
         shell: bash
         env:
           TF_VAR_operator_email: ${{ inputs.operator_email }}
+          TF_VAR_tenant_operator_email: ${{ inputs.tenant_operator_email }}
+          ROLLBACK_SERVICE_VERSION_ARNS: ${{ steps.rollback_service_pins.outputs.arns }}
         run: |
           set -euo pipefail
           cd "$TF_DIR"
@@ -279,6 +505,9 @@ jobs:
           terraform plan -out=student.tfplan \
             -var="alert_email=${{ vars.COST_ALERT_EMAIL }}" \
             -var="deployment_profile=${{ inputs.deployment_profile }}" \
+            -var="configuration_candidate_release_id=${{ steps.release_identity.outputs.id }}" \
+            -var="web_bff_rollback_service_version_arns=$ROLLBACK_SERVICE_VERSION_ARNS" \
+            -var="teardown_date=${{ inputs.teardown_date }}" \
             -var="web_bff_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/web-bff.zip" \
             -var="context_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/context-service.zip" \
             -var="generation_artifact_path=$GITHUB_WORKSPACE/$RELEASE_DIR/generation-service.zip"
@@ -305,7 +534,8 @@ jobs:
             '{authorizationEndpoint:$authorizationEndpoint,tokenEndpoint:$tokenEndpoint,issuer:$issuer,jwksUri:$jwksUri,clientId:$clientId,redirectUri:$redirectUri}')"
           aws ssm put-parameter --name /review-gen/student/operator-oidc-config --type String --value "$OIDC_CONFIG" --overwrite >/dev/null
 
-      - name: Bind the initial Operator Access Grants
+      - name: Bootstrap the initial Operator Access Grants
+        if: ${{ steps.operator_state.outputs.platform_bootstrap == 'true' }}
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
@@ -318,38 +548,269 @@ jobs:
             -v operator_email="$OPERATOR_EMAIL" \
             -v operator_issuer="$OPERATOR_ISSUER" \
             -v operator_subject="$OPERATOR_SUBJECT" \
+            -v tenant_id="00000000-0000-4000-8000-000000000101" \
             -f infra/aws/seed-operator-access.sql
 
-      - name: Publish the verified UI
+      - name: Bootstrap the Tenant-only Operator Access Grant
+        if: ${{ steps.operator_state.outputs.tenant_bootstrap == 'true' }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          TENANT_OPERATOR_EMAIL="$(terraform -chdir="$TF_DIR" output -raw tenant_operator_email)"
+          TENANT_OPERATOR_ISSUER="$(terraform -chdir="$TF_DIR" output -raw operator_oidc_issuer)"
+          TENANT_OPERATOR_SUBJECT="$(terraform -chdir="$TF_DIR" output -raw tenant_operator_subject)"
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v operator_email="$TENANT_OPERATOR_EMAIL" \
+            -v operator_issuer="$TENANT_OPERATOR_ISSUER" \
+            -v operator_subject="$TENANT_OPERATOR_SUBJECT" \
+            -v tenant_id="00000000-0000-4000-8000-000000000101" \
+            -f infra/aws/seed-tenant-operator-access.sql
+
+      - name: Verify assessment Operator authorities
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          OPERATOR_EMAIL: ${{ inputs.operator_email }}
+          TENANT_OPERATOR_EMAIL: ${{ inputs.tenant_operator_email }}
+          REQUESTED_BOOTSTRAP: false
+        run: scripts/authorize-student-operator-state.sh
+
+      - name: Qualify and stage the evaluated student Prompt
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          CONSOLE_CONTROL_DATABASE_URL: ${{ secrets.NEON_CONSOLE_CONTROL_DATABASE_URL }}
+          CONSOLE_DATABASE_AUTHORITY_SECRET: ${{ secrets.CONSOLE_DATABASE_AUTHORITY_SECRET }}
+          REVIEW_OPERATOR_EMAIL: ${{ inputs.operator_email }}
+          REVIEW_RELEASE_SHA: ${{ github.sha }}
+          REVIEW_PROMPT_VERSION_ID: 00000000-0000-4000-8000-000000000136
+          REVIEW_CONFIGURATION_RELEASE_ID: ${{ steps.release_identity.outputs.id }}
+        run: |
+          set -euo pipefail
+          REVIEW_OPERATOR_ISSUER="$(terraform -chdir="$TF_DIR" output -raw operator_oidc_issuer)"
+          export REVIEW_OPERATOR_ISSUER
+          pnpm exec tsx scripts/qualify-student-release.ts
+
+      - name: Smoke candidate aliases and staged UI
+        shell: bash
+        env:
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_ID="$GITHUB_SHA"
+          UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
+          DISTRIBUTION_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)"
+          DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
+          HEALTH_EVENT='{"version":"2.0","routeKey":"GET /health","rawPath":"/health","rawQueryString":"","headers":{"host":"candidate.internal"},"requestContext":{"accountId":"candidate","apiId":"candidate","domainName":"candidate.internal","domainPrefix":"candidate","http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"deployment-smoke"},"requestId":"candidate","routeKey":"GET /health","stage":"$default","time":"01/Jan/2026:00:00:00 +0000","timeEpoch":0},"isBase64Encoded":false}'
+          REVIEWER_EVENT='{"operation":"prepare-entry","input":{"tenantSlug":"deployment-smoke-absent","locationSlug":"deployment-smoke-absent","browserCapability":"deployment-smoke-browser-capability"}}'
+          aws lambda invoke \
+            --function-name review-context-reviewer-student \
+            --qualifier candidate \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$REVIEWER_EVENT" \
+            "$RUNNER_TEMP/context-reviewer-candidate.json" >/dev/null
+          jq -e '.operation == "prepare-entry" and .result.status == "unavailable"' \
+            "$RUNNER_TEMP/context-reviewer-candidate.json" >/dev/null
+          OPERATOR_ISSUER="$(terraform -chdir="$TF_DIR" output -raw operator_oidc_issuer)"
+          CONSOLE_EVENT="$(jq -cn --arg issuer "$OPERATOR_ISSUER" '{operation:"resolve-operator-access",input:{identity:{issuer:$issuer,subject:"deployment-smoke-unknown",email:"deployment-smoke@example.invalid"}}}')"
+          aws lambda invoke \
+            --function-name review-context-console-student \
+            --qualifier candidate \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$CONSOLE_EVENT" \
+            "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
+          jq -e '.operation == "resolve-operator-access" and .result.status == "unauthorized"' \
+            "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
+          aws lambda invoke \
+            --function-name review-web-bff-fast-student \
+            --qualifier candidate \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$HEALTH_EVENT" \
+            "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
+          jq -e '.statusCode == 200' "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
+          EXPECTED_PROVIDER_MODE=paid-enabled
+          if [ "$REVIEW_DEPLOYMENT_PROFILE" = "student-low-quota" ]; then
+            EXPECTED_PROVIDER_MODE=fake-only
+            aws lambda invoke \
+              --function-name review-generation-canary-student \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$HEALTH_EVENT" \
+              "$RUNNER_TEMP/review-generation-canary-student.json" >/dev/null
+            jq -e '.statusCode == 200' \
+              "$RUNNER_TEMP/review-generation-canary-student.json" >/dev/null
+            test "$(aws lambda get-function-configuration \
+              --function-name review-generation-canary-student \
+              --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
+              --output text)" = "fake-only"
+          else
+            aws lambda invoke \
+              --function-name review-generation-service-student \
+              --qualifier candidate \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$HEALTH_EVENT" \
+              "$RUNNER_TEMP/review-generation-service-student-candidate.json" >/dev/null
+            jq -e '.statusCode == 200' \
+              "$RUNNER_TEMP/review-generation-service-student-candidate.json" >/dev/null
+          fi
+          test "$(aws lambda get-function-configuration \
+            --function-name review-generation-service-student \
+            --qualifier candidate \
+            --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
+            --output text)" = "$EXPECTED_PROVIDER_MODE"
+          STREAM_METADATA="$(aws lambda invoke \
+            --function-name review-web-bff-stream-student \
+            --qualifier candidate \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$HEALTH_EVENT" \
+            "$RUNNER_TEMP/web-stream-candidate.json")"
+          test "$(jq -r '.FunctionError // empty' <<< "$STREAM_METADATA")" = ""
+          RECONCILE_METADATA="$(aws lambda invoke \
+            --function-name review-web-bff-reconcile-student \
+            --qualifier candidate \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{}' \
+            "$RUNNER_TEMP/web-reconcile-candidate.json")"
+          test "$(jq -r '.FunctionError // empty' <<< "$RECONCILE_METADATA")" = ""
+          aws s3 sync "$RELEASE_DIR/ui" "s3://$UI_BUCKET" \
+            --exclude "index.html" --exclude "robots.txt" --exclude "release.json" \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync "$RELEASE_DIR/ui" "s3://$UI_BUCKET/__candidate/$CANDIDATE_ID" \
+            --cache-control "no-cache,no-store,must-revalidate"
+          aws cloudfront create-invalidation \
+            --distribution-id "$DISTRIBUTION_ID" \
+            --paths "/__candidate/$CANDIDATE_ID/*" '/assets/*' >/dev/null
+          curl --fail-with-body --retry 12 --retry-delay 10 \
+            "https://$DOMAIN/__candidate/$CANDIDATE_ID/index.html" >/dev/null
+          test "$(curl --fail-with-body --retry 12 --retry-delay 10 \
+            "https://$DOMAIN/__candidate/$CANDIDATE_ID/release.json" | jq -r .releaseSha)" = "$GITHUB_SHA"
+          jq -n \
+            --arg webFast "$(aws lambda get-alias --function-name review-web-bff-fast-student --name candidate --query FunctionVersion --output text)" \
+            --arg webStream "$(aws lambda get-alias --function-name review-web-bff-stream-student --name candidate --query FunctionVersion --output text)" \
+            --arg webReconcile "$(aws lambda get-alias --function-name review-web-bff-reconcile-student --name candidate --query FunctionVersion --output text)" \
+            --arg contextReviewer "$(aws lambda get-alias --function-name review-context-reviewer-student --name candidate --query FunctionVersion --output text)" \
+            --arg contextConsole "$(aws lambda get-alias --function-name review-context-console-student --name candidate --query FunctionVersion --output text)" \
+            --arg generation "$(aws lambda get-alias --function-name review-generation-service-student --name candidate --query FunctionVersion --output text)" \
+            '{webFast:$webFast,webStream:$webStream,webReconcile:$webReconcile,contextReviewer:$contextReviewer,contextConsole:$contextConsole,generation:$generation}' \
+            > "$RELEASE_DIR/alias-versions.json"
+          ALIAS_VERSIONS_SHA="$(shasum -a 256 "$RELEASE_DIR/alias-versions.json" | cut -d ' ' -f 1)"
+          MANIFEST_TEMP="$(mktemp "$RELEASE_DIR/release-manifest.XXXXXX")"
+          jq --arg aliasVersions "$ALIAS_VERSIONS_SHA" \
+            '.sha256.aliasVersions = $aliasVersions' \
+            "$RELEASE_DIR/release-manifest.json" > "$MANIFEST_TEMP"
+          mv "$MANIFEST_TEMP" "$RELEASE_DIR/release-manifest.json"
+          terraform -chdir="$TF_DIR" output -json > "$RELEASE_DIR/deployment-outputs.json"
+
+      - name: Complete a reviewer Generation through the candidate UI and BFF
+        id: candidate_bff_smoke
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_ID="$GITHUB_SHA"
+          UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
+          EXPECTED_RELEASE_SHA="$GITHUB_SHA"
+          CONFIGURATION_CANDIDATE_RELEASE_ID="${{ steps.release_identity.outputs.id }}"
+          export CANDIDATE_ID UI_BUCKET EXPECTED_RELEASE_SHA CONFIGURATION_CANDIDATE_RELEASE_ID
+          scripts/smoke-candidate-reviewer-flow.sh
+
+      - name: Capture previous live aliases and mutable UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
+          PREVIOUS_ALIASES="$RUNNER_TEMP/previous-alias-versions.json"
+          PREVIOUS_UI="$RUNNER_TEMP/previous-ui"
+          mkdir -p "$PREVIOUS_UI"
+          jq -n \
+            --arg webFast "$(aws lambda get-alias --function-name review-web-bff-fast-student --name live --query FunctionVersion --output text)" \
+            --arg webStream "$(aws lambda get-alias --function-name review-web-bff-stream-student --name live --query FunctionVersion --output text)" \
+            --arg webReconcile "$(aws lambda get-alias --function-name review-web-bff-reconcile-student --name live --query FunctionVersion --output text)" \
+            --arg contextReviewer "$(aws lambda get-alias --function-name review-context-reviewer-student --name live --query FunctionVersion --output text)" \
+            --arg contextConsole "$(aws lambda get-alias --function-name review-context-console-student --name live --query FunctionVersion --output text)" \
+            --arg generation "$(aws lambda get-alias --function-name review-generation-service-student --name live --query FunctionVersion --output text)" \
+            '{webFast:$webFast,webStream:$webStream,webReconcile:$webReconcile,contextReviewer:$contextReviewer,contextConsole:$contextConsole,generation:$generation}' \
+            > "$PREVIOUS_ALIASES"
+          for mutable_file in index.html robots.txt release.json; do
+            aws s3 cp "s3://$UI_BUCKET/$mutable_file" "$PREVIOUS_UI/$mutable_file" 2>/dev/null || true
+          done
+
+      - name: Promote the immutable Configuration Release
+        id: configuration_promote
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          CONFIGURATION_RELEASE_ID: ${{ steps.release_identity.outputs.id }}
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v release_id="$CONFIGURATION_RELEASE_ID" <<'SQL'
+          SELECT public.promote_configuration_release(
+            :'release_id'::uuid,
+            NULL::uuid
+          );
+          SQL
+
+      - name: Verify strict-zero state immediately before Generation unfreeze
+        id: strict_zero_pre_unfreeze
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+
+      - name: Promote candidate services
+        id: service_promote
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+        run: |
+          set -euo pipefail
+          aws lambda update-alias --function-name review-context-reviewer-student --name live --function-version "$(jq -r .contextReviewer "$RELEASE_DIR/alias-versions.json")" >/dev/null
+          aws lambda update-alias --function-name review-context-console-student --name live --function-version "$(jq -r .contextConsole "$RELEASE_DIR/alias-versions.json")" >/dev/null
+          aws lambda update-alias --function-name review-generation-service-student --name live --function-version "$(jq -r .generation "$RELEASE_DIR/alias-versions.json")" >/dev/null
+          # This owner-only assertion is deliberately adjacent to the capacity
+          # mutation. A migration/seed failure must never reopen paid work.
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+          if [ "$REVIEW_DEPLOYMENT_PROFILE" = "student-low-quota" ]; then
+            aws lambda delete-function-concurrency --function-name review-generation-service-student >/dev/null
+          else
+            aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 1 >/dev/null
+          fi
+          HEALTH_EVENT='{"version":"2.0","routeKey":"GET /health","rawPath":"/health","rawQueryString":"","headers":{"host":"candidate.internal"},"requestContext":{"accountId":"candidate","apiId":"candidate","domainName":"candidate.internal","domainPrefix":"candidate","http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"deployment-service-smoke"},"requestId":"candidate","routeKey":"GET /health","stage":"$default","time":"01/Jan/2026:00:00:00 +0000","timeEpoch":0},"isBase64Encoded":false}'
+          aws lambda invoke \
+            --function-name review-generation-service-student \
+            --qualifier live \
+            --cli-binary-format raw-in-base64-out \
+            --payload "$HEALTH_EVENT" \
+            "$RUNNER_TEMP/review-generation-service-student-live.json" >/dev/null
+          jq -e '.statusCode == 200' \
+            "$RUNNER_TEMP/review-generation-service-student-live.json" >/dev/null
+
+      - name: Promote the candidate BFF and UI
+        id: promote
         shell: bash
         run: |
           set -euo pipefail
           UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
           DISTRIBUTION_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)"
-          aws s3 sync "$RELEASE_DIR/ui" "s3://$UI_BUCKET" --delete
-          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
-
-      - name: Capture deployed alias versions
-        shell: bash
-        run: |
-          set -euo pipefail
-          jq -n \
-            --arg webFast "$(aws lambda get-alias --function-name review-web-bff-fast-student --name live --query FunctionVersion --output text)" \
-            --arg webStream "$(aws lambda get-alias --function-name review-web-bff-stream-student --name live --query FunctionVersion --output text)" \
-            --arg webReconcile "$(aws lambda get-alias --function-name review-web-bff-reconcile-student --name live --query FunctionVersion --output text)" \
-            --arg context "$(aws lambda get-alias --function-name review-context-service-student --name live --query FunctionVersion --output text)" \
-            --arg generation "$(aws lambda get-alias --function-name review-generation-service-student --name live --query FunctionVersion --output text)" \
-            '{webFast:$webFast,webStream:$webStream,webReconcile:$webReconcile,context:$context,generation:$generation}' \
-            > "$RELEASE_DIR/alias-versions.json"
-          terraform -chdir="$TF_DIR" output -json > "$RELEASE_DIR/deployment-outputs.json"
-
-      - name: Probe CloudFront and prove direct-origin denial
-        shell: bash
-        run: |
-          set -euo pipefail
           DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
+          aws lambda update-alias --function-name review-web-bff-fast-student --name live --function-version "$(jq -r .webFast "$RELEASE_DIR/alias-versions.json")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-stream-student --name live --function-version "$(jq -r .webStream "$RELEASE_DIR/alias-versions.json")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-reconcile-student --name live --function-version "$(jq -r .webReconcile "$RELEASE_DIR/alias-versions.json")" >/dev/null
+          aws s3 cp "$RELEASE_DIR/ui/index.html" "s3://$UI_BUCKET/index.html" --content-type "text/html; charset=utf-8" --cache-control "no-cache,no-store,must-revalidate"
+          aws s3 cp "$RELEASE_DIR/ui/robots.txt" "s3://$UI_BUCKET/robots.txt" --content-type "text/plain; charset=utf-8" --cache-control "public,max-age=3600"
+          aws s3 cp "$RELEASE_DIR/ui/release.json" "s3://$UI_BUCKET/release.json" --content-type "application/json" --cache-control "no-cache,no-store,must-revalidate"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
           curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/health"
           curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/" >/dev/null
+          test "$(curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/release.json" | jq -r .releaseSha)" = "$GITHUB_SHA"
           test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$DOMAIN/s/speicher-neun/hafencity")" = 303
           test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$DOMAIN/auth/login?returnTo=%2Fconsole")" = 303
           test "$(curl -sS -o /dev/null -w '%{http_code}' "https://$DOMAIN/api/v1/console/session")" = 401
@@ -358,7 +819,72 @@ jobs:
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$FAST_URL")" = 403
           test "$(curl -sS -o /dev/null -w '%{http_code}' "$STREAM_URL")" = 403
 
-      - uses: actions/upload-artifact@v4
+      - name: Run post-deploy assessment evidence
+        id: assessment_smoke
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
+          export DOMAIN DATABASE_URL EXPECTED_RELEASE_SHA TF_DIR RELEASE_DIR
+          scripts/post-deploy-assessment-smoke.sh
+
+      - name: Restore previous live release after promotion failure
+        if: ${{ failure() && steps.configuration_promote.outcome == 'success' && (steps.strict_zero_pre_unfreeze.outcome == 'failure' || steps.service_promote.outcome == 'failure' || steps.promote.outcome == 'failure' || steps.assessment_smoke.outcome == 'failure') }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          CONFIGURATION_RELEASE_ID: ${{ steps.release_identity.outputs.id }}
+          REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
+        run: |
+          set -euo pipefail
+          UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
+          DISTRIBUTION_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)"
+          PREVIOUS_ALIASES="$RUNNER_TEMP/previous-alias-versions.json"
+          PREVIOUS_UI="$RUNNER_TEMP/previous-ui"
+          aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 0 >/dev/null
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v release_id="$CONFIGURATION_RELEASE_ID" <<'SQL'
+          SELECT public.restore_configuration_release(
+            :'release_id'::uuid,
+            NULL::uuid
+          );
+          SELECT public.assert_strict_zero_prompt_executable_state();
+          SQL
+          aws lambda update-alias --function-name review-context-reviewer-student --name live --function-version "$(jq -r .contextReviewer "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-context-console-student --name live --function-version "$(jq -r .contextConsole "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-generation-service-student --name live --function-version "$(jq -r .generation "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-fast-student --name live --function-version "$(jq -r .webFast "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-stream-student --name live --function-version "$(jq -r .webStream "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-reconcile-student --name live --function-version "$(jq -r .webReconcile "$PREVIOUS_ALIASES")" >/dev/null
+          for mutable_file in index.html robots.txt release.json; do
+            if [ -f "$PREVIOUS_UI/$mutable_file" ]; then
+              aws s3 cp "$PREVIOUS_UI/$mutable_file" "s3://$UI_BUCKET/$mutable_file" --cache-control "no-cache,no-store,must-revalidate"
+            fi
+          done
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
+          if [ "$REVIEW_DEPLOYMENT_PROFILE" != "student-low-quota" ]; then
+            psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+              -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+            aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 1 >/dev/null
+          fi
+
+      - name: Restore only a previously safe Generation concurrency
+        if: ${{ failure() && inputs.deployment_profile == 'student-low-quota' && steps.low_quota_freeze.outcome == 'success' && steps.product_migration.outcome == 'success' }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          GENERATION_CONCURRENCY_SNAPSHOT: ${{ github.workspace }}/release/generation-concurrency-before-low.json
+          GENERATION_FUNCTION_NAME: review-generation-service-student
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+          scripts/restore-generation-concurrency.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: student-release
           path: release

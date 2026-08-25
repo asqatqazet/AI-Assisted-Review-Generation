@@ -33,6 +33,8 @@ const platform: PlatformConfiguration = {
     requireDisclosure: false,
     requireVerifiedExperience: false,
     maxReviewFormatsPerRequest: 1,
+    minimumFactSelections: 1,
+    maximumCustomerAssertionChars: 500,
     bannedTerms: [],
     enabledReviewFormatVersionIds: [],
     enabledCommands: ["generate"],

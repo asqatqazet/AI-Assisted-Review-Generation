@@ -32,14 +32,19 @@ describe("Console transport binds every POST to its payload", () => {
     });
   });
 
-  it("declares a hash on the bodyless sign-out too", async () => {
+  it("declares a hash on sign-out and returns the validated SSO logout URL", async () => {
     const seen: Headers[] = [];
     const client = createHttpConsoleClient(async (_input, init) => {
       seen.push(new Headers(init?.headers));
-      return new Response(null, { status: 204 });
+      return Response.json({
+        logoutUrl:
+          "https://review.auth.example/logout?client_id=client-123&logout_uri=https%3A%2F%2Freview.example%2Fconsole",
+      });
     });
 
-    await client.logout();
+    await expect(client.logout()).resolves.toBe(
+      "https://review.auth.example/logout?client_id=client-123&logout_uri=https%3A%2F%2Freview.example%2Fconsole",
+    );
 
     expect(seen[0]?.get("x-amz-content-sha256")).toMatch(/^[a-f0-9]{64}$/);
   });

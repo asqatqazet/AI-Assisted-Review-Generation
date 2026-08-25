@@ -31,7 +31,16 @@ describe("US-03.6 Generation reviewer Disposition handler", () => {
         readOriginal: async (receivedScope) => {
           operations.push("read");
           expect(receivedScope).toEqual(scope);
-          return { text: "The team was attentive." };
+          return {
+            text: "The team was attentive.",
+            systemAnnotations: [
+              {
+                kind: "assisted-review-disclosure",
+                text: "AI-assisted review.",
+                policyVersionId: "policy-r7",
+              },
+            ],
+          };
         },
         record: async (input) => {
           operations.push("record");

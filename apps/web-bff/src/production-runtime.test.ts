@@ -1,8 +1,13 @@
 import fs from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { handler as fastHandler } from "./main.js";
+import { configurationReleaseIdForInvocation } from "./runtime.js";
 import { handler as streamHandler } from "./stream-main.js";
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("US-01.3 BFF production composition", () => {
   it("exports lazy buffered and response-streaming Lambda handlers", () => {
@@ -47,10 +52,13 @@ describe("US-01.3 BFF production composition", () => {
 
     expect(new Set(environmentKeys)).toEqual(
       new Set([
-        "CONTEXT_FUNCTION_ALIAS_ARN",
+        "CONTEXT_REVIEWER_FUNCTION_ALIAS_ARN",
+        "CONTEXT_CONSOLE_FUNCTION_ALIAS_ARN",
+        "GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN",
         "GENERATION_FUNCTION_ALIAS_ARN",
         "OPERATOR_OIDC_CONFIG_PARAMETER",
         "OPERATOR_SESSION_SECRET_PARAMETER",
+        "REVIEW_CONFIGURATION_RELEASE_ID",
         "REVIEW_CSRF_SECRET_PARAMETER",
       ]),
     );
@@ -60,5 +68,49 @@ describe("US-01.3 BFF production composition", () => {
     expect(source).not.toContain('required("REVIEW_PUBLIC_ORIGIN")');
     expect(source).toContain("createCognitoOperatorAuth");
     expect(source).toContain("createInvokedOperatorContextPort");
+    expect(source).toMatch(
+      /createInvokedOperatorContextPort\(consoleInvoker\)/u,
+    );
+    expect(source).toMatch(/createInvokedConsolePort\(consoleInvoker\)/u);
+    expect(source).toMatch(
+      /createInvokedContextPort\(reviewerInvoker,\s*\{\s*configurationReleaseId,?\s*\}\)/u,
+    );
+    expect(source).toMatch(
+      /options\.candidateInvocation\s*===\s*true\s*\?\s*qualifiedAliasArn\("GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN"\)\s*:\s*qualifiedAliasArn\("GENERATION_FUNCTION_ALIAS_ARN"\)/u,
+    );
+    expect(source).toMatch(
+      /createInvokedReviewerGenerationContextPort\(reviewerInvoker\)/u,
+    );
+    expect(source).toMatch(
+      /createInvokedPublicSourceRateLimitPort\(reviewerInvoker\)/u,
+    );
+    expect(source).toContain(
+      "resolveTrustedViewerSource: cloudFrontViewerSource",
+    );
+  });
+
+  it("pins only candidate-alias traffic and lets promoted live traffic follow the live pointer", () => {
+    vi.stubEnv(
+      "REVIEW_CONFIGURATION_RELEASE_ID",
+      "018fd2d8-7f24-4d21-8b10-7dd983cfc487",
+    );
+
+    expect(
+      configurationReleaseIdForInvocation(
+        "arn:aws:lambda:eu-central-1:123456789012:function:review-web-bff-fast-student:candidate",
+      ),
+    ).toBe("018fd2d8-7f24-4d21-8b10-7dd983cfc487");
+    expect(
+      configurationReleaseIdForInvocation(
+        "arn:aws:lambda:eu-central-1:123456789012:function:review-web-bff-fast-student:live",
+      ),
+    ).toBeUndefined();
+
+    vi.stubEnv("REVIEW_CONFIGURATION_RELEASE_ID", "live");
+    expect(() =>
+      configurationReleaseIdForInvocation(
+        "arn:aws:lambda:eu-central-1:123456789012:function:review-web-bff-fast-student:candidate",
+      ),
+    ).toThrow("REVIEW_CONFIGURATION_RELEASE_ID must be a canonical UUID");
   });
 });

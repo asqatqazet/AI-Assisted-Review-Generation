@@ -9,13 +9,102 @@ import type {
 import {
   GenerationWorkloadDtoSchema,
   type GenerationWorkloadDto,
+  type ReviewerGenerationRejectionCodeDto,
 } from "@review/contracts/generation";
-import type { PostgresReviewerGenerationAdmissionStore } from "@review/db/admission";
 
-type AdmissionStore = Pick<
-  PostgresReviewerGenerationAdmissionStore,
-  "prepare" | "activate" | "settle"
->;
+export type ReviewerGenerationAdmissionCommand =
+  | {
+      readonly kind: "generate";
+      readonly factOptionIds: readonly string[];
+      readonly customerAssertion?: string | undefined;
+      readonly reviewFormatVersionId: string;
+    }
+  | {
+      readonly kind: "paraphrase";
+      readonly sourceText: string;
+      readonly reviewFormatVersionId: string;
+    }
+  | {
+      readonly kind: "resample";
+      readonly sourceGenerationId: string;
+    }
+  | {
+      readonly kind: "reformat";
+      readonly sourceGenerationId: string;
+      readonly reviewFormatVersionId: string;
+    }
+  | {
+      readonly kind: "condense";
+      readonly sourceGenerationId: string;
+      readonly targetMaxChars: number;
+    }
+  | {
+      readonly kind: "expand";
+      readonly sourceGenerationId: string;
+      readonly targetMinChars: number;
+    }
+  | {
+      readonly kind: "revise-wording";
+      readonly sourceGenerationId: string;
+      readonly presentationInstruction: string;
+    };
+
+export interface ReviewerGenerationAdmissionInput {
+  readonly routeHandleHash: string;
+  readonly browserCapabilityHash: string;
+  readonly idempotencyKey: string;
+  readonly command: ReviewerGenerationAdmissionCommand;
+}
+
+export type ReviewerGenerationAdmissionResult =
+  | {
+      readonly status: "prepared";
+      readonly permitJti: string;
+      readonly permitExpiresAt: string;
+      readonly workload: Readonly<Record<string, unknown>>;
+    }
+  | {
+      readonly status: "rejected";
+      readonly code: ReviewerGenerationRejectionCodeDto;
+      readonly retryable: boolean;
+    };
+
+export interface ReviewerGenerationAdmissionStore {
+  prepare(
+    input: ReviewerGenerationAdmissionInput,
+  ): Promise<ReviewerGenerationAdmissionResult>;
+  activate(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly reviewSessionId: string;
+    readonly generationBatchId: string;
+    readonly generationId: string;
+    readonly requestHash: string;
+    readonly permitJti: string;
+    readonly leaseId: string;
+    readonly leaseExpiresAt: string;
+  }): Promise<
+    | {
+        readonly status: "activated";
+        readonly leaseId: string;
+        readonly activationExpiresAt: string;
+      }
+    | { readonly status: "rejected" }
+  >;
+  settle(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly reviewSessionId: string;
+    readonly generationBatchId: string;
+    readonly generationId: string;
+    readonly requestHash: string;
+    readonly permitJti: string;
+    readonly leaseId: string;
+    readonly actualCostMicros: number;
+  }): Promise<
+    { readonly status: "settled" } | { readonly status: "rejected" }
+  >;
+}
 
 export interface ContextGenerationAuthority {
   signPermit(input: {
@@ -69,7 +158,7 @@ export interface ContextGenerationStatusAuthority {
 }
 
 export interface ReviewerGenerationServiceOptions {
-  readonly store: AdmissionStore;
+  readonly store: ReviewerGenerationAdmissionStore;
   readonly authority: ContextGenerationAuthority;
   readonly hashCapability: (value: string) => Promise<string>;
 }
@@ -102,21 +191,65 @@ export function createReviewerGenerationService({
 }: ReviewerGenerationServiceOptions): ReviewerGenerationService {
   return {
     async prepareReviewerGeneration(input) {
+      let command: ReviewerGenerationAdmissionCommand;
+      if ("factOptionIds" in input.command) {
+        command = {
+          kind: "generate",
+          factOptionIds: input.command.factOptionIds,
+          ...(input.command.customerAssertion === undefined
+            ? {}
+            : { customerAssertion: input.command.customerAssertion }),
+          reviewFormatVersionId: input.command.reviewFormatId,
+        };
+      } else if ("sourceText" in input.command) {
+        command = {
+          kind: "paraphrase",
+          sourceText: input.command.sourceText,
+          reviewFormatVersionId: input.command.reviewFormatId,
+        };
+      } else if (input.command.action === "resample") {
+        command = {
+          kind: "resample",
+          sourceGenerationId: input.command.sourceGenerationId,
+        };
+      } else if (input.command.action === "reformat") {
+        command = {
+          kind: "reformat",
+          sourceGenerationId: input.command.sourceGenerationId,
+          reviewFormatVersionId: input.command.reviewFormatId,
+        };
+      } else if (input.command.action === "condense") {
+        command = {
+          kind: "condense",
+          sourceGenerationId: input.command.sourceGenerationId,
+          targetMaxChars: input.command.targetMaxChars,
+        };
+      } else if (input.command.action === "expand") {
+        command = {
+          kind: "expand",
+          sourceGenerationId: input.command.sourceGenerationId,
+          targetMinChars: input.command.targetMinChars,
+        };
+      } else if (input.command.action === "revise-wording") {
+        command = {
+          kind: "revise-wording",
+          sourceGenerationId: input.command.sourceGenerationId,
+          presentationInstruction: input.command.presentationInstruction,
+        };
+      } else {
+        throw new Error("REVIEWER_GENERATION_ACTION_NOT_IMPLEMENTED");
+      }
       const prepared = await store.prepare({
         routeHandleHash: await hashCapability(input.reviewSessionHandle),
         browserCapabilityHash: await hashCapability(input.browserCapability),
         idempotencyKey: input.idempotencyKey,
-        factOptionIds: input.command.factOptionIds,
-        ...(input.command.customerAssertion === undefined
-          ? {}
-          : { customerAssertion: input.command.customerAssertion }),
-        reviewFormatVersionId: input.command.reviewFormatId,
+        command,
       });
       if (prepared.status !== "prepared") {
         return {
           status: "rejected",
-          code: "GENERATION_FAILED",
-          retryable: true,
+          code: prepared.code,
+          retryable: prepared.retryable,
         };
       }
       const workload = GenerationWorkloadDtoSchema.parse(prepared.workload);

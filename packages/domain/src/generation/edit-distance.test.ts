@@ -12,7 +12,11 @@ const revision = (
 ): ComparableDraftRevision => ({
   body,
   systemAnnotations: [
-    { kind: "assisted-review-disclosure", text: disclosure },
+    {
+      kind: "assisted-review-disclosure",
+      text: disclosure,
+      policyVersionId: "tenant-policy-r1",
+    },
   ],
 });
 

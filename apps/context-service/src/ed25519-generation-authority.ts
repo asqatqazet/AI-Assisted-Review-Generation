@@ -8,6 +8,7 @@ import {
 import {
   GenerationExecutionScopeDtoSchema,
   GenerationWorkloadBindingsDtoSchema,
+  ReviewerDraftRevisionScopeDtoSchema,
   ReviewerDispositionScopeDtoSchema,
   type GenerationWorkloadDto,
 } from "@review/contracts/generation";
@@ -17,6 +18,7 @@ import type {
   ContextGenerationStatusAuthority,
 } from "./reviewer-generation-service.js";
 import type { ContextDispositionAuthority } from "./reviewer-disposition-service.js";
+import type { ContextDraftRevisionAuthority } from "./reviewer-draft-revision-service.js";
 
 type JsonRecord = Readonly<Record<string, unknown>>;
 
@@ -98,6 +100,7 @@ export function createContextEd25519GenerationAuthority({
   readonly now?: () => Date;
 }): ContextGenerationAuthority &
   ContextGenerationStatusAuthority &
+  ContextDraftRevisionAuthority &
   ContextDispositionAuthority {
   const contextPrivateKey = createPrivateKey(contextPrivateKeyPem);
   const generationPublicKey = createPublicKey(generationPublicKeyPem);
@@ -132,6 +135,23 @@ export function createContextEd25519GenerationAuthority({
           permitJti,
           expiresAt,
           scope: ReviewerDispositionScopeDtoSchema.parse(scope),
+        },
+        contextPrivateKey,
+      );
+    },
+
+    async signDraftRevisionPermit({ permitJti, expiresAt, scope }) {
+      if (new Date(expiresAt).getTime() <= now().getTime()) {
+        throw new Error("REVIEWER_DRAFT_REVISION_PERMIT_EXPIRED");
+      }
+      return signToken(
+        {
+          kind: "reviewer-draft-revision-permit",
+          issuer: "context-service",
+          audience: "generation-service",
+          permitJti,
+          expiresAt,
+          scope: ReviewerDraftRevisionScopeDtoSchema.parse(scope),
         },
         contextPrivateKey,
       );

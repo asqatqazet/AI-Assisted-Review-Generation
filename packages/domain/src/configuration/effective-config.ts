@@ -15,6 +15,8 @@ export interface EffectiveSettings {
   readonly requireDisclosure: boolean;
   readonly requireVerifiedExperience: boolean;
   readonly maxReviewFormatsPerRequest: number;
+  readonly minimumFactSelections: number;
+  readonly maximumCustomerAssertionChars: number;
   readonly bannedTerms: readonly string[];
   readonly enabledReviewFormatVersionIds: readonly string[];
   readonly enabledCommands: readonly CommandKind[];
@@ -34,6 +36,10 @@ export interface SourceProvenance {
 export interface FactOption {
   readonly id: string;
   readonly version: string;
+  /** Published reviewer-facing text; older schema-v2 snapshots may omit it. */
+  readonly label?: string | undefined;
+  /** Published reviewer-facing category text; older schema-v2 snapshots may omit it. */
+  readonly categoryLabel?: string | undefined;
   readonly owner:
     | { readonly scope: "tenant"; readonly tenantId: string }
     | {
@@ -232,6 +238,10 @@ export function resolveEffectiveConfig(input: {
   const requireDisclosure = resolveField("requireDisclosure");
   const requireVerifiedExperience = resolveField("requireVerifiedExperience");
   const maxReviewFormatsPerRequest = resolveField("maxReviewFormatsPerRequest");
+  const minimumFactSelections = resolveField("minimumFactSelections");
+  const maximumCustomerAssertionChars = resolveField(
+    "maximumCustomerAssertionChars",
+  );
   const bannedTerms = resolveField("bannedTerms");
   const enabledReviewFormatVersionIds = resolveField(
     "enabledReviewFormatVersionIds",
@@ -248,6 +258,8 @@ export function resolveEffectiveConfig(input: {
       requireDisclosure: requireDisclosure.value,
       requireVerifiedExperience: requireVerifiedExperience.value,
       maxReviewFormatsPerRequest: maxReviewFormatsPerRequest.value,
+      minimumFactSelections: minimumFactSelections.value,
+      maximumCustomerAssertionChars: maximumCustomerAssertionChars.value,
       bannedTerms: bannedTerms.value,
       enabledReviewFormatVersionIds: enabledReviewFormatVersionIds.value,
       enabledCommands: enabledCommands.value,
@@ -262,6 +274,8 @@ export function resolveEffectiveConfig(input: {
       requireDisclosure: requireDisclosure.provenance,
       requireVerifiedExperience: requireVerifiedExperience.provenance,
       maxReviewFormatsPerRequest: maxReviewFormatsPerRequest.provenance,
+      minimumFactSelections: minimumFactSelections.provenance,
+      maximumCustomerAssertionChars: maximumCustomerAssertionChars.provenance,
       bannedTerms: bannedTerms.provenance,
       enabledReviewFormatVersionIds: enabledReviewFormatVersionIds.provenance,
       enabledCommands: enabledCommands.provenance,

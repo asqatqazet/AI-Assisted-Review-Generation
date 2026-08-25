@@ -12,9 +12,21 @@ const required = (name: string): string => {
 };
 
 const invoke = createContextRuntime({
-  databaseUrl: required("CONTEXT_DATABASE_URL"),
+  runtimeDatabaseUrl: required("CONTEXT_RUNTIME_DATABASE_URL"),
+  consoleControlDatabaseUrl: required("CONSOLE_CONTROL_DATABASE_URL"),
   contextPrivateKeyPem: required("CONTEXT_WORK_PRIVATE_KEY_PEM"),
+  consoleAuthorityPrivateKeyPem: required(
+    "CONSOLE_AUTHORITY_PRIVATE_KEY_PEM",
+  ),
+  consoleDatabaseAuthoritySecret: required(
+    "CONSOLE_DATABASE_AUTHORITY_SECRET",
+  ),
   generationPublicKeyPem: required("GENERATION_WORK_PUBLIC_KEY_PEM"),
+  publicSourceRateHmacSecret: required("PUBLIC_SOURCE_RATE_HMAC_SECRET"),
+  providerMode:
+    process.env["REVIEW_PROVIDER_MODE"] === "paid-enabled"
+      ? "paid-enabled"
+      : "fake-only",
 });
 const app = new Hono();
 app.get("/health", (c) => c.json({ status: "ok", service: "context-service" }));

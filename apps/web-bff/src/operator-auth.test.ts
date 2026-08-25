@@ -16,6 +16,7 @@ describe("US-04.1 operator authentication", () => {
           returnTo: "/console",
         }),
         readSession: async () => null,
+        logout: async () => ({ logoutUrl: "https://example.invalid/logout" }),
       },
     };
     const app = createWebBffApp(options);
@@ -47,6 +48,7 @@ describe("US-04.1 operator authentication", () => {
           };
         },
         readSession: async () => null,
+        logout: async () => ({ logoutUrl: "https://example.invalid/logout" }),
       },
     };
     const app = createWebBffApp(options);
@@ -59,7 +61,7 @@ describe("US-04.1 operator authentication", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("Location")).toBe("/console/overview");
     expect(response.headers.get("Set-Cookie")).toContain(
-      "__Host-operator_session=signed-operator-session; Max-Age=3600; Path=/; HttpOnly; Secure; SameSite=Lax",
+      "__Host-operator_session=signed-operator-session; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax",
     );
     expect(response.headers.get("Set-Cookie")).toContain(
       "__Host-operator_oidc=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
@@ -82,6 +84,7 @@ describe("US-04.1 operator authentication", () => {
           throw new Error("state mismatch for subject attacker-subject");
         },
         readSession: async () => null,
+        logout: async () => ({ logoutUrl: "https://example.invalid/logout" }),
       },
     });
 
@@ -110,11 +113,15 @@ describe("US-04.1 operator authentication", () => {
       }),
       complete: async () => ({ sessionCookie: "unused", returnTo: "/console" }),
       readSession: async () => ({
-        issuer:
-          "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_pool",
-        subject: "cognito-subject-123",
-        email: "owner@example.com",
+        identity: {
+          issuer:
+            "https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_pool",
+          subject: "cognito-subject-123",
+          email: "owner@example.com",
+        },
+        refreshedSessionCookie: null,
       }),
+      logout: async () => ({ logoutUrl: "https://example.invalid/logout" }),
     };
     const options = {
       operatorAuth,
@@ -166,7 +173,28 @@ describe("US-04.1 operator authentication", () => {
   });
 
   it("signs out only from the same public origin and clears the operator cookie", async () => {
-    const app = createWebBffApp({ publicOrigin: "https://d111.cloudfront.net" });
+    const revoked: string[] = [];
+    const app = createWebBffApp({
+      publicOrigin: "https://d111.cloudfront.net",
+      operatorAuth: {
+        begin: async () => ({
+          authorizationUrl: "https://example.invalid/authorize",
+          transactionCookie: "unused",
+        }),
+        complete: async () => ({
+          sessionCookie: "unused",
+          returnTo: "/console",
+        }),
+        readSession: async () => null,
+        logout: async ({ sessionCookie }) => {
+          revoked.push(sessionCookie);
+          return {
+            logoutUrl:
+              "https://review.auth.example/logout?client_id=client-123&logout_uri=https%3A%2F%2Fd111.cloudfront.net%2Fconsole",
+          };
+        },
+      },
+    });
 
     const response = await app.request("/auth/logout", {
       method: "POST",
@@ -176,9 +204,46 @@ describe("US-04.1 operator authentication", () => {
       },
     });
 
-    expect(response.status).toBe(204);
+    expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toBe(
       "__Host-operator_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
     );
+    expect(revoked).toEqual(["signed-session"]);
+    await expect(response.json()).resolves.toEqual({
+      logoutUrl:
+        "https://review.auth.example/logout?client_id=client-123&logout_uri=https%3A%2F%2Fd111.cloudfront.net%2Fconsole",
+    });
+  });
+
+  it("expires the local session even when provider revocation fails", async () => {
+    const app = createWebBffApp({
+      publicOrigin: "https://d111.cloudfront.net",
+      operatorAuth: {
+        begin: async () => {
+          throw new Error("unused");
+        },
+        complete: async () => {
+          throw new Error("unused");
+        },
+        readSession: async () => null,
+        logout: async () => {
+          throw new Error("Cognito revoke unavailable");
+        },
+      },
+    });
+
+    const response = await app.request("/auth/logout", {
+      method: "POST",
+      headers: {
+        Origin: "https://d111.cloudfront.net",
+        Cookie: "__Host-operator_session=signed-session",
+      },
+    });
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Set-Cookie")).toBe(
+      "__Host-operator_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+    );
+    expect(response.headers.get("Cache-Control")).toBe("private, no-store");
   });
 });

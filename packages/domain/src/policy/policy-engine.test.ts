@@ -66,6 +66,7 @@ describe("TS-10 Policy Engine", () => {
         policy: { ...defaultPolicy, requireDisclosure: true },
         tenantName: "Central Dental",
         locale: "en-GB",
+        disclosurePolicyVersionId: "tenant-policy-r7",
       });
 
       const expectedDisclosure =
@@ -74,6 +75,13 @@ describe("TS-10 Policy Engine", () => {
       expect(result.draft).toBe(
         `Great cleaning visit.\n\n${expectedDisclosure}`,
       );
+      expect(result.systemAnnotations).toEqual([
+        {
+          kind: "assisted-review-disclosure",
+          text: expectedDisclosure,
+          policyVersionId: "tenant-policy-r7",
+        },
+      ]);
       expect(result.violations).toHaveLength(0);
     });
 
@@ -251,6 +259,7 @@ describe("TS-10 Policy Engine", () => {
         policy: dentalPolicy,
         tenantName: "Apex Dental",
         locale: "en-GB",
+        disclosurePolicyVersionId: "tenant-policy-r9",
       });
 
       expect(result.draft).toContain(

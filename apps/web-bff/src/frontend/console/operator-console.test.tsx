@@ -113,6 +113,68 @@ describe("ADM-AUTH-03 capability-driven navigation", () => {
     expect(within(navigation).getByRole("link", { name: "Experiments" })).toBeVisible();
   });
 
+  it("uses the Gallery information order and canonical domain language", async () => {
+    renderConsole(
+      createFakeConsoleClient({
+        views: {
+          bootstrap: {
+            ...testBootstrap,
+            role: "platform_admin",
+            activeContext: { tenantId: null, locationId: null },
+            capabilities: {
+              ...testBootstrap.capabilities,
+              canAccessPlatform: true,
+              canSwitchTenant: true,
+              canManageAiOperations: true,
+              canManageProviders: true,
+            },
+          },
+          overview: { ...emptyOverview, scope: { type: "platform" } },
+        },
+      }),
+    );
+
+    await screen.findByRole("heading", { name: "Overview" });
+    const navigation = screen.getByRole("navigation", { name: "Console" });
+    expect(
+      within(navigation)
+        .getAllByRole("heading", { level: 2 })
+        .map((heading) => heading.textContent),
+    ).toEqual(["Platform", "Operate", "Tenant", "Location", "Model"]);
+    expect(
+      within(navigation)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      "Tenants",
+      "Providers",
+      "Review Format catalogue",
+      "Platform settings",
+      "Overview",
+      "Bench",
+      "Analytics",
+      "Business context",
+      "Fact Options",
+      "Review Format enablement",
+      "Actions",
+      "Tenant settings",
+      "Locations",
+      "Distribution",
+      "Prompt versions",
+      "Experiments",
+    ]);
+  });
+
+  it("shows which immutable release is rendering the Console", async () => {
+    renderConsole(
+      createFakeConsoleClient({
+        views: { bootstrap: testBootstrap, overview: emptyOverview },
+      }),
+    );
+
+    expect(await screen.findByText("Release local")).toBeVisible();
+  });
+
   it("shows a not-found message rather than a screen the scope cannot serve", async () => {
     renderConsole(
       createFakeConsoleClient({ views: { bootstrap: testBootstrap } }),
@@ -180,6 +242,30 @@ describe("ADM-AUTH-02 scope selection", () => {
     ).toEqual({
       tenantId: "tenant-speicher",
       locationId: "location-hafencity",
+    });
+  });
+
+  it("renders one generic not-found for an explicit crossed Location instead of normalizing it away", async () => {
+    const client = createFakeConsoleClient({ views: { bootstrap: testBootstrap } });
+    renderConsole(
+      client,
+      "/console/locations/location-other/settings?tenantId=tenant-speicher&locationId=location-other",
+    );
+
+    expect(
+      await screen.findByText(
+        "This resource is unavailable in the selected scope.",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText("Select a Location to see its settings."),
+    ).not.toBeInTheDocument();
+    expect(
+      client.requests.find((request) => request.view === "location-settings")
+        ?.scope,
+    ).toEqual({
+      tenantId: "tenant-speicher",
+      locationId: "location-other",
     });
   });
 });
@@ -281,6 +367,7 @@ describe("ADM-LOC-03 override and reset", () => {
       },
     },
     editable: true,
+    configuration: { etag: '"revision-1"', draft: null },
     settings: [
       {
         key: "requireDisclosure",
@@ -332,9 +419,13 @@ describe("ADM-LOC-03 override and reset", () => {
     await user.click(screen.getByRole("button", { name: "Override" }));
 
     expect(client.commands[0]?.command).toEqual({
-      command: "set-location-override",
-      key: "requireDisclosure",
-      value: false,
+      command: "stage-configuration-changes",
+      changes: [
+        {
+          operation: "set-location-override",
+          change: { key: "requireDisclosure", value: false },
+        },
+      ],
     });
   });
 
@@ -368,8 +459,13 @@ describe("ADM-LOC-03 override and reset", () => {
     );
 
     expect(client.commands[0]?.command).toEqual({
-      command: "reset-location-override",
-      key: "requireDisclosure",
+      command: "stage-configuration-changes",
+      changes: [
+        {
+          operation: "reset-location-override",
+          key: "requireDisclosure",
+        },
+      ],
     });
   });
 });
@@ -551,7 +647,159 @@ describe("Console failure states are distinguishable", () => {
 });
 
 describe("Console forms offer the choices the data allows", () => {
-  it("lets a prompt version be published for any Action, not just the filtered one", async () => {
+  it("runs Bench only after selecting a published Fact Option", async () => {
+    const user = userEvent.setup();
+    const locationScope = {
+      type: "location" as const,
+      tenant: tenantScope.tenant,
+      location: {
+        id: "location-hafencity",
+        slug: "hafencity",
+        name: "HafenCity",
+      },
+    };
+    const client = createFakeConsoleClient({
+      views: {
+        bootstrap: {
+          ...testBootstrap,
+          capabilities: {
+            ...testBootstrap.capabilities,
+            canManageAiOperations: true,
+          },
+        },
+        "bench-form": {
+          scope: locationScope,
+          actions: [
+            {
+              key: "generate",
+              label: "Generate",
+              requiredInputs: ["factOptionsOrFreeText"],
+            },
+          ],
+          styles: [
+            {
+              id: "format-generate",
+              name: "Generate only",
+              supportedActions: ["generate"],
+            },
+          ],
+          promptVersions: [
+            {
+              id: "prompt-generate",
+              action: "generate",
+              key: "review.generate",
+              hash: `sha256:${"a".repeat(64)}`,
+            },
+          ],
+          providers: [
+            { key: "fake", displayName: "FakeProvider", isTestProvider: true },
+          ],
+          keywords: [{ id: "fact-welcome", label: "Warm welcome" }],
+          prefill: null,
+          missingReplayDependencies: [],
+        },
+      },
+    });
+    renderConsole(
+      client,
+      "/console/ai/bench?tenantId=tenant-speicher&locationId=location-hafencity",
+    );
+
+    const run = await screen.findByRole("button", { name: "Run on the bench" });
+    expect(run).toBeDisabled();
+
+    await user.click(screen.getByRole("checkbox", { name: "Warm welcome" }));
+    expect(run).toBeEnabled();
+    await user.click(run);
+
+    await waitFor(() =>
+      expect(client.commands).toEqual([
+        {
+          scope: {
+            tenantId: "tenant-speicher",
+            locationId: "location-hafencity",
+          },
+          command: {
+            command: "run-bench",
+            input: {
+              action: "generate",
+              styleId: "format-generate",
+              promptVersionId: "prompt-generate",
+              provider: "fake",
+              keywordIds: ["fact-welcome"],
+              freeText: "",
+              sourceText: "",
+            },
+          },
+        },
+      ]),
+    );
+  });
+
+  it("does not run an impossible Bench Action/Format/Prompt combination", async () => {
+    const user = userEvent.setup();
+    const client = createFakeConsoleClient({
+      views: {
+        bootstrap: {
+          ...testBootstrap,
+          capabilities: {
+            ...testBootstrap.capabilities,
+            canManageAiOperations: true,
+          },
+        },
+        "bench-form": {
+          scope: tenantScope,
+          actions: [
+            { key: "generate", label: "Generate", requiredInputs: [] },
+            {
+              key: "paraphrase",
+              label: "Paraphrase",
+              requiredInputs: ["sourceText"],
+            },
+          ],
+          styles: [
+            {
+              id: "format-generate",
+              name: "Generate only",
+              supportedActions: ["generate"],
+            },
+          ],
+          promptVersions: [
+            {
+              id: "prompt-generate",
+              action: "generate",
+              key: "review.generate",
+              hash: `sha256:${"a".repeat(64)}`,
+            },
+          ],
+          providers: [
+            { key: "fake", displayName: "FakeProvider", isTestProvider: true },
+          ],
+          keywords: [],
+          prefill: null,
+          missingReplayDependencies: [],
+        },
+      },
+    });
+    renderConsole(client, "/console/ai/bench?tenantId=tenant-speicher");
+
+    expect(
+      await screen.findByRole("button", { name: "Run on the bench" }),
+    ).toBeDisabled();
+    expect(screen.getByText(/Select a Location to run the bench/)).toBeVisible();
+
+    await user.selectOptions(screen.getByLabelText("Action"), "paraphrase");
+
+    expect(
+      screen.getByRole("button", { name: "Run on the bench" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByText(/No compatible Review Format and Prompt Version/),
+    ).toBeVisible();
+    expect(client.commands).toEqual([]);
+  });
+
+  it("lets a prompt Draft be created for any Action, not just the filtered one", async () => {
     const user = userEvent.setup();
     const client = createFakeConsoleClient({
       views: {
@@ -575,10 +823,10 @@ describe("Console forms offer the choices the data allows", () => {
     });
     renderConsole(client, "/console/ai/prompts?tenantId=tenant-speicher");
 
-    await screen.findByRole("heading", { name: "Publish a new version" });
+    await screen.findByRole("heading", { name: "Create a draft version" });
     await user.selectOptions(screen.getByLabelText("Action"), "condense");
     await user.type(screen.getByLabelText("Prompt body"), "Shorten it.");
-    await user.click(screen.getByRole("button", { name: "Publish draft version" }));
+    await user.click(screen.getByRole("button", { name: "Create draft version" }));
 
     expect(client.commands[0]?.command).toMatchObject({
       command: "create-prompt-version",
@@ -593,6 +841,7 @@ describe("Console forms offer the choices the data allows", () => {
         "tenant-settings": {
           scope: tenantScope,
           editable: true,
+          configuration: { etag: '"revision-1"', draft: null },
           settings: [
             {
               key: "locale",
@@ -657,6 +906,7 @@ describe("Console forms offer the choices the data allows", () => {
         "tenant-settings": {
           scope: tenantScope,
           editable: true,
+          configuration: { etag: '"revision-1"', draft: null },
           settings: [
             {
               key: "locale",
@@ -677,13 +927,13 @@ describe("Console forms offer the choices the data allows", () => {
     renderConsole(client, "/console/settings/tenant?tenantId=tenant-speicher");
 
     expect(
-      await screen.findByRole("button", { name: "Save account settings" }),
+      await screen.findByRole("button", { name: "Stage account settings" }),
     ).toBeDisabled();
 
     await user.selectOptions(screen.getByLabelText("Locale"), "de-DE");
 
     expect(
-      screen.getByRole("button", { name: "Save account settings" }),
+      screen.getByRole("button", { name: "Stage account settings" }),
     ).toBeEnabled();
     expect(screen.getByRole("button", { name: "Discard changes" })).toBeVisible();
   });

@@ -1,20 +1,14 @@
 import { createPublicKey, verify as verifyBytes, type KeyObject } from "node:crypto";
 
-import {
-  ConsoleReadQueryDtoSchema,
-  ConsoleReadScopeDtoSchema,
-  type ConsoleReadQueryDto,
-  type ConsoleReadScopeDto,
-} from "@review/contracts/console-read";
-
 export const CONSOLE_READ_AUDIENCE = "console-read";
 
 export type ConsoleReadVerification =
   | { readonly status: "rejected" }
   | {
       readonly status: "verified";
-      readonly scope: ConsoleReadScopeDto;
-      readonly query: ConsoleReadQueryDto;
+      readonly authorizationId: string;
+      readonly view: "overview" | "analytics" | "generation-detail";
+      readonly readMode: "redacted" | "audit";
     };
 
 /**
@@ -26,22 +20,21 @@ export type ConsoleReadVerification =
 export interface ConsoleReadVerifier {
   verify(input: {
     readonly receipt: string;
-    readonly scope: ConsoleReadScopeDto;
-    readonly query: ConsoleReadQueryDto;
+    readonly authorizationId: string;
   }): ConsoleReadVerification;
 }
 
 export function createConsoleReadVerifier({
-  contextPublicKeyPem,
+  consoleAuthorityPublicKeyPem,
   now = () => new Date(),
 }: {
-  readonly contextPublicKeyPem: string;
+  readonly consoleAuthorityPublicKeyPem: string;
   readonly now?: (() => Date) | undefined;
 }): ConsoleReadVerifier {
-  const publicKey: KeyObject = createPublicKey(contextPublicKeyPem);
+  const publicKey: KeyObject = createPublicKey(consoleAuthorityPublicKeyPem);
 
   return {
-    verify({ receipt, scope, query }) {
+    verify({ receipt, authorizationId }) {
       const parts = receipt.split(".");
       const [payload, signature] = parts;
       if (parts.length !== 2 || payload === undefined || signature === undefined) {
@@ -84,21 +77,27 @@ export function createConsoleReadVerifier({
         return { status: "rejected" };
       }
 
-      const signedScope = ConsoleReadScopeDtoSchema.safeParse(claims["scope"]);
-      const signedQuery = ConsoleReadQueryDtoSchema.safeParse(claims["query"]);
-      if (!signedScope.success || !signedQuery.success) {
+      const signedAuthorizationId = claims["authorizationId"];
+      const signedView = claims["view"];
+      const signedReadMode = claims["readMode"];
+      if (
+        typeof signedAuthorizationId !== "string" ||
+        signedAuthorizationId.length === 0 ||
+        (signedView !== "overview" &&
+          signedView !== "analytics" &&
+          signedView !== "generation-detail") ||
+        (signedReadMode !== "redacted" && signedReadMode !== "audit")
+      ) {
         return { status: "rejected" };
       }
-      if (
-        JSON.stringify(signedScope.data) !== JSON.stringify(scope) ||
-        JSON.stringify(signedQuery.data) !== JSON.stringify(query)
-      ) {
+      if (signedAuthorizationId !== authorizationId) {
         return { status: "rejected" };
       }
       return {
         status: "verified",
-        scope: signedScope.data,
-        query: signedQuery.data,
+        authorizationId: signedAuthorizationId,
+        view: signedView,
+        readMode: signedReadMode,
       };
     },
   };

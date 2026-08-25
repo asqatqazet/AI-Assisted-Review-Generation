@@ -41,14 +41,15 @@ export function useConsoleScope(
   }, [bootstrap, requestedTenantId]);
 
   const locations = tenant?.locations ?? [];
-  // Selecting a Tenant clears a Location that belongs to a different one.
-  const location = locations.find(
-    (candidate) => candidate.id === requestedLocationId,
-  );
-
   const scope: ConsoleScopeRequestDto = {
-    tenantId: tenant?.id ?? null,
-    locationId: location?.id ?? null,
+    // Preserve explicit URL values until the server authorizes the pair. If
+    // the client silently normalizes an unknown/crossed Location to null, the
+    // screen becomes a distinguishable "select a Location" oracle instead of
+    // receiving the generic not-found response.
+    tenantId: requestedTenantId ?? tenant?.id ?? null,
+    locationId:
+      requestedLocationId ??
+      (requestedTenantId === null ? bootstrap.activeContext.locationId : null),
   };
 
   const selectTenant = useCallback(

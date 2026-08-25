@@ -1,6 +1,9 @@
 import { streamHandle } from "hono/aws-lambda";
 
-import { createWebBffRuntime } from "./runtime.js";
+import {
+  configurationReleaseIdForInvocation,
+  createWebBffRuntime,
+} from "./runtime.js";
 
 type StreamingHandler = ReturnType<typeof streamHandle>;
 type StreamingResponseHandler = (
@@ -21,14 +24,35 @@ const streamifyResponse: StreamifyResponse =
   awslambda?.streamifyResponse ??
   ((streamingHandler) => streamingHandler);
 
-let runtime: Promise<StreamingHandler> | undefined;
+const runtimes = new Map<string, Promise<StreamingHandler>>();
 
-const getRuntime = (): Promise<StreamingHandler> =>
-  (runtime ??= createWebBffRuntime().then((app) => streamHandle(app)));
+const getRuntime = (
+  invokedFunctionArn: string | undefined,
+): Promise<StreamingHandler> => {
+  const configurationReleaseId =
+    configurationReleaseIdForInvocation(invokedFunctionArn);
+  const key = configurationReleaseId ?? "live";
+  const existing = runtimes.get(key);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const created = createWebBffRuntime(
+    configurationReleaseId === undefined
+      ? {}
+      : { candidateInvocation: true, configurationReleaseId },
+  ).then((app) => streamHandle(app));
+  runtimes.set(key, created);
+  return created;
+};
 
 export const handler = streamifyResponse(
   async (event, responseStream, context): Promise<void> => {
-    const resolved = (await getRuntime()) as unknown as StreamingResponseHandler;
+    const invokedFunctionArn = (
+      context as { readonly invokedFunctionArn?: string }
+    ).invokedFunctionArn;
+    const resolved = (await getRuntime(
+      invokedFunctionArn,
+    )) as unknown as StreamingResponseHandler;
     await resolved(event, responseStream, context);
   },
 );

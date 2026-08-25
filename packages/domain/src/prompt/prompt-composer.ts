@@ -53,6 +53,7 @@ export interface ComposedPrompt {
 
 export const OUTPUT_SCHEMA = {
   type: "object",
+  additionalProperties: false,
   properties: {
     draft: {
       type: "string",
@@ -64,6 +65,7 @@ export const OUTPUT_SCHEMA = {
         "List of grounded factual claims in the draft with their supporting assertion IDs.",
       items: {
         type: "object",
+        additionalProperties: false,
         properties: {
           id: { type: "string" },
           text: { type: "string" },
@@ -164,7 +166,14 @@ export function composePrompt(input: ComposePromptInput): ComposedPrompt {
     }
 
     case "paraphrase": {
-      userTurnParts.push(`Source text to paraphrase:\n${input.sourceText ?? ""}`);
+      const assertions = [...(input.assertions ?? [])].sort((a, b) =>
+        a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+      );
+      if (assertions.length > 0) {
+        userTurnParts.push(
+          `Source Assertions (immutable reviewer text):\n${assertions.map((a) => `- [${a.id}] ${a.proposition ?? a.text ?? ""}`).join("\n")}`,
+        );
+      }
       break;
     }
 

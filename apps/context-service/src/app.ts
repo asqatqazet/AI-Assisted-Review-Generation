@@ -48,6 +48,8 @@ export function createInMemoryContextStore(): ContextServiceStore {
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 2,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: [],
       enabledReviewFormatVersionIds: ["format-concise-v1"],
       enabledCommands: ["generate", "reformat"],

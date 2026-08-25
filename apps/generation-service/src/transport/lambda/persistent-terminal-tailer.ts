@@ -1,22 +1,22 @@
 import { PrivateGenerationTerminalEventDtoSchema } from "@review/contracts/generation";
-import type { PostgresGenerationTerminalStore } from "@review/db/execution-plane";
 
 import type {
   GenerationReceiptSigner,
+  GenerationTerminalStore,
   PaidWorkGenerationHandlerOptions,
 } from "./paid-work-handler.js";
 
-type DatabaseStore = Pick<PostgresGenerationTerminalStore, "read">;
+type TerminalStore = Pick<GenerationTerminalStore, "recover">;
 type ReceiptSigner = Pick<GenerationReceiptSigner, "signTerminal">;
 
 export function createPersistentTerminalTailer({
-  databaseStore,
+  terminalStore,
   receiptSigner,
   wait = async (milliseconds) =>
     await new Promise<void>((resolve) => setTimeout(resolve, milliseconds)),
   maxPolls = 650,
 }: {
-  readonly databaseStore: DatabaseStore;
+  readonly terminalStore: TerminalStore;
   readonly receiptSigner: ReceiptSigner;
   readonly wait?: (milliseconds: number) => Promise<void>;
   readonly maxPolls?: number;
@@ -24,17 +24,19 @@ export function createPersistentTerminalTailer({
   if (!Number.isInteger(maxPolls) || maxPolls < 1) {
     throw new Error("Terminal tail poll limit must be positive");
   }
-  return async ({ leaseId, permitJti, workload }) => {
+  return async ({ attemptId, leaseId, permitJti, workload }) => {
     for (let poll = 0; poll < maxPolls; poll += 1) {
-      const terminal = await databaseStore.read({
-        tenantId: workload.bindings.tenantId,
-        locationId: workload.bindings.locationId,
-        reviewSessionId: workload.bindings.reviewSessionId,
-        generationBatchId: workload.bindings.generationBatchId,
-        generationId: workload.bindings.generationId,
+      const recovered = await terminalStore.recover({
+        attemptId,
+        leaseId,
         permitJti,
+        workload,
       });
-      if (terminal !== null) {
+      if (recovered.state === "indeterminate") {
+        throw new Error("PROVIDER_RESULT_INDETERMINATE");
+      }
+      if (recovered.state === "completed") {
+        const terminal = recovered.terminal;
         if ("rejection" in terminal) {
           const terminalReceipt = await receiptSigner.signTerminal({
             leaseId,

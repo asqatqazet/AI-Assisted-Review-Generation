@@ -66,6 +66,8 @@ const snapshotInput: BuildConfigSnapshotInput = {
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 2,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: [],
       enabledReviewFormatVersionIds: ["format-concise-v1"],
       enabledCommands: ["generate", "reformat"],
@@ -247,7 +249,7 @@ describe("TS-16 Generation Service Execution Plane", () => {
     expect(result2.generationId).toBe(result1.generationId);
   });
 
-  it("stores sourceGenerationId on derived actions to maintain lineage chain", async () => {
+  it("fails closed instead of grounding a derived Action in caller-supplied Draft text", async () => {
     const fakeGateway = new FakeModelGateway([
       {
         outcome: "success",
@@ -302,8 +304,13 @@ describe("TS-16 Generation Service Execution Plane", () => {
       body: JSON.stringify(requestBody),
     });
 
-    const result = await res.json();
-    expect(result.sourceGenerationId).toBe("gen-parent-123");
+    const responseText = await res.text();
+    expect(res.status).toBe(422);
+    expect(JSON.parse(responseText)).toEqual({
+      status: "failed",
+      code: "ACTION_SOURCE_EVIDENCE_NOT_RESOLVED",
+    });
+    expect(responseText).not.toContain("Parent draft");
   });
 
   it("never returns candidate bytes when the grounding guard rejects them", async () => {

@@ -1,8 +1,13 @@
 import type { ConsoleStyleDetailDto } from "@review/contracts/console";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import type { ConsoleClient } from "../console-client.js";
+import {
+  ConfigurationDraftPanel,
+  tenantConfigurationScope,
+  useConfigurationDraftController,
+} from "../configuration-draft-panel.js";
 import { useConsoleCommand, useConsoleView } from "../console-queries.js";
 import {
   DataTable,
@@ -24,25 +29,14 @@ export function ContextView({
   readonly client: ConsoleClient;
   readonly scopeController: ConsoleScopeController;
 }): React.JSX.Element {
+  const configurationScope = tenantConfigurationScope(scopeController.scope);
   const context = useConsoleView({
     client,
     view: "context",
-    scope: scopeController.scope,
+    scope: configurationScope,
   });
-  const command = useConsoleCommand({ client, scope: scopeController.scope });
-  const [draft, setDraft] = useState<{ context: string; bannedTerms: string } | null>(
-    null,
-  );
 
   const current = context.data?.current ?? null;
-  useEffect(() => {
-    if (current !== null && draft === null) {
-      setDraft({
-        context: current.context,
-        bannedTerms: current.bannedTerms.join(", "),
-      });
-    }
-  }, [current, draft]);
 
   return (
     <>
@@ -60,62 +54,22 @@ export function ContextView({
       {context.data === undefined ? null : (
         <>
           <p className={styles.emptyCopy}>
-            Saving publishes a new immutable version. Existing Generations keep
-            resolving the version they were grounded on.
+            Audit history only. Business Context versions are not part of the
+            Effective Configuration Snapshot used by live Generation, so this
+            screen does not offer a misleading publish control.
           </p>
-          <form
-            className={styles.form}
-            onSubmit={(event) => {
-              event.preventDefault();
-              command.mutate({
-                command: "publish-context-version",
-                context: draft?.context ?? "",
-                bannedTerms: (draft?.bannedTerms ?? "")
-                  .split(",")
-                  .map((term) => term.trim())
-                  .filter((term) => term.length > 0),
-              });
-            }}
-          >
-            <label className={styles.field}>
-              Business context
-              <textarea
-                value={draft?.context ?? ""}
-                disabled={!context.data.editable}
-                onChange={(event) =>
-                  setDraft((state) => ({
-                    context: event.target.value,
-                    bannedTerms: state?.bannedTerms ?? "",
-                  }))
-                }
-              />
-            </label>
-            <label className={styles.field}>
-              Banned terms (comma separated)
-              <input
-                value={draft?.bannedTerms ?? ""}
-                disabled={!context.data.editable}
-                onChange={(event) =>
-                  setDraft((state) => ({
-                    context: state?.context ?? "",
-                    bannedTerms: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            {context.data.editable ? (
-              <p className={styles.buttonRow}>
-                <button
-                  className={styles.buttonPrimary}
-                  type="submit"
-                  disabled={command.isPending}
-                >
-                  Publish new version
-                </button>
-              </p>
-            ) : null}
-            <RejectionNotice error={command.error} />
-          </form>
+          {current === null ? null : (
+            <dl className={styles.detailList}>
+              <dt>Recorded context</dt>
+              <dd>{current.context || "—"}</dd>
+              <dt>Recorded banned terms</dt>
+              <dd>
+                {current.bannedTerms.length === 0
+                  ? "—"
+                  : current.bannedTerms.join(", ")}
+              </dd>
+            </dl>
+          )}
 
           <h2 className={styles.sectionLabel}>Published versions</h2>
           <DataTable
@@ -151,21 +105,35 @@ export function KeywordsView({
   readonly client: ConsoleClient;
   readonly scopeController: ConsoleScopeController;
 }): React.JSX.Element {
+  const configurationScope = tenantConfigurationScope(scopeController.scope);
   const keywords = useConsoleView({
     client,
     view: "keywords",
-    scope: scopeController.scope,
+    scope: configurationScope,
   });
-  const command = useConsoleCommand({ client, scope: scopeController.scope });
+  const configuration = useConsoleView({
+    client,
+    view: "tenant-settings",
+    scope: configurationScope,
+  });
+  const draftController = useConfigurationDraftController({
+    client,
+    scope: configurationScope,
+    configuration: configuration.data?.configuration,
+  });
   const [draft, setDraft] = useState({
     label: "",
     categoryKey: "",
     polarity: "positive" as "positive" | "neutral" | "negative",
-    ownerScope: "tenant" as "tenant" | "location",
   });
+  const [mutationId, setMutationId] = useState(() =>
+    globalThis.crypto.randomUUID(),
+  );
 
   const categories = keywords.data?.categories ?? [];
   const categoryKey = draft.categoryKey || (categories[0]?.key ?? "");
+  const editable =
+    keywords.data?.editable === true && configuration.data?.editable === true;
 
   return (
     <>
@@ -175,22 +143,33 @@ export function KeywordsView({
         meta="Categories and options are account data, not application code"
       />
       <QueryState query={keywords} label="fact options" />
+      <QueryState query={configuration} label="the Tenant configuration Draft" />
 
       {keywords.data === undefined ? null : (
         <>
-          {keywords.data.editable ? (
+          {editable ? (
             <form
               className={styles.form}
               onSubmit={(event) => {
                 event.preventDefault();
-                command.mutate({
-                  command: "create-keyword",
-                  label: draft.label,
-                  categoryKey,
-                  polarity: draft.polarity,
-                  ownerScope: draft.ownerScope,
-                });
-                setDraft((current) => ({ ...current, label: "" }));
+                draftController.stage(
+                  [
+                    {
+                      operation: "create-fact-option",
+                      mutationId,
+                      label: draft.label,
+                      categoryKey,
+                      polarity: draft.polarity,
+                      ownerScope: "tenant",
+                    },
+                  ],
+                  {
+                    onSuccess: () => {
+                      setDraft((current) => ({ ...current, label: "" }));
+                      setMutationId(globalThis.crypto.randomUUID());
+                    },
+                  },
+                );
               }}
             >
               <div className={styles.formRow}>
@@ -242,35 +221,15 @@ export function KeywordsView({
                     <option value="negative">negative</option>
                   </select>
                 </label>
-                <label className={styles.field}>
-                  Owned by
-                  <select
-                    value={draft.ownerScope}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        ownerScope: event.target.value as "tenant" | "location",
-                      }))
-                    }
-                  >
-                    <option value="tenant">Account</option>
-                    <option
-                      value="location"
-                      disabled={scopeController.scope.locationId === null}
-                    >
-                      This Location
-                    </option>
-                  </select>
-                </label>
+                <span className={styles.settingSource}>Owned by this Tenant</span>
                 <button
                   className={styles.buttonPrimary}
                   type="submit"
-                  disabled={command.isPending}
+                  disabled={draftController.isPending}
                 >
                   Add fact option
                 </button>
               </div>
-              <RejectionNotice error={command.error} />
             </form>
           ) : null}
 
@@ -292,22 +251,24 @@ export function KeywordsView({
                 key: "order",
                 header: "Order",
                 render: (row) =>
-                  keywords.data.editable ? (
+                  editable ? (
                     <ReorderControls
                       index={keywords.data.keywords.indexOf(row)}
                       total={keywords.data.keywords.length}
-                      disabled={command.isPending}
+                      disabled={draftController.isPending}
                       onMove={(from, to) =>
-                        command.mutate({
-                          command: "reorder-keywords",
-                          orderedKeywordIds: moveItem(
-                            keywords.data.keywords.map(
-                              (keyword) => keyword.id,
+                        draftController.stage([
+                          {
+                            operation: "reorder-fact-options",
+                            orderedKeywordIds: moveItem(
+                              keywords.data.keywords.map(
+                                (keyword) => keyword.id,
+                              ),
+                              from,
+                              to,
                             ),
-                            from,
-                            to,
-                          ),
-                        })
+                          },
+                        ])
                       }
                     />
                   ) : (
@@ -318,19 +279,21 @@ export function KeywordsView({
                 key: "active",
                 header: "Active",
                 render: (row) =>
-                  keywords.data.editable ? (
+                  editable ? (
                     <button
                       type="button"
                       className={styles.button}
-                      disabled={command.isPending}
+                      disabled={draftController.isPending}
                       onClick={() =>
-                        command.mutate({
-                          command: "update-keyword",
-                          keywordId: row.id,
-                          label: row.label,
-                          polarity: row.polarity,
-                          active: !row.active,
-                        })
+                        draftController.stage([
+                          {
+                            operation: "update-fact-option",
+                            keywordId: row.id,
+                            label: row.label,
+                            polarity: row.polarity,
+                            active: !row.active,
+                          },
+                        ])
                       }
                     >
                       {row.active ? "Deactivate" : "Activate"}
@@ -345,16 +308,18 @@ export function KeywordsView({
                 key: "delete",
                 header: "",
                 render: (row) =>
-                  keywords.data.editable && row.deletable ? (
+                  editable && row.deletable ? (
                     <button
                       type="button"
                       className={styles.button}
-                      disabled={command.isPending}
+                      disabled={draftController.isPending}
                       onClick={() =>
-                        command.mutate({
-                          command: "delete-keyword",
-                          keywordId: row.id,
-                        })
+                        draftController.stage([
+                          {
+                            operation: "delete-fact-option",
+                            keywordId: row.id,
+                          },
+                        ])
                       }
                     >
                       Delete
@@ -363,6 +328,14 @@ export function KeywordsView({
               },
             ]}
           />
+          {configuration.data === undefined ? null : (
+            <ConfigurationDraftPanel
+              configuration={configuration.data.configuration}
+              controller={draftController}
+              editable={editable}
+              scopeKind="tenant"
+            />
+          )}
         </>
       )}
     </>
@@ -376,12 +349,24 @@ export function StylesView({
   readonly client: ConsoleClient;
   readonly scopeController: ConsoleScopeController;
 }): React.JSX.Element {
+  const configurationScope = tenantConfigurationScope(scopeController.scope);
   const stylesView = useConsoleView({
     client,
     view: "styles",
-    scope: scopeController.scope,
+    scope: configurationScope,
   });
-  const command = useConsoleCommand({ client, scope: scopeController.scope });
+  const configuration = useConsoleView({
+    client,
+    view: "tenant-settings",
+    scope: configurationScope,
+  });
+  const draftController = useConfigurationDraftController({
+    client,
+    scope: configurationScope,
+    configuration: configuration.data?.configuration,
+  });
+  const editable =
+    stylesView.data?.editable === true && configuration.data?.editable === true;
 
   return (
     <>
@@ -395,15 +380,16 @@ export function StylesView({
         }
       />
       <QueryState query={stylesView} label="review formats" />
-      <RejectionNotice error={command.error} />
+      <QueryState query={configuration} label="the Tenant configuration Draft" />
 
       {stylesView.data === undefined ? null : (
-        <DataTable
-          caption="Platform review formats available to this account"
-          empty="The platform catalogue is empty."
-          rows={stylesView.data.styles}
-          rowKey={(row) => row.id}
-          columns={[
+        <>
+          <DataTable
+            caption="Platform review formats available to this account"
+            empty="The platform catalogue is empty."
+            rows={stylesView.data.styles}
+            rowKey={(row) => row.id}
+            columns={[
             {
               key: "name",
               header: "Format",
@@ -429,20 +415,22 @@ export function StylesView({
               key: "order",
               header: "Order",
               render: (row) =>
-                stylesView.data.editable ? (
+                editable ? (
                   <ReorderControls
                     index={stylesView.data.styles.indexOf(row)}
                     total={stylesView.data.styles.length}
-                    disabled={command.isPending}
+                    disabled={draftController.isPending}
                     onMove={(from, to) =>
-                      command.mutate({
-                        command: "reorder-styles",
-                        orderedStyleIds: moveItem(
-                          stylesView.data.styles.map((style) => style.id),
-                          from,
-                          to,
-                        ),
-                      })
+                      draftController.stage([
+                        {
+                          operation: "reorder-review-formats",
+                          orderedStyleIds: moveItem(
+                            stylesView.data.styles.map((style) => style.id),
+                            from,
+                            to,
+                          ),
+                        },
+                      ])
                     }
                   />
                 ) : (
@@ -463,20 +451,22 @@ export function StylesView({
                   <span className={styles.settingSource}>
                     {row.incompatibility}
                   </span>
-                ) : stylesView.data.editable ? (
+                ) : editable ? (
                   <button
                     type="button"
                     className={styles.button}
-                    disabled={command.isPending}
+                    disabled={draftController.isPending}
                     onClick={() =>
-                      command.mutate({
-                        command: "set-style-enablement",
-                        styleId: row.id,
-                        enabled: !row.enabled,
-                        enabledActions: row.enabled
-                          ? []
-                          : [...row.supportedActions],
-                      })
+                      draftController.stage([
+                        {
+                          operation: "set-review-format-enablement",
+                          styleId: row.id,
+                          enabled: !row.enabled,
+                          enabledActions: row.enabled
+                            ? []
+                            : [...row.supportedActions],
+                        },
+                      ])
                     }
                   >
                     {row.enabled ? "Disable" : "Enable"}
@@ -487,8 +477,17 @@ export function StylesView({
                   "no"
                 ),
             },
-          ]}
-        />
+            ]}
+          />
+          {configuration.data === undefined ? null : (
+            <ConfigurationDraftPanel
+              configuration={configuration.data.configuration}
+              controller={draftController}
+              editable={editable}
+              scopeKind="tenant"
+            />
+          )}
+        </>
       )}
     </>
   );
@@ -641,12 +640,24 @@ export function ActionsView({
   readonly client: ConsoleClient;
   readonly scopeController: ConsoleScopeController;
 }): React.JSX.Element {
+  const configurationScope = tenantConfigurationScope(scopeController.scope);
   const actions = useConsoleView({
     client,
     view: "actions",
-    scope: scopeController.scope,
+    scope: configurationScope,
   });
-  const command = useConsoleCommand({ client, scope: scopeController.scope });
+  const configuration = useConsoleView({
+    client,
+    view: "tenant-settings",
+    scope: configurationScope,
+  });
+  const draftController = useConfigurationDraftController({
+    client,
+    scope: configurationScope,
+    configuration: configuration.data?.configuration,
+  });
+  const editable =
+    actions.data?.editable === true && configuration.data?.editable === true;
 
   return (
     <>
@@ -656,17 +667,18 @@ export function ActionsView({
         meta="A disabled Action disappears from every customer path"
       />
       <QueryState query={actions} label="drafting actions" />
-      <RejectionNotice error={command.error} />
+      <QueryState query={configuration} label="the Tenant configuration Draft" />
 
       {actions.data === undefined ? null : actions.data.actions.length === 0 ? (
         <EmptyState>No Action is configured for this account.</EmptyState>
       ) : (
-        <DataTable
-          caption="Drafting Actions offered to reviewers"
-          empty="No Action is configured for this account."
-          rows={actions.data.actions}
-          rowKey={(row) => row.key}
-          columns={[
+        <>
+          <DataTable
+            caption="Drafting Actions offered to reviewers"
+            empty="No Action is configured for this account."
+            rows={actions.data.actions}
+            rowKey={(row) => row.key}
+            columns={[
             { key: "label", header: "Action", rowHeader: true, render: (row) => row.label },
             {
               key: "inputs",
@@ -683,21 +695,23 @@ export function ActionsView({
               key: "enabled",
               header: "Enabled",
               render: (row) =>
-                actions.data.editable ? (
+                editable ? (
                   <button
                     type="button"
                     className={styles.button}
                     disabled={
-                      command.isPending ||
+                      draftController.isPending ||
                       (row.enabled && row.disableBlockedReason !== null)
                     }
                     title={row.disableBlockedReason ?? undefined}
                     onClick={() =>
-                      command.mutate({
-                        command: "set-action-enablement",
-                        action: row.key,
-                        enabled: !row.enabled,
-                      })
+                      draftController.stage([
+                        {
+                          operation: "set-action-enablement",
+                          action: row.key,
+                          enabled: !row.enabled,
+                        },
+                      ])
                     }
                   >
                     {row.enabled ? "Disable" : "Enable"}
@@ -708,8 +722,17 @@ export function ActionsView({
                   "no"
                 ),
             },
-          ]}
-        />
+            ]}
+          />
+          {configuration.data === undefined ? null : (
+            <ConfigurationDraftPanel
+              configuration={configuration.data.configuration}
+              controller={draftController}
+              editable={editable}
+              scopeKind="tenant"
+            />
+          )}
+        </>
       )}
     </>
   );

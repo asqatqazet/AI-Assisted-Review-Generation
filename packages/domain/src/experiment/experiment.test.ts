@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   assignExperimentVariant,
+  canQualifyPromptVersionAsCandidate,
   canPromoteToExperiment,
   derivePromptVersionHash,
   transitionPromptVersionStatus,
@@ -41,6 +42,36 @@ describe("TS-18 Prompt Versioning & Experiments", () => {
     expect(hash3).not.toBe(hash1);
   });
 
+  it.each([
+    {
+      name: "an ASCII Prompt",
+      input: {
+        key: "review.generate",
+        commandKind: "generate" as const,
+        body: "Draft an authentic review.",
+        variables: ["tone", "locale"],
+      },
+      expected:
+        "sha256:deffc5649f7ab05cd9b87db254ce61a577786bf702bd1f33af94bf07b8c985ec",
+    },
+    {
+      name: "a non-ASCII Prompt",
+      input: {
+        key: "review.emoji",
+        commandKind: "generate" as const,
+        body: "Write about café 😊.",
+        variables: ["locale", "tone"],
+      },
+      expected:
+        "sha256:6f9e388d0621dce20987cb5909fac6f1c4aeac344a5150e91edc3a0fb43c4780",
+    },
+  ])("emits the canonical SHA-256 digest for $name", ({ input, expected }) => {
+    const hash = derivePromptVersionHash(input);
+
+    expect(hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(hash).toBe(expected);
+  });
+
   it("enforces prompt version status lifecycle transitions", () => {
     const draft: PromptVersionRecord = {
       hash: "sha256:111",
@@ -65,6 +96,11 @@ describe("TS-18 Prompt Versioning & Experiments", () => {
 
     // Illegal transitions: draft -> in-experiment directly
     expect(() => transitionPromptVersionStatus(draft, "in-experiment")).toThrow(
+      /Illegal status transition/i,
+    );
+
+    // Candidate is an append-only decision for immutable Prompt content.
+    expect(() => transitionPromptVersionStatus(candidate, "draft")).toThrow(
       /Illegal status transition/i,
     );
 
@@ -101,13 +137,58 @@ describe("TS-18 Prompt Versioning & Experiments", () => {
     );
   });
 
+  it("requires at least two distinct Prompt Versions with positive whole weights", () => {
+    const base: ExperimentDefinition = {
+      id: "exp-1",
+      tenantId: "tenant-a",
+      action: "generate",
+      status: "draft",
+      variants: [
+        { variantKey: "control", promptVersionHash: "sha256:111", weightPct: 50 },
+        { variantKey: "challenger", promptVersionHash: "sha256:222", weightPct: 50 },
+      ],
+    };
+
+    expect(() =>
+      validateExperiment({
+        ...base,
+        variants: [
+          { variantKey: "control", promptVersionHash: "sha256:111", weightPct: 100 },
+        ],
+      }),
+    ).toThrowError(/at least two/i);
+
+    expect(() =>
+      validateExperiment({
+        ...base,
+        variants: [
+          { variantKey: "control", promptVersionHash: "sha256:111", weightPct: 50 },
+          { variantKey: "challenger", promptVersionHash: "sha256:111", weightPct: 50 },
+        ],
+      }),
+    ).toThrowError(/distinct Prompt Versions/i);
+
+    expect(() =>
+      validateExperiment({
+        ...base,
+        variants: [
+          { variantKey: "control", promptVersionHash: "sha256:111", weightPct: -10 },
+          { variantKey: "challenger", promptVersionHash: "sha256:222", weightPct: 110 },
+        ],
+      }),
+    ).toThrowError(/positive whole percentage/i);
+  });
+
   it("enforces promotion gate requiring 100% grounding pass rate", () => {
-    const prompt: PromptVersionRecord = {
-      hash: "sha256:111",
+    const promptInput = {
       key: "review.generate",
-      commandKind: "generate",
+      commandKind: "generate" as const,
       body: "Body",
       variables: [],
+    };
+    const prompt: PromptVersionRecord = {
+      ...promptInput,
+      hash: derivePromptVersionHash(promptInput),
       status: "candidate",
     };
 
@@ -120,6 +201,76 @@ describe("TS-18 Prompt Versioning & Experiments", () => {
     expect(() =>
       canPromoteToExperiment(prompt, { passRate: 0.95, evaluatedCases: 20 }),
     ).toThrowError(/grounding pass rate of 100%/i);
+  });
+
+  it("qualifies a canonical evaluated Draft before it can be published or experimented", () => {
+    const promptInput = {
+      key: "review.generate",
+      commandKind: "generate" as const,
+      body: "Body",
+      variables: [] as const,
+    };
+    const draft: PromptVersionRecord = {
+      ...promptInput,
+      hash: derivePromptVersionHash(promptInput),
+      status: "draft",
+    };
+
+    expect(
+      canQualifyPromptVersionAsCandidate(draft, {
+        passRate: 1,
+        evaluatedCases: 20,
+      }),
+    ).toBe(true);
+    expect(() =>
+      canQualifyPromptVersionAsCandidate(
+        { ...draft, status: "candidate" },
+        { passRate: 1, evaluatedCases: 20 },
+      ),
+    ).toThrowError(/Draft/i);
+  });
+
+  it("rejects promotion without an evaluated case or from a non-candidate lifecycle state", () => {
+    const promptInput = {
+      key: "review.generate",
+      commandKind: "generate" as const,
+      body: "Body",
+      variables: [] as const,
+    };
+    const candidate: PromptVersionRecord = {
+      ...promptInput,
+      hash: derivePromptVersionHash(promptInput),
+      status: "candidate",
+    };
+
+    expect(() =>
+      canPromoteToExperiment(candidate, {
+        passRate: 1,
+        evaluatedCases: 0,
+      }),
+    ).toThrowError(/at least one evaluated case/i);
+
+    expect(() =>
+      canPromoteToExperiment(
+        { ...candidate, status: "draft" },
+        { passRate: 1, evaluatedCases: 22 },
+      ),
+    ).toThrowError(/candidate/i);
+  });
+
+  it("rejects promotion when the stored Prompt hash does not identify its content", () => {
+    const prompt: PromptVersionRecord = {
+      key: "review.generate",
+      commandKind: "generate",
+      body: "Body",
+      variables: [],
+      hash: `sha256:${"0".repeat(64)}`,
+      status: "candidate",
+    };
+
+    expect(() =>
+      canPromoteToExperiment(prompt, { passRate: 1, evaluatedCases: 22 }),
+    ).toThrowError(/content hash/i);
   });
 
   it("deterministically assigns experiment variants using session id bucketing", () => {

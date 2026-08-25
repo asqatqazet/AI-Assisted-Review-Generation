@@ -73,6 +73,8 @@ const makeSnapshotInput = (): BuildConfigSnapshotInput => ({
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 2,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: [],
       enabledReviewFormatVersionIds: [],
       enabledCommands: ["generate"],
@@ -171,7 +173,7 @@ describe("TS-08 Prompt Composition", () => {
     expect(userMessage.content).toContain("Appointment started right on time.");
   });
 
-  it("composes paraphrase prompt with source text", () => {
+  it("composes Paraphrase from immutable source Assertions, never editable text", () => {
     const input: ComposePromptInput = {
       snapshot: defaultSnapshot,
       style: defaultStyle,
@@ -184,7 +186,13 @@ describe("TS-08 Prompt Composition", () => {
         variables: ["locale"],
       },
       action: "paraphrase",
-      sourceText: "Really great doctor and clean place overall.",
+      assertions: [
+        {
+          id: "assertion-source-1",
+          proposition: "Really great doctor and clean place overall.",
+        },
+      ],
+      sourceText: "Parking was free (typed after Generation).",
     };
 
     const composed = composePrompt(input);
@@ -192,6 +200,7 @@ describe("TS-08 Prompt Composition", () => {
     expect(userMessage.content).toContain(
       "Really great doctor and clean place overall.",
     );
+    expect(userMessage.content).not.toContain("Parking was free");
   });
 
   it("places ceiling constraint in the system message for reformat action", () => {
@@ -302,12 +311,14 @@ describe("TS-08 Prompt Composition", () => {
     const composed = composePrompt(input);
     expect(composed.outputSchema).toMatchObject({
       type: "object",
+      additionalProperties: false,
       properties: {
         draft: { type: "string" },
         claims: {
           type: "array",
           items: {
             type: "object",
+            additionalProperties: false,
             properties: {
               id: { type: "string" },
               text: { type: "string" },

@@ -128,12 +128,16 @@ test("the review stages keep the responsive Maue layout", async ({ page }) => {
     const rect = textarea.getBoundingClientRect();
     return {
       borderColor: style.borderColor,
+      hairlineToken: getComputedStyle(document.documentElement)
+        .getPropertyValue("--hairline")
+        .trim(),
       minHeight: rect.height,
       width: rect.width,
     };
   });
   expect(resultRendering).toMatchObject({
-    borderColor: "rgb(217, 217, 221)",
+    borderColor: "rgb(138, 138, 147)",
+    hairlineToken: "#8a8a93",
   });
   expect(resultRendering.minHeight).toBeGreaterThanOrEqual(120);
   expect(resultRendering.width).toBeGreaterThanOrEqual(470);
@@ -376,4 +380,46 @@ test("a reviewer receives a grounded Draft from the local FakeProvider compositi
   await expect(page.getByLabel("Ihr Entwurf — frei bearbeitbar")).toHaveValue(
     "Frischer Fisch. Gut gewürzt.",
   );
+});
+
+test("the local composition persists an edited Draft before recording completion", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://127.0.0.1:5173",
+  });
+  await page.goto("/s/speicher-neun/hafencity");
+  await page.getByRole("button", { name: "5, Sehr gut" }).click();
+  await page
+    .getByRole("button", { name: "Auswählen, was erwähnt wird" })
+    .click();
+  await page.getByLabel("Frischer Fisch").press("Space");
+  await page.getByLabel("Gut gewürzt").press("Space");
+  await page.getByRole("button", { name: "Format wählen" }).click();
+  await page.getByLabel("Kurzer Text").press("Space");
+  await page.getByRole("button", { name: "Entwurf schreiben" }).click();
+
+  const editedText = "Frischer Fisch. Gut gewürzt. Sehr gern wieder.";
+  const revisionResponse = page.waitForResponse((response) =>
+    /\/api\/v1\/review-sessions\/[A-Za-z0-9_-]+\/draft-revisions$/u.test(
+      new URL(response.url()).pathname,
+    ),
+  );
+  await page.getByLabel("Ihr Entwurf — frei bearbeitbar").fill(editedText);
+  await expect(page.getByText("Änderungen gespeichert.")).toBeVisible();
+  expect((await revisionResponse).ok()).toBe(true);
+
+  const dispositionResponse = page.waitForResponse((response) =>
+    /\/api\/v1\/review-sessions\/[A-Za-z0-9_-]+\/dispositions$/u.test(
+      new URL(response.url()).pathname,
+    ),
+  );
+  await page.getByRole("button", { name: "Kopieren" }).click();
+  expect((await dispositionResponse).ok()).toBe(true);
+  await expect(
+    page.getByRole("heading", { name: "Ihre Bewertung ist bereit" }),
+  ).toBeVisible();
+  await expect.poll(async () => await page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(editedText);
 });

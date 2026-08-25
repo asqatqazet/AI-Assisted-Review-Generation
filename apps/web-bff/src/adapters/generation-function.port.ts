@@ -12,16 +12,67 @@ import {
   RecordReviewerDispositionResultDtoSchema,
   type GenerationFunctionInvocationDto,
 } from "@review/contracts/generation";
+import {
+  ConsoleBenchInvocationDtoSchema,
+  ConsoleBenchInvocationResultDtoSchema,
+  type ConsoleBenchInvocationDto,
+} from "@review/contracts/console";
+import {
+  ConsoleReadInvocationDtoSchema,
+  ConsoleReadInvocationResultDtoSchema,
+  type ConsoleReadInvocationDto,
+} from "@review/contracts/console-read";
 
 import type { ReviewerGenerationExecutionPort } from "../ports/reviewer-generation.port.js";
 import type { ReviewerDispositionExecutionPort } from "../ports/reviewer-disposition.port.js";
 import type { ReconciliationGenerationPort } from "../reconciliation.js";
+import type {
+  ConsoleBenchExecutionPort,
+  ConsoleExecutionReadPort,
+} from "../ports/console-execution.port.js";
 
 export interface GenerationFunctionInvoker {
   invoke(
-    request: GenerationFunctionInvocationDto,
+    request:
+      | GenerationFunctionInvocationDto
+      | ConsoleReadInvocationDto
+      | ConsoleBenchInvocationDto,
     options?: { readonly signal?: AbortSignal | undefined },
   ): Promise<unknown>;
+}
+
+export function createInvokedConsoleBenchExecutionPort(
+  invoker: GenerationFunctionInvoker,
+): ConsoleBenchExecutionPort {
+  return {
+    async execute(input) {
+      const request = ConsoleBenchInvocationDtoSchema.parse({
+        operation: "console-bench",
+        input,
+      });
+      const response = ConsoleBenchInvocationResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return response.result;
+    },
+  };
+}
+
+export function createInvokedConsoleExecutionReadPort(
+  invoker: GenerationFunctionInvoker,
+): ConsoleExecutionReadPort {
+  return {
+    async read(input) {
+      const request = ConsoleReadInvocationDtoSchema.parse({
+        operation: "console-read",
+        input,
+      });
+      const response = ConsoleReadInvocationResultDtoSchema.parse(
+        await invoker.invoke(request),
+      );
+      return response.result;
+    },
+  };
 }
 
 const wait = async (milliseconds: number, signal: AbortSignal): Promise<void> =>
@@ -129,7 +180,8 @@ export function createInvokedReconciliationGenerationPort(
     async status(input) {
       const request = GenerationStatusInvocationDtoSchema.parse({
         operation: "status",
-        scope: input.scope,
+        permitJti: input.permitJti,
+        workload: input.workload,
       });
       return GenerationStatusResultDtoSchema.parse(
         await invoker.invoke(

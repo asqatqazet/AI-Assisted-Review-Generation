@@ -174,7 +174,8 @@ function sha256Pure(message: string): string {
     h7 = ((h7 + h) >>> 0) & 0xffffffff;
   }
 
-  const toHex = (n: number): string => n.toString(16).padStart(8, "0");
+  const toHex = (n: number): string =>
+    (n >>> 0).toString(16).padStart(8, "0");
   return (
     toHex(h0) +
     toHex(h1) +
@@ -206,7 +207,7 @@ const ALLOWED_TRANSITIONS: Record<
   ReadonlySet<PromptVersionStatus>
 > = {
   draft: new Set(["candidate"]),
-  candidate: new Set(["in-experiment", "draft", "retired"]),
+  candidate: new Set(["in-experiment", "retired"]),
   "in-experiment": new Set(["candidate", "retired"]),
   retired: new Set([]),
 };
@@ -233,8 +234,20 @@ export function transitionPromptVersionStatus(
 }
 
 export function validateExperiment(exp: ExperimentDefinition): void {
-  if (exp.variants.length === 0) {
-    throw new Error("Experiment must have at least one variant.");
+  if (exp.variants.length < 2) {
+    throw new Error("Experiment must have at least two variants.");
+  }
+
+  for (const variant of exp.variants) {
+    if (
+      !Number.isSafeInteger(variant.weightPct) ||
+      variant.weightPct <= 0 ||
+      variant.weightPct >= 100
+    ) {
+      throw new Error(
+        "Every Experiment variant must have a positive whole percentage below 100%.",
+      );
+    }
   }
 
   const totalWeight = exp.variants.reduce((acc, v) => acc + v.weightPct, 0);
@@ -245,23 +258,83 @@ export function validateExperiment(exp: ExperimentDefinition): void {
   }
 
   const seenKeys = new Set<string>();
+  const seenPromptVersions = new Set<string>();
   for (const v of exp.variants) {
     if (seenKeys.has(v.variantKey)) {
       throw new Error(`Duplicate variantKey '${v.variantKey}' in experiment.`);
     }
+    if (seenPromptVersions.has(v.promptVersionHash)) {
+      throw new Error(
+        "Experiment variants must reference distinct Prompt Versions.",
+      );
+    }
     seenKeys.add(v.variantKey);
+    seenPromptVersions.add(v.promptVersionHash);
   }
+}
+
+export function canQualifyPromptVersionAsCandidate(
+  prompt: PromptVersionRecord,
+  evalResult: EvaluationResult,
+): boolean {
+  if (prompt.status !== "draft") {
+    throw new Error(
+      `Cannot qualify Prompt Version '${prompt.hash}' from '${prompt.status}': only a Draft may become a Candidate.`,
+    );
+  }
+
+  const canonicalHash = derivePromptVersionHash(prompt);
+  if (prompt.hash !== canonicalHash) {
+    throw new Error(
+      `Cannot qualify Prompt Version '${prompt.hash}': its content hash does not identify the supplied Prompt content.`,
+    );
+  }
+
+  if (
+    !Number.isSafeInteger(evalResult.evaluatedCases) ||
+    evalResult.evaluatedCases < 1
+  ) {
+    throw new Error(
+      `Cannot qualify Prompt Version '${prompt.hash}': at least one evaluated case is required.`,
+    );
+  }
+
+  if (!Number.isFinite(evalResult.passRate) || evalResult.passRate !== 1) {
+    throw new Error(
+      `Cannot qualify Prompt Version '${prompt.hash}': requires evaluation grounding pass rate of 100%, but got ${(evalResult.passRate * 100).toFixed(1)}%.`,
+    );
+  }
+
+  return true;
 }
 
 export function canPromoteToExperiment(
   prompt: PromptVersionRecord,
   evalResult: EvaluationResult,
 ): boolean {
-  if (prompt.status === "retired") {
-    throw new Error("Cannot promote retired prompt version to experiment.");
+  if (prompt.status !== "candidate") {
+    throw new Error(
+      `Cannot promote Prompt Version '${prompt.hash}' from '${prompt.status}': only a candidate may enter an experiment.`,
+    );
   }
 
-  if (evalResult.passRate < 1.0) {
+  const canonicalHash = derivePromptVersionHash(prompt);
+  if (prompt.hash !== canonicalHash) {
+    throw new Error(
+      `Cannot promote Prompt Version '${prompt.hash}': its content hash does not identify the supplied Prompt content.`,
+    );
+  }
+
+  if (
+    !Number.isSafeInteger(evalResult.evaluatedCases) ||
+    evalResult.evaluatedCases < 1
+  ) {
+    throw new Error(
+      `Cannot promote Prompt Version '${prompt.hash}': at least one evaluated case is required.`,
+    );
+  }
+
+  if (!Number.isFinite(evalResult.passRate) || evalResult.passRate !== 1) {
     throw new Error(
       `Cannot promote prompt version '${prompt.hash}' to running experiment: requires evaluation grounding pass rate of 100%, but got ${(evalResult.passRate * 100).toFixed(1)}%.`,
     );

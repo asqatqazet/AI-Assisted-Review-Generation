@@ -36,6 +36,16 @@ const dispositionScope = {
   finalTextHash: `sha256:${createHash("sha256").update(finalText).digest("hex")}`,
   idempotencyKey: "disposition-a",
 };
+const draftRevisionScope = {
+  tenantId: bindings.tenantId,
+  locationId: bindings.locationId,
+  reviewSessionId: bindings.reviewSessionId,
+  draftId: "draft-a",
+  generationId: bindings.generationId,
+  expectedRevision: 1,
+  textHash: `sha256:${createHash("sha256").update(finalText).digest("hex")}`,
+  idempotencyKey: "draft-save-a",
+};
 const encode = (value: string | Uint8Array): string =>
   Buffer.from(value).toString("base64url");
 const signedBy = (payload: unknown, privateKey: string): string => {
@@ -46,6 +56,41 @@ const signedBy = (payload: unknown, privateKey: string): string => {
 };
 
 describe("US-03.2 Generation Ed25519 work authority", () => {
+  it("rejects paid work signed by the isolated Console authority", async () => {
+    const contextKeys = generateKeyPairSync("ed25519", {
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const consoleAuthorityKeys = generateKeyPairSync("ed25519", {
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const generationKeys = generateKeyPairSync("ed25519", {
+      privateKeyEncoding: { type: "pkcs8", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    const authority = createGenerationEd25519WorkAuthority({
+      contextPublicKeyPem: contextKeys.publicKey,
+      generationPrivateKeyPem: generationKeys.privateKey,
+      now: () => new Date("2026-08-17T12:00:00.000Z"),
+    });
+    const consoleForgedPermit = signedBy(
+      {
+        kind: "generation-permit",
+        issuer: "context-service",
+        audience: "generation-service",
+        permitJti: "console-forged-permit",
+        expiresAt: "2026-08-17T12:01:00.000Z",
+        bindings,
+      },
+      consoleAuthorityKeys.privateKey,
+    );
+
+    await expect(
+      authority.verifyPermit(consoleForgedPermit, workload),
+    ).rejects.toThrow("GENERATION_WORK_AUTHORITY_INVALID");
+  });
+
   it("verifies only Context work and signs Generation evidence", async () => {
     const contextKeys = generateKeyPairSync("ed25519", {
       privateKeyEncoding: { type: "pkcs8", format: "pem" },
@@ -98,6 +143,39 @@ describe("US-03.2 Generation Ed25519 work authority", () => {
       authority.verifyDispositionPermit(
         dispositionPermit,
         dispositionScope,
+        `${finalText} Invented text.`,
+      ),
+    ).rejects.toThrow("GENERATION_WORK_AUTHORITY_INVALID");
+
+    const draftRevisionPermit = signedBy(
+      {
+        kind: "reviewer-draft-revision-permit",
+        issuer: "context-service",
+        audience: "generation-service",
+        permitJti: "draft-revision-permit-a",
+        expiresAt: "2026-08-17T12:01:00.000Z",
+        scope: draftRevisionScope,
+      },
+      contextKeys.privateKey,
+    );
+    await expect(
+      authority.verifyDraftRevisionPermit(
+        draftRevisionPermit,
+        draftRevisionScope,
+        finalText,
+      ),
+    ).resolves.toEqual({ permitJti: "draft-revision-permit-a" });
+    await expect(
+      authority.verifyDraftRevisionPermit(
+        dispositionPermit,
+        draftRevisionScope,
+        finalText,
+      ),
+    ).rejects.toThrow("GENERATION_WORK_AUTHORITY_INVALID");
+    await expect(
+      authority.verifyDraftRevisionPermit(
+        draftRevisionPermit,
+        draftRevisionScope,
         `${finalText} Invented text.`,
       ),
     ).rejects.toThrow("GENERATION_WORK_AUTHORITY_INVALID");

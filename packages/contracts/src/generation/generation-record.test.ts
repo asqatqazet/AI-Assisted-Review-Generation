@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { GenerationRecordDtoSchema } from "./generation-record.js";
+import { DraftDtoSchema, GenerationRecordDtoSchema } from "./generation-record.js";
 
 describe("GenerationRecordDtoSchema", () => {
   it("records immutable snapshot, format, prompt, attempt, cost, and lineage identities", () => {
@@ -38,5 +38,47 @@ describe("GenerationRecordDtoSchema", () => {
     });
 
     expect(record.attempts[0]?.priceRateId).toBe("rate-a");
+  });
+});
+
+describe("DraftDtoSchema system annotation provenance", () => {
+  it("requires disclosure provenance to be explicitly typed", () => {
+    const base = {
+      id: "draft-a",
+      generationId: "generation-a",
+      revision: 1,
+      text:
+        "The service was attentive.\n\nReview generated with AI assistance on behalf of Tenant A.",
+    };
+
+    expect(
+      DraftDtoSchema.parse({
+        ...base,
+        systemAnnotations: [
+          {
+            kind: "assisted-review-disclosure",
+            text: "Review generated with AI assistance on behalf of Tenant A.",
+            policyVersionId: "tenant-policy-r7",
+          },
+        ],
+      }).systemAnnotations,
+    ).toEqual([
+      {
+        kind: "assisted-review-disclosure",
+        text: "Review generated with AI assistance on behalf of Tenant A.",
+        policyVersionId: "tenant-policy-r7",
+      },
+    ]);
+    expect(
+      DraftDtoSchema.safeParse({
+        ...base,
+        systemAnnotations: [
+          {
+            text: "Review generated with AI assistance on behalf of Tenant A.",
+            policyVersionId: "tenant-policy-r7",
+          },
+        ],
+      }).success,
+    ).toBe(false);
   });
 });

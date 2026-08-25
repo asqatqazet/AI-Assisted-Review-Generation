@@ -1,13 +1,13 @@
 # Assisted review writing: student assessment architecture
 
-- **Status:** Accepted for implementation on 2026-08-17; D0 assignment-source evidence remains missing
+- **Status:** Accepted and implemented locally; D0 assignment-source and first successful cloud-release evidence remain missing
 - **Date:** 2026-08-16
 - **Intended to supersede after acceptance:** `01-SYSTEM-DESIGN.md` §§6, 9-12 and the topology assumptions in TS-15, TS-16, TS-17, TS-20 and TS-21
 - **Does not supersede:** `docs/agents/domain.md` or accepted ADRs
 
-This is the one architecture document for turning the interaction prototypes into an assessment-quality
-system with a production upgrade path. It describes the intended system, not the current implementation.
-`stories/EPICS.md` is the delivery plan and traceability map.
+This is the architecture authority for the assessment system and its supported student deployment.
+It describes the implemented logical boundaries and the checked-in AWS target; claims that still require an
+executed cloud run are marked as evidence gaps. `stories/EPICS.md` is the delivery and traceability map.
 
 ## 1. Decision frame
 
@@ -29,17 +29,19 @@ The original assignment brief is not present in the repository. Claims that the 
 live providers, executable plugins, experiments, Amplify, Function URLs or a second unused Terraform
 stack are therefore unverified until D0 is resolved.
 
-### Current implementation gap
+### Evidence boundary
 
-| Repository evidence | Why it is not production behavior |
-|---|---|
-| `apps/web-bff/src/app.ts` serves `Survey.dc.html`, `Admin.dc.html` and `Gallery.dc.html` directly | The prototype fixture store, query-state harness and simulated authorization become the runtime. There is no production frontend. |
-| `apps/web-bff/src/static-files.ts` reads `prototypes/` with `node:fs` per request | The deployment depends on source files and the process working directory instead of a versioned frontend artifact. |
-| `/api/generate` accepts client-supplied Tenant/Location ids and fabricates a successful Draft on any exception | Admission, isolation, provider failure and grounding can all be bypassed. This fallback is test/development behavior only. |
-| Student Terraform exposes Context and Generation Function URLs with `authorization_type = "NONE"`, a 30-second Generation timeout and Node 20 | Internal services are public, 60-second calls cannot complete, and runtime evidence disagrees with the workspace. It also omits the BFF and database. |
-| Student Terraform labels a $10 AWS Budget notification a “hard limit” and provisions Anthropic/OpenAI placeholders | AWS Budgets do not stop spend, and the selected provider pair is now OpenAI/Gemini. Dummy secrets and an unimplemented provider must not look deployable. |
-| The deployment workflow prints success while deploy and smoke commands are commented out | It is not deployment or rollback evidence. |
-| The existing rate limiter is pure in-memory logic and is not called by a deployable | It cannot enforce a limit across concurrent Lambda environments. |
+The React/BFF/Context/Generation composition, PostgreSQL admission and source limits, immutable snapshots,
+grounding guard, configuration Draft publication, Prompt candidacy, scoped Console, FakeProvider Bench and
+student delivery workflows have local executable evidence. The strict-$0 reviewer surface exposes
+**Generate only**; Paraphrase and the other transformation commands remain future capabilities until their
+independent semantic validators are release-qualified. Experiments are deferred.
+
+No successful cloud deployment, 60-second cloud Generation, or cloud rollback drill is recorded yet. The
+checked-in `infra/terraform/student` target is therefore deployable intent backed by local tests, not proof of
+a live release. `infra/terraform/production` is an obsolete, unsupported scaffold with incompatible runtime,
+network and secret assumptions: **do not run `terraform apply` there**. A funded production topology requires
+a new ADR and implementation rather than modification or reuse of that directory.
 
 ## 2. Product surfaces and frontend choice
 
@@ -66,14 +68,14 @@ stack are therefore unverified until D0 is resolved.
 | Routing | React Router | One bundle supports `/review/:reviewSessionHandle` and lazy-loaded `/console/*`; route guards improve UX but never replace server authorization. |
 | Workflow state | A pure typed `transition(state, event)` statechart local to the frontend | The prototype has 20 Survey states and failure/retry/cancel paths. An explicit transition table is testable without adding a state-machine framework. |
 | Server state | TanStack Query | Owns request lifecycle, cancellation, retry policy and ETag revalidation. It does not cache Review Sessions across users. |
-| Forms/contracts | React Hook Form plus Zod schemas from `packages/contracts` at wire boundaries | Operator configuration needs field-level validation and optimistic concurrency without copying domain rules into components. |
-| Localization | `react-i18next` resource bundles plus browser `Intl` | `en-GB` and `de-DE` are configuration-selected; no Tenant branches appear in component code. |
+| Forms/contracts | Controlled React form state plus Zod schemas from `packages/contracts` at wire boundaries | Operator configuration needs field-level validation and optimistic concurrency without copying domain rules into components. |
+| Localization | Typed local Survey copy selected by locale plus browser `Intl` | `en-GB` and `de-DE` are configuration-selected; no Tenant branches appear in component code. |
 | Styling | Existing Maue tokens converted to CSS variables and local React primitives; CSS Modules for composition | Preserves the prototype's visual language without shipping its runtime or creating a shared UI package with only one consumer. |
-| Tests | Vitest + Testing Library + axe for components; Playwright for journeys | Tests observable UI behavior, keyboard/focus behavior and real browser/API integration. |
+| Tests | Vitest + Testing Library for components; Playwright for journeys | Tests observable UI behavior, keyboard/focus behavior and real browser/API integration. |
 
 Keep both artifacts in the existing `apps/web-bff` Nx project: `src/frontend` builds a browser-only
-bundle to `dist/apps/web-bff/ui`, while `src/server` builds the Hono Lambda handlers to
-`dist/apps/web-bff/server`. The frontend may use contract DTOs but cannot import server modules, Node
+bundle to `dist/apps/web-bff/ui`, while `src/main.ts`, `src/stream-main.ts` and
+`src/reconcile-main.ts` build the three Hono Lambda handlers. The frontend may use contract DTOs but cannot import server modules, Node
 built-ins, `domain`, `db`, `llm` or `observability`; it receives already-authorized UI projections from
 the BFF. Add this client/server rule to dependency-cruiser before the first React story. Do not create a
 UI package until a second deployable actually consumes those components.
@@ -143,8 +145,9 @@ flowchart LR
     BFF["Web+BFF\nentry, OIDC, CSRF, orchestration, SSE relay"]
   end
 
-  subgraph Control["Control/admission plane"]
-    Context["Context Service\nconfig, grants, sessions, admission"]
+  subgraph Control["Context logical deployable"]
+    ContextReviewer["Reviewer Context runtime\nentry, sessions, admission"]
+    ContextConsole["Console Context runtime\ngrants, configuration, projections"]
   end
 
   subgraph Execution["Execution plane"]
@@ -161,9 +164,11 @@ flowchart LR
 
   UI --> FrontDoor --> BFF
   Operator --> Identity --> BFF
-  BFF -->|"ContextPort"| Context
+  BFF -->|"reviewer ContextPort"| ContextReviewer
+  BFF -->|"Console ContextPort"| ContextConsole
   BFF -->|"GenerationPort: command + snapshot + permit"| Generation
-  Context -->|"control + admission role"| Postgres
+  ContextReviewer -->|"context_runtime_svc"| Postgres
+  ContextConsole -->|"console_control_svc"| Postgres
   Generation -->|"execution role"| Postgres
   Generation --> Providers
   UI -->|"copy, then reviewer follows link"| Destination
@@ -173,7 +178,7 @@ flowchart LR
 |---|---|---|
 | React UI | View state, unsent form state, accessibility and locale rendering | Authorization, Tenant resolution, configuration truth, grounding or rate decisions |
 | Web+BFF | Review/Operator Session cookies, OIDC callback, CSRF/origin checks, DTO shaping, orchestration, SSE relay and Generation Disposition capture | Database access, configuration resolution, model/prompt/grounding logic |
-| Context | Operator Access Grants, Invitation admission, browser-to-Review-Session bindings, Review Session state, Assertions, Generation Batches, three-scope configuration, snapshots, ETags, hard rate/budget admission and permits | Provider calls, Draft generation, execution persistence |
+| Context (one logical deployable, two physical runtimes) | Reviewer runtime: Invitation admission, browser bindings, Review Sessions, Assertions, Generation Batches, snapshots, hard rate/budget admission and paid-work permits. Console runtime: current Access Grants, three-scope configuration Drafts/publications, ETags and authorized projections. | Provider calls, Draft generation, execution persistence, or sharing either runtime's database role/signing authority with the other |
 | Generation | Idempotent execution, provider attempts, grounding/policy/format enforcement, immutable Generations, Draft creation and cost evidence | Configuration reads, operator authorization, Invitation admission |
 | PostgreSQL | Durable control/admission/execution records under separate roles and forced RLS | Cross-tenant authorization by application convention |
 | Model gateway | Provider SDKs, timeout/error normalization, explicit adapter selection and structured candidate decoding | Prompts, price tables, grounding, policy, persistence or automatic paid failover |
@@ -226,8 +231,9 @@ sequenceDiagram
   B-->>R: SSE progress (no Draft text)
   G->>P: structured candidate request
   P-->>G: candidate buffered internally
-  G->>G: coverage -> grounding -> policy -> format -> revalidate
-  G->>DB: persist immutable Generation, Claims, usage, cost and Draft
+  G->>G: coverage -> grounding -> policy -> format -> terminal revalidation/classification
+  G->>DB: fence Attempt 1 RUNNING -> CHECKPOINTED; persist raw provider output, separate receipt/usage and sanitized result checkpoint
+  G->>DB: finalize checkpoint atomically into immutable Generation/evidence and optional Draft; mark lease TERMINAL
   G-->>B: terminal result + signed execution receipt
   B->>C: settle permit with signed receipt
   C->>C: verify Generation signature, permit binding and actual <= reserved cost
@@ -248,10 +254,25 @@ Generation's signed lease receipt, including a `lease_expires_at` derived from d
 short-lived activation whose expiry cannot exceed the lease expiry. Immediately before provider I/O,
 Execution uses database time to recheck the activation and atomically changes that lease from `LEASED` to
 `RUNNING` while inserting the uniquely claimed first Provider Attempt. Concurrent or replayed `execute`
-losers tail/return the existing execution and never call a provider. Every bounded retry is included in the
-reservation and must claim a unique `(lease_id, attempt_ordinal)` before provider I/O; an indeterminate
-attempt is not automatically retried unless the provider offers a proven idempotency key. This two-phase
-protocol prevents unreserved or duplicate provider calls and a redeemed reservation with no known lease.
+losers tail/return the existing execution and never call a provider. The strict-$0 release permits exactly
+one Attempt ordinal. A future bounded retry would need its own pre-reserved ordinal plus a proven provider
+idempotency contract; an indeterminate Attempt is never retried automatically. This protocol prevents
+unreserved or duplicate provider calls and a redeemed reservation with no known lease.
+
+Provider return is not the terminal commit. Generation first performs deterministic structural, grounding,
+policy and Review Format validation in memory. Both a valid result and a provider-returned result that is
+classified as grounding/policy/format rejected retain the exact structured provider output for protected
+audit. A fenced transaction then moves only the exact `RUNNING` Attempt to `CHECKPOINTED` and stores that
+raw output, the provider receipt, usage, and a sanitized terminal checkpoint as distinct evidence. A second,
+idempotent transaction locks that checkpoint and either creates the successful Generation, Claims,
+Groundings and Draft revision, or creates a rejected Generation with no Draft. Only then does it mark the
+lease `TERMINAL` and issue the execution receipt.
+
+A crash after checkpoint recovery finalizes the same checkpoint without calling the provider again. A
+conflicting checkpoint replay fails closed. A provider timeout or process loss before a checkpoint is
+indeterminate: the Attempt/lease remains fenced, is not released, and cannot claim another ordinal. Raw
+provider output never enters reviewer, normal Console, Bench, or terminal DTOs; an unexpired, separately
+authorized audit projection is required, and the ordinary projection still strips it.
 
 Context is the only writer of admission/reservation state. Generation signs an execution receipt containing
 the permit JTI, Batch/Generation ids, terminal execution status, Provider Attempt ids, usage, Price Rate ids,
@@ -270,15 +291,17 @@ side may win. This preserves the accepted DB boundary and fails closed on an orc
 
 This two-phase exchange deepens the BFF-owned remote ports to `GenerationPort.prepare/execute/status` and
 `ContextPort.prepareEntry/prepareGeneration/activate/settle`; it does not add a Context-to-Generation edge.
-Because ADR-004 currently sketches a one-shot `GenerationPort.execute`, D12 must amend that interface
-before implementation while preserving its dependency directions.
+ADR-005 already amends ADR-004's illustrative one-shot `GenerationPort.execute`; ADR-004's dependency
+directions remain unchanged.
 
-Context signs permits with an asymmetric key whose private half is available only to Context. Generation
-receives the corresponding public verification keys, selected by `kid`, but no signing capability.
-Generation uses a different keypair for execution receipts; Context gets only its public verification
-keys. The deployment profile selects the private-key adapter: Ed25519 in separate SSM paths for the student
-assessment, managed KMS signing for a funded production profile. The BFF cookie key is a third, separate
-secret. Shared symmetric trust between deployables is forbidden.
+The student profile has three independent Ed25519 pairs. Reviewer Context alone holds the paid-work private
+key and Generation receives its public key. Console Context alone holds the Console-read/Bench authority
+private key and Generation receives its public key. Generation alone holds the execution-receipt private key
+and Reviewer Context receives its public key. The two additional HMAC trust boundaries are also distinct:
+`CONSOLE_DATABASE_AUTHORITY_SECRET` binds short-lived Console database authority, while
+`PUBLIC_SOURCE_RATE_HMAC_SECRET` pseudonymizes public source buckets with daily rotation. Neither is reused
+as the BFF's CSRF/session material. Shared symmetric trust between deployables is forbidden; managed KMS
+signing and rotation require a separately funded production design.
 
 **Generation Batch** is the existing operational entity that binds one normalized request, Assertion set,
 snapshot, idempotency key, request hash, budget reservation and planned Generations. Each selected Review
@@ -321,29 +344,49 @@ flowchart TB
   FastURL --> Fast["Web+BFF fast Lambda"]
   StreamURL --> Stream["Web+BFF stream Lambda"]
   Events["EventBridge reconciliation schedule"] --> Reconcile["Web+BFF reconciliation Lambda\ninternal only"]
-  Fast -->|"IAM Invoke alias"| Context["Context Lambda"]
-  Stream -->|"IAM Invoke alias"| Context
+  Fast -->|"reviewer routes"| ContextReviewer["Reviewer Context Lambda\ncontext_runtime_svc"]
+  Fast -->|"Console routes"| ContextConsole["Console Context Lambda\nconsole_control_svc"]
+  Stream -->|"reviewer admission"| ContextReviewer
   Stream -->|"InvokeWithResponseStream"| Generation["Generation Lambda"]
-  Reconcile -->|"IAM Invoke alias"| Context
+  Reconcile -->|"IAM Invoke alias"| ContextReviewer
   Reconcile -->|"IAM Invoke alias"| Generation
 
-  Context -->|"pooled TLS; control/admission role"| PG["Neon Free PostgreSQL, Frankfurt\nforced RLS"]
+  ContextReviewer -->|"pooled TLS"| PG["Neon Free PostgreSQL, Frankfurt\nforced RLS"]
+  ContextConsole -->|"pooled TLS"| PG
   Generation -->|"pooled TLS; execution role"| PG
   Generation -->|"HTTPS when funded"| Providers["Gemini / OpenAI\nFakeProvider is $0 public default"]
   SSM["SSM Standard SecureString\nAWS-managed key"] --> Fast
-  SSM --> Context
+  SSM --> ContextReviewer
+  SSM --> ContextConsole
   SSM --> Generation
   Cognito["Cognito prefix domain"] --> Fast
   Fast --> Logs["CloudWatch minimal metrics\n3-day redacted logs"]
-  Context --> Logs
+  ContextReviewer --> Logs
+  ContextConsole --> Logs
   Generation --> Logs
 ```
 
-The React assets and three BFF handlers are one logical `apps/web-bff` release. A release manifest carries
-one release id and a checksum for each S3/Lambda artifact. Separate fast/stream handlers prevent a 5-60
-second stream from occupying fast-route capacity. Context and Generation have no Function URL or public
-resource policy; BFF roles can invoke only their qualified `live` aliases. EventBridge alone can invoke the
-fixed-shape reconciliation handler.
+The React assets and three BFF handlers are one logical `apps/web-bff` release. Context is one logical
+deployable packaged once but runs as two physical Lambdas with disjoint IAM, secrets and PostgreSQL roles:
+Reviewer Context and Console Context. A release carries three Lambda zip artifacts (`web-bff`, `context`,
+`generation`) but promotes six qualified functions: BFF fast, BFF stream, BFF reconciliation, Reviewer
+Context, Console Context and Generation. Each has `candidate` and `live` aliases. The separate unaliased
+Generation canary exists only to prove FakeProvider safety while the shared Generation function is frozen
+during a low-quota cutover.
+
+During the current expand release, AWS temporarily contains a seventh product/compatibility Lambda:
+`review-context-service-student`, the retained pre-split Context function. It keeps its original role and
+immutable `live` version solely as the rollback target; it receives no candidate promotion or normal new-release
+traffic. The new `review-context-reviewer-student` and Console function have new, disjoint roles, so neither can
+read the legacy database pointer. Keeping only a second version on the old physical function would be unsafe
+because Lambda execution roles are function-scoped, not version-scoped. The later contract release deletes the
+legacy function, role, parameter access and `context_svc` bridge together. Including the already-described
+unaliased Fake-only Generation canary, the expand stack therefore contains eight physical Lambda resources, but
+only six participate in normal promotion.
+
+Separate fast/stream handlers prevent a 5-60 second stream from occupying fast-route capacity. Both Context
+runtimes and Generation have no Function URL or public resource policy; BFF roles can invoke only qualified
+aliases. EventBridge alone can invoke the fixed-shape reconciliation handler.
 
 CloudFront OAC signs calls to BFF Function URLs configured with `AWS_IAM`, restricting origin access to
 the exact distribution. Each URL policy grants the CloudFront service principal both
@@ -363,15 +406,25 @@ Tenant+Location+locale projection cache; authorization, admission, rate and budg
 
 Neon Free is selected because it preserves the accepted PostgreSQL/RLS design with no time-limited fee:
 the current allowance is 100 CU-hours and 0.5 GB per project with scale-to-zero. It is an external public
-TLS dependency, not private AWS. Separate control/execution roles and a real pooled-connection test must
-prove `BEGIN; SET LOCAL app.tenant_id; ...; COMMIT` cannot leak Tenant state. Exceeding the free database
-limits fails the demo; it must never silently upgrade. See [Neon pricing](https://neon.com/pricing).
+TLS dependency, not private AWS. Separate `context_runtime_svc`, `console_control_svc` and
+`generation_svc` roles plus real pooled-connection tests prove `BEGIN; SET LOCAL ...; COMMIT` cannot leak
+Tenant or Operator state. Console policies require an active operator/capability and have no operator-null
+service branch; the reviewer runtime role cannot mutate Operator or Access Grant data. Exceeding the free
+database limits fails the demo; it must never silently upgrade. See [Neon pricing](https://neon.com/pricing).
 
-SSM Standard SecureString with the AWS-managed SSM key stores database/provider/cookie secrets. To avoid
-two monthly customer-KMS key charges while retaining forgery separation, generate two Ed25519 keypairs
-offline: Context and Generation each receive only their own private key path and the other service's public
-verification key; the BFF receives neither private key. This is acceptable only for the assessment profile;
-managed KMS signing/rotation is a production upgrade.
+The current database release is deliberately **expand-only**. The legacy `context_svc` login and its bounded
+raw-GUC compatibility branch remain available only to the retained pre-split Context function so that a failed
+application promotion can restore its immutable version after migrations have run. New Reviewer and Console
+functions use different IAM roles and cannot read the legacy URL, and the compatibility branch requires
+`session_user = context_svc`;
+setting the same GUC through any new runtime role grants no authority. The release manifest records this expand
+phase and the immutable legacy version probed before and after migration. A later, separately reviewed contract
+migration must revoke the bridge and set `context_svc` to `NOLOGIN` after the rollback window closes.
+
+SSM Standard SecureString with the AWS-managed SSM key stores runtime secrets. The protected GitHub
+`student` environment contains exactly 13 required secrets: four database URLs, the CSRF secret, three
+Ed25519 public/private pairs (six values), and the two separate HMAC secrets described in §4. The workflow
+writes only runtime values to disjoint SSM paths; Terraform receives parameter names, not secret values.
 
 Remove Route 53/custom domains, regional ACM, WAF, API Gateway, Secrets Manager, customer-managed KMS,
 VPC/private subnets, Aurora/RDS Proxy, NAT, X-Ray, provisioned concurrency and Fargate. None protects a
@@ -410,8 +463,10 @@ OpenAI/Gemini credentials never enter the snapshot or browser.
 | CloudFront origin read / response completion | 30 s / 95 s |
 | Browser | 100 s |
 | Progress heartbeat | every 10 s |
-| Student low-quota capacity | Account concurrency 10; no function reservations |
-| Reserved-concurrency capacity | Fast/stream BFF 5/2; Context 5; Generation 1 |
+| `student-low-quota` capacity | Account and unreserved concurrency >=10; no function reservations on any released Lambda |
+| `reserved-concurrency`: BFF | Fast 5; stream 2; reconciliation unreserved |
+| `reserved-concurrency`: Context | Reviewer 4; Console 1 |
+| `reserved-concurrency`: Generation | 1; Fake-only cutover canary remains unreserved |
 
 Preflight and Terraform require one matching explicit capacity profile. `student-low-quota` is the
 assessment default: it accepts exactly the new-account floor of at least 10 unreserved executions and omits
@@ -443,12 +498,19 @@ for a scheduled submission window.
 |---|---|---|
 | AWS account | New-account Free plan; pre-deploy check refuses a Paid plan unless an explicit owner override is present | The only AWS financial hard stop: AWS says no charges, but the account closes at six months/credit exhaustion. A Budget notification is only an alarm. |
 | BFF capacity | Low-quota: shared account ceiling 10; reserved profile: fast 5/stream 2 | Coarse request-work ceiling. Low-quota can starve one function behind another and is assessment-only. Lambda rejects excess work before the handler with an AWS 429; the frontend transport normalizes it to `EDGE_THROTTLED`. It is not a Tenant quota. |
-| Entry source | 60 link GETs / 5 min; 10 Start POSTs / 5 min; 10 Generation POSTs / hour | Context stores only a rotating daily-HMAC source bucket for at most 24 hours. Never use IP/source as Tenant identity; shared networks can receive a generic retry path. |
+| Entry source | 60 link GETs / 5 min; 10 Start POSTs / 5 min; 10 Generation POSTs / hour | IPv4 is bucketed at `/32` and IPv6 at `/64`, then Context stores only rotating daily-HMAC buckets. Each request atomically counts the previous/current/next UTC-day buckets, so delayed transactions cannot reset the sliding window at midnight. Hourly reconciliation deletes rows at the 23-hour threshold; cutoff uses an owner-only purge. Never use IP/source as Tenant identity; shared networks can receive a generic retry path. |
 | Review Session | 3 admitted batches / rolling 30 min; 1 active batch | Hard PostgreSQL transaction. Same idempotency key returns the existing batch without new work. |
 | Tenant | 10 admitted batches / hour; 1 active batch | Hard PostgreSQL transaction; the synthetic assessment Tenant cannot create unbounded work. |
-| Platform | 5 admissions / min; 1 active Generation; 30 funded Generations / day | Hard PostgreSQL transaction; the reserved profile adds Generation concurrency 1. The low-quota public release remains FakeProvider-only until this shared admission path is deployment-proven. |
+| Platform | 5 admissions / min; 1 active Generation; 30 funded Generations / day | Hard PostgreSQL transaction; the reserved profile adds Generation concurrency 1. Low-quota requires `fake-only` in both services and rejects a new or replayed paid snapshot before reservation. |
 | Request | One Review Format, <=1,500 input tokens, <=350 output tokens, one Attempt | Server-owned bounds; the browser cannot raise them. No retry or automatic provider failover in the assessment profile. |
 | Provider budget | OpenAI/Gemini allowance defaults to zero; positive secret + provider budget + exact Price Rate are all required | Strict-$0 public mode cannot reach a live adapter. Funded mode atomically requires settled cost + live reservations + worst-case new cost <= its explicit cap. |
+
+The expand migration retains the old two-argument source-limit function for an immutable rollback
+Reviewer. Because that wire cannot supply the preceding day's bucket, it deliberately enforces one stricter
+global allowance per policy; changing a caller-selected bucket cannot reset it. New Reviewer versions use
+the accurate previous/current/next source boundary and temporarily take the same compatibility lock before
+their ordered bucket locks, so an in-flight old/new pair cannot both win. The old overload and compatibility
+lock are removed only in the later contract migration after the rollback window closes.
 
 The Context admission transaction locks the Review Session and Tenant usage row, reuses an existing
 idempotent admission, checks source/Review Session/Tenant/Platform windows and active counts, computes
@@ -481,12 +543,21 @@ Tenant thresholds are never returned.
   Generation p99 >70 s; any funded-provider 429; redeemed-unsettled permit past 120 s; grounding rejection
   >10%/15 min. Free-plan credit/expiry email alerts and a $1 AWS Budget notification are also enabled, but
   the Budget is explicitly not a spending stop.
-- GitHub Actions uses OIDC, builds once and promotes checksummed artifacts. It runs `pnpm verify`, Terraform
-  plan/apply, real URL smoke tests and an adversarial unsupported-output check before promotion.
-- Lambda deployments publish immutable versions behind `live` aliases; `$LATEST` is never routed. A smoke
-  target receives traffic before the alias switch; rollback restores prior aliases and the UI manifest
-  without provisioned canary infrastructure. Database migration is expand-first and is not falsely
-  described as reversible by a Lambda alias shift.
+- GitHub Actions uses environment-bound OIDC, builds once and promotes checksummed artifacts. It runs
+  `pnpm verify`, Terraform plan/apply, stages candidate aliases plus a versioned UI prefix, and smokes those
+  candidates before promotion.
+- Lambda deployments publish immutable versions behind `candidate` and `live` aliases; `$LATEST` is never
+  routed. Promotion saves the old alias versions and UI pointer, then restores both if a live probe fails.
+  Rollback independently verifies the source workflow/SHA/digests and derives AWS targets from trusted
+  Terraform state. Before and after the expand migrations, deployment probes the captured immutable legacy
+  Context version rather than a mutable alias. The bounded `context_svc` bridge is removed only by a later
+  contract release, so alias rollback remains executable; no migration is falsely described as reversible.
+- Candidate-before-live is a rolling-release guarantee, not an initial-provisioning guarantee: the first
+  Terraform apply must create the `live` aliases and CloudFront origins before the candidate workflow can
+  probe the composition. Keep that bootstrap access-restricted and do not cite it as pre-live canary proof.
+- `student-cutoff` disables CloudFront delivery, reconciliation and Lambda execution at the recorded date;
+  it deliberately preserves resources and evidence. It is not `terraform destroy`, SSM cleanup, state-bucket
+  deletion or Neon deletion. Those remain a separate reviewed teardown.
 - The assignment evidence is a real public Survey URL, Console URL, CI run, deploy log and executed rollback.
   Placeholder domains, commented commands and invented timestamps are not evidence.
 
@@ -512,7 +583,7 @@ the accepted grounding boundary, not an open choice.
 | D9 | Grounding-removal UX delta | Keep the corrected TS-09 whole-candidate rejection. `results-partial` shows only successful sibling Drafts plus a generic rejected card and empty Add Assertion form; no Unsupported Output bytes. | The prototype's per-candidate salvage/quoted removal is a central interaction. Restoring it requires segment removal/recomposition plus complete revalidation and an explicit domain decision; raw Unsupported Output still cannot be exposed by default. |
 | D10 | Configuration authoring lifecycle | Draft/cancel/publish with optimistic concurrency. Publish creates configuration revisions; effective snapshots are materialized separately for each affected Location when resolved. | Immediate writes are simpler but cannot honestly support review/cancel/publish or a stable audit boundary. |
 | D11 | AWS account, edge and compute | If eligible, new-account Free plan in `eu-central-1`: CloudFront + private S3 + OAC-protected BFF Function URLs + Lambda; no WAF/API Gateway/domain/VPC. Tear down or explicitly fund before month six. | An existing/Paid account removes the no-charge guarantee; production exposure requires a separately costed topology. |
-| D12 | Paid-work remote protocol | Amend ADR-004 to use a finite Generation lease, Context activation, atomically fenced Generation execution and signed settlement/cancellation/status receipts. | A one-shot Generation call is simpler but cannot both reclaim crashed reservations and prove no unreserved, duplicate or delayed provider call across the accepted DB split. |
+| D12 | Paid-work remote protocol | ADR-005 amends ADR-004 with a finite Generation lease, Context activation, atomically fenced Generation execution and signed settlement/cancellation/status receipts. | A one-shot Generation call is simpler but cannot both reclaim crashed reservations and prove no unreserved, duplicate or delayed provider call across the accepted DB split. |
 
 ADR-005 records the acceptance and amends ADR-004's one-shot remote-port sketch for D12. Implementation may
 proceed against D1-D12 and D0's stated default scope; US-00.1 cannot be complete until the original assignment

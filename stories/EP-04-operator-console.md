@@ -1,137 +1,134 @@
 # EP-04 Operator Console — implementation record
 
-- **Status:** Control plane implemented end to end and persisted; execution-plane views await their own reader
-- **Date:** 2026-08-19
-- **Relates to:** `stories/EPICS.md` EP-04, and the prototype states in `prototypes/Admin.dc.html`
+- **Status:** Control plane, execution read plane and FakeProvider Bench implemented; AWS release evidence pending
+- **Date:** 2026-08-24
+- **Relates to:** `stories/EPICS.md` EP-04 and `prototypes/Admin.dc.html`
 
-## What the Console is
+## Implemented shape
 
-One React surface rendering every Tenant entirely from data. The 23 prototype
-states resolve to 19 Console views and 25 commands, all carried over the
-existing BFF -> Context Lambda seam as a single `console-request` operation.
+The Console is one React surface whose navigation and scope come only from the
+current Access Grants returned by Context. A crossed or unknown Tenant/Location
+pair produces the same generic 404; the browser and BFF never infer authority.
 
 ```text
-browser ──GET  /api/v1/console/views/:view?tenantId&locationId&…──┐
-         └POST /api/v1/console/commands?tenantId&locationId ──────┤
-                                                                  ▼
-                                   web-bff  (session -> identity only)
-                                                                  │
-                              console-request { identity, scope, request }
-                                                                  ▼
-                              context-service console service
-                              ├── resolve current Access Grants
-                              ├── authorize the requested scope
-                              └── ConsoleStore  (persistence seam)
+browser ── Console HTTP ──> web-bff (Cognito session -> identity)
+                              │
+                              ├── console-request ──> Context
+                              │                       ├── current Access Grants
+                              │                       └── ConsoleControlStore
+                              │
+                              ├── authorize-console-read ──> Context
+                              │<── signed exact scope/query receipt
+                              ├── console-read + receipt ──> Generation
+                              │                              └── fixed execution projections
+                              │
+                              └── authorize-console-bench ─> Context
+                               <─ signed canonical Fake workload
+                                  console-bench ──> Generation shared pipeline
 ```
 
-The BFF never asserts scope. It forwards the OIDC identity and the *requested*
-scope; Context re-resolves Grants and decides. A denial — unknown id, another
-Tenant's id, or a missing capability — is the same `not-found`, rendered as the
-same 404 body, so nothing leaks across a Tenant boundary.
+The BFF owns orchestration only. Context and Generation never call or import
+one another. Generation receives complete immutable configuration and has no
+configuration-reader path.
 
-## Where each rule lives
+## Authority and database roles
+
+The one Context deployable opens two sealed pools with disjoint roles:
+
+| Role | May do | Must not do |
+|---|---|---|
+| `context_runtime_svc` | Reviewer entry, Review Session, admission and published snapshot reads | Operator/grant/configuration writes |
+| `console_control_svc` | Authorized Console configuration and Access Grant reads/writes | Operate without `app.operator_id`; read execution evidence |
+| `generation_svc` | Execution fence, Generation/Draft evidence and fixed Console execution projections | Read mutable configuration or Access Grants |
+
+RLS authorization joins only active Role Definitions with the required
+capability. A missing operator context fails closed on Console connections; it
+does not fall through to the reviewer runtime branch. A non-BYPASS migration
+owner has only the maintenance visibility needed for invariant functions and
+idempotent seed execution.
+
+Overview, Analytics and Generation detail are served in Generation through
+fixed `SECURITY DEFINER` projections. Context signs the exact Tenant set,
+query, expiry and privileged-raw bit; Generation verifies it before any read.
+`PUBLIC` has no execute grant and raw candidate/Unsupported Output remains
+audit-gated.
+
+## Configuration authoring and publication
+
+- Tenant and Location settings use discriminated schemas with finite/range
+  checks. `NaN`, a wrong value kind and an out-of-range policy value are
+  rejected at the contract boundary.
+- Save Draft, Cancel and Publish are distinct commands. Writes carry a strong
+  canonical ETag through `If-Match`; a stale or absent precondition cannot
+  overwrite another operator.
+- Publish is one PostgreSQL transaction: compare-and-swap the Draft, increment
+  revision, append audit evidence and materialize one immutable Effective
+  Configuration Snapshot for every affected Location. An idempotent retry
+  returns the same snapshot ids.
+- Entry, Review Session and Generation admission resolve the published
+  snapshot first. Unpublished Fact Option, Review Format, Action and policy
+  edits remain invisible.
+- Prompt authoring and promotion are separate. Exactly one promoted Prompt per
+  Tenant + Action is materialized using a server-derived canonical hash.
+- Provider routing moves primary atomically. A unique index and deferred
+  invariant require exactly one primary route.
+
+## Bench
+
+Bench has a separate signed audience. Context resolves one published snapshot
+and validates scope, source ownership, Action, Review Format, promoted Prompt,
+Fact Options and Fake provider before signing. Generation reuses the shared
+generation application module with a non-persistent, non-billable sink. Bench
+cannot create a Generation, Provider Attempt, Disposition or reservation.
+Commands that require immutable source-Generation evidence fail closed until
+that evidence is supplied; the current supported Bench commands are Generate
+and Paraphrase.
+
+## Authentication and logout
+
+Cognito uses Authorization Code + PKCE. The BFF stores provider tokens only in
+an encrypted HttpOnly session, refreshes near ID-token expiry, verifies the
+refreshed issuer/audience/subject/email, retains rotated refresh tokens, calls
+the Cognito revocation endpoint on logout and then sends the browser through
+the Hosted UI logout endpoint. Clearing only the local cookie is not a logout.
+
+The local composition uses an explicit development-only auth adapter with
+Platform and Tenant-only identities. It is reachable only from
+`apps/web-bff/dev.ts`, never from the production runtime, and must not be
+internet-exposed.
+
+## Provider mode
+
+The public `student-low-quota` profile is physically FakeProvider-only.
+`REVIEW_PROVIDER_MODE` is required by Context and Generation. Context rejects
+a new or replayed paid route before reservation/capacity writes; Generation
+also rejects before resolving credentials or a gateway. Deployment freezes
+Generation before profile mutation and leaves it frozen on failure. OpenAI and
+Gemini adapters require a separately funded and explicitly approved profile.
+
+## Primary implementation seams
 
 | Rule | Module |
 |---|---|
-| Role, capabilities, scope authorization | `packages/domain/src/console/access.ts` |
-| Inheritance, override, reset-deletes-the-row | `packages/domain/src/console/inheritance.ts` |
-| Running experiments immutable, price versioning, next published version | `packages/domain/src/console/authoring.ts` |
-| Production QR from the real survey URL | `packages/domain/src/console/qr-code.ts` |
-| View/command scope and capability policy | `apps/context-service/src/console/scope.ts` |
-| Projections and manifest rule validation | `apps/context-service/src/console/projections.ts`, `manifest-rules.ts` |
-| Transport, uniform not-found, origin check | `apps/web-bff/src/console-routes.ts` |
-| Scope in the URL, capability navigation, views | `apps/web-bff/src/frontend/console/` |
+| Role/capability/scope authorization | `packages/domain/src/console/access.ts`, `apps/context-service/src/console/scope.ts` |
+| Draft/CAS/publish and Prompt promotion | `apps/context-service/src/console/console-service.ts`, `packages/db/src/control-plane/console-store.ts` |
+| Uniform not-found and request binding | `apps/web-bff/src/console-routes.ts` |
+| Signed execution-read authorization | `apps/context-service/src/console/console-read-authority.ts`, `apps/generation-service/src/console-read-verifier.ts` |
+| Signed Bench authorization | `apps/context-service/src/console/console-bench-authorizer.ts`, `apps/generation-service/src/console-bench-handler.ts` |
+| Capability-driven React surface | `apps/web-bff/src/frontend/console/` |
 
-## Deliberate deviations from the epic brief
+## Database changes and evidence
 
-- Routes are under `/console`, not `/admin`. The operator OIDC flow already
-  validates `returnTo` against `/console`, and changing it would move an
-  accepted security boundary for cosmetic reasons.
-- Contracts are the repo's zod DTOs in `@review/contracts/console` rather than a
-  separate OpenAPI document. They are the single shared definition — the BFF
-  parses with them and the frontend infers its types from the same schemas, so
-  no DTO is duplicated by hand.
-- Canonical domain language is used in code (Review Format, Fact Option,
-  Assertion); the prototype's `styles` / `keywords` names survive only as wire
-  and route names, per `AGENTS.md`.
+- `20260823000018_configuration_publication`: Draft/CAS/audit, Prompt
+  deployment/promotion, canonical publication and provider-routing invariants.
+- `20260823000019_operator_capability_rls`: separate runtime/control roles,
+  active-role capability checks and non-BYPASS migration-owner support.
+- `20260823000020_console_execution_projections`: fixed receipt-bound
+  execution projections with no public execute grant.
 
-## Plane split
-
-`context_svc` has no grant on `generations`, `claims`, `drafts`, `dispositions`
-or `provider_attempts` — those belong to `generation_svc`, and
-`.dependency-cruiser.cjs` stops the control-plane module reaching them. The
-Console store is therefore split along the boundary the database already
-enforces rather than by widening a role:
-
-| Served by `ConsoleControlPlaneStore` (PostgreSQL, context-service) | Needs `ConsoleExecutionStore` |
-|---|---|
-| bootstrap, locations, tenant and location settings, distribution, destinations, business context, fact options, review formats, actions, prompts, experiment definitions, platform accounts/providers/catalogue/settings | overview totals, analytics rows, Generation detail and lineage, bench runs, experiment outcome counts |
-
-Until that reader exists the execution-plane views answer with the same
-not-found projection as an unauthorized scope, and experiment variants report
-`metricsAvailable: false` rather than presenting unknown counts as zero.
-
-Month-to-date spend is an exception that lands in the control plane:
-`budget_reservations.actual_cost_micros` is settled through the paid-work
-protocol and is readable by `context_svc`, so account spend against budget is
-real rather than deferred.
-
-## Distribution links
-
-The public origin travels on the Console request rather than sitting in
-Context configuration. It cannot be Lambda configuration: the context function
-would have to reference the CloudFront distribution, which reaches it back
-through the BFF's alias ARN and closes a Terraform cycle. The BFF already
-establishes the origin per request for its CSRF check, so the same trusted
-value mints the link and its QR. When no origin can be established the
-distribution view is withheld rather than emitting a link nobody can reach.
-
-## Installing a live provider key
-
-Google Gemini is catalogued so an operator can see and route it. The key never
-touches Terraform state or the repository:
-
-```text
-GitHub secret GEMINI_API_KEY
-        │  deploy step, only when the secret is set
-        ▼
-SSM SecureString  /review-gen/student/gemini-api-key
-        │  Lambda env holds the PARAMETER NAME, never the value
-        ▼
-Generation Lambda reads it once at cold start
-        │  absent → deterministic provider, no paid call
-        ▼
-GeminiProvider
-```
-
-Terraform owns the IAM grant and the parameter *name*; it never creates the
-parameter, so the value cannot land in remote state. The Console shows the
-credential as configured or missing from `providers.credential_reference`,
-which the deploy sets only when a key was actually installed — the control
-plane cannot read SSM, so anything else would be a guess.
-
-To install one: add `GEMINI_API_KEY` to the repository secrets and re-run
-`deploy-student`. To remove it: delete the secret, delete the SSM parameter,
-and re-run; the deployment falls back to the deterministic provider.
-
-## Migration 20260819000011
-
-- `tenant_context_versions` — versioned business context. `context_svc` gets
-  `SELECT, INSERT` and no `UPDATE`/`DELETE`, so immutability is a grant, not a
-  convention.
-- `prompt_versions.version` / `.status` / `.evaluation_score` / `.created_by` —
-  legible version history alongside the existing content hash.
-- `provider_models.routing_priority` / `.fallback_priority` — explicit routing
-  instead of two booleans on the provider.
-- The platform-scope writes an authorized operator performs.
-
-## Not implemented## Not implemented
-
-`ConsoleExecutionStore` has no implementation. It belongs to the generation
-service, which already holds the `generation_svc` role and the execution-plane
-Prisma client, and would reach the Console over its own port rather than
-through Context.
-
-The PostgreSQL control-plane adapter is covered by
-`packages/db/src/control-plane/console-store.integration.test.ts`, which runs
-against the Postgres service in CI and skips without `DATABASE_URL`.
+Evidence includes a clean 22-migration replay, idempotent canonical seed,
+direct-role PostgreSQL isolation tests, local browser composition with Platform
+and Tenant-only identities, a generic crossed-scope 404, and visible release
+SHA. The remaining work is external evidence: rotate exposed credentials,
+protect GitHub Environment `student`, install the bounded AWS deployment role,
+execute the candidate-to-live deployment and retain a rollback drill.

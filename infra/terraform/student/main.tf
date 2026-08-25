@@ -32,28 +32,38 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
 }
 
 locals {
+  service_role_permissions_boundary_arn = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/ReviewStudentLambdaBoundary"
   function_names = {
     web_bff_fast       = "review-web-bff-fast-student"
     web_bff_stream     = "review-web-bff-stream-student"
     web_bff_reconcile  = "review-web-bff-reconcile-student"
     context_service    = "review-context-service-student"
+    context_reviewer   = "review-context-reviewer-student"
+    context_console    = "review-context-console-student"
     generation_service = "review-generation-service-student"
+    generation_canary  = "review-generation-canary-student"
   }
   lambda_log_group_arns = [
     for name in values(local.function_names) :
     "arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${name}:*"
   ]
   parameter_names = {
-    context_database_url        = "/review-gen/student/context-database-url"
-    generation_database_url     = "/review-gen/student/generation-database-url"
-    review_csrf_secret          = "/review-gen/student/review-csrf-secret"
-    operator_session_secret     = "/review-gen/student/operator-session-secret"
-    operator_oidc_config        = "/review-gen/student/operator-oidc-config"
-    context_work_private_key    = "/review-gen/student/context-work-private-key"
-    context_work_public_key     = "/review-gen/student/context-work-public-key"
-    generation_work_private_key = "/review-gen/student/generation-work-private-key"
-    generation_work_public_key  = "/review-gen/student/generation-work-public-key"
-    gemini_api_key              = "/review-gen/student/gemini-api-key"
+    context_database_url_legacy       = "/review-gen/student/context-database-url"
+    context_runtime_database_url      = "/review-gen/student/context-runtime-database-url"
+    console_control_database_url      = "/review-gen/student/console-control-database-url"
+    generation_database_url           = "/review-gen/student/generation-database-url"
+    review_csrf_secret                = "/review-gen/student/review-csrf-secret"
+    operator_session_secret           = "/review-gen/student/operator-session-secret"
+    operator_oidc_config              = "/review-gen/student/operator-oidc-config"
+    context_work_private_key          = "/review-gen/student/context-work-private-key"
+    context_work_public_key           = "/review-gen/student/context-work-public-key"
+    console_authority_private_key     = "/review-gen/student/console-authority-private-key"
+    console_authority_public_key      = "/review-gen/student/console-authority-public-key"
+    console_database_authority_secret = "/review-gen/student/console-database-authority-secret"
+    generation_work_private_key       = "/review-gen/student/generation-work-private-key"
+    generation_work_public_key        = "/review-gen/student/generation-work-public-key"
+    public_source_rate_hmac_secret    = "/review-gen/student/public-source-rate-hmac-secret"
+    gemini_api_key                    = "/review-gen/student/gemini-api-key"
   }
 }
 
@@ -79,6 +89,12 @@ resource "aws_budgets_budget" "student_cost_limit" {
     notification_type          = "FORECASTED"
     subscriber_email_addresses = [var.alert_email]
   }
+}
+
+resource "aws_ssm_parameter" "teardown_date" {
+  name  = "/review-gen/student/teardown-date"
+  type  = "String"
+  value = var.teardown_date
 }
 
 resource "aws_cognito_user_pool" "operators" {
@@ -130,6 +146,17 @@ resource "aws_cognito_user" "initial_operator" {
   desired_delivery_mediums = ["EMAIL"]
   attributes = {
     email          = var.operator_email
+    email_verified = "true"
+  }
+}
+
+resource "aws_cognito_user" "tenant_operator" {
+  count                    = var.tenant_operator_email == "" ? 0 : 1
+  user_pool_id             = aws_cognito_user_pool.operators.id
+  username                 = var.tenant_operator_email
+  desired_delivery_mediums = ["EMAIL"]
+  attributes = {
+    email          = var.tenant_operator_email
     email_verified = "true"
   }
 }
@@ -188,18 +215,33 @@ data "aws_iam_policy_document" "lambda_assume" {
 }
 
 resource "aws_iam_role" "web_bff" {
-  name               = "review-web-bff-student-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "review-web-bff-student-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = local.service_role_permissions_boundary_arn
 }
 
 resource "aws_iam_role" "context_service" {
-  name               = "review-context-service-student-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "review-context-service-student-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = local.service_role_permissions_boundary_arn
+}
+
+resource "aws_iam_role" "context_reviewer" {
+  name                 = "review-context-reviewer-student-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = local.service_role_permissions_boundary_arn
+}
+
+resource "aws_iam_role" "context_console" {
+  name                 = "review-context-console-student-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = local.service_role_permissions_boundary_arn
 }
 
 resource "aws_iam_role" "generation_service" {
-  name               = "review-generation-service-student-role"
-  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  name                 = "review-generation-service-student-role"
+  assume_role_policy   = data.aws_iam_policy_document.lambda_assume.json
+  permissions_boundary = local.service_role_permissions_boundary_arn
 }
 
 data "aws_iam_policy_document" "lambda_logs" {
@@ -216,6 +258,16 @@ resource "aws_iam_role_policy" "web_bff_logs" {
 
 resource "aws_iam_role_policy" "context_logs" {
   role   = aws_iam_role.context_service.id
+  policy = data.aws_iam_policy_document.lambda_logs.json
+}
+
+resource "aws_iam_role_policy" "context_reviewer_logs" {
+  role   = aws_iam_role.context_reviewer.id
+  policy = data.aws_iam_policy_document.lambda_logs.json
+}
+
+resource "aws_iam_role_policy" "context_console_logs" {
+  role   = aws_iam_role.context_console.id
   policy = data.aws_iam_policy_document.lambda_logs.json
 }
 
@@ -244,9 +296,16 @@ data "aws_iam_policy_document" "context_parameters" {
   statement {
     actions = ["ssm:GetParameter"]
     resources = [
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_database_url}",
+      # Expand-only legacy combined Context. Existing published versions use
+      # the historical pointer; a fresh dormant bridge uses the split set.
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_database_url_legacy}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_runtime_database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_control_database_url}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_private_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_authority_private_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_database_authority_secret}",
       "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_public_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.public_source_rate_hmac_secret}",
     ]
   }
 }
@@ -256,15 +315,53 @@ resource "aws_iam_role_policy" "context_parameters" {
   policy = data.aws_iam_policy_document.context_parameters.json
 }
 
-data "aws_iam_policy_document" "generation_parameters" {
+data "aws_iam_policy_document" "context_reviewer_parameters" {
   statement {
     actions = ["ssm:GetParameter"]
     resources = [
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_database_url}",
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_public_key}",
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_private_key}",
-      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.gemini_api_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_runtime_database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_private_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_public_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.public_source_rate_hmac_secret}",
     ]
+  }
+}
+
+resource "aws_iam_role_policy" "context_reviewer_parameters" {
+  role   = aws_iam_role.context_reviewer.id
+  policy = data.aws_iam_policy_document.context_reviewer_parameters.json
+}
+
+data "aws_iam_policy_document" "context_console_parameters" {
+  statement {
+    actions = ["ssm:GetParameter"]
+    resources = [
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_control_database_url}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_authority_private_key}",
+      "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_database_authority_secret}",
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "context_console_parameters" {
+  role   = aws_iam_role.context_console.id
+  policy = data.aws_iam_policy_document.context_console_parameters.json
+}
+
+data "aws_iam_policy_document" "generation_parameters" {
+  statement {
+    actions = ["ssm:GetParameter"]
+    resources = concat(
+      [
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_database_url}",
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.context_work_public_key}",
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.console_authority_public_key}",
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.generation_work_private_key}",
+      ],
+      var.deployment_profile == "reserved-concurrency" ? [
+        "arn:aws:ssm:${var.aws_region}:${data.aws_caller_identity.current.account_id}:parameter${local.parameter_names.gemini_api_key}",
+      ] : [],
+    )
   }
 }
 
@@ -276,10 +373,22 @@ resource "aws_iam_role_policy" "generation_parameters" {
 data "aws_iam_policy_document" "web_bff_invoke" {
   statement {
     actions = ["lambda:InvokeFunction"]
-    resources = [
-      aws_lambda_alias.context_service_live.arn,
-      aws_lambda_alias.generation_service_live.arn,
-    ]
+    resources = concat(
+      [
+        # Old published BFF versions resolve these aliases during the expand
+        # window. The new BFF release below is pinned to exact immutable service
+        # versions and cannot follow a later candidate/live alias move.
+        aws_lambda_alias.context_service_live.arn,
+        aws_lambda_alias.context_reviewer_live.arn,
+        aws_lambda_alias.context_console_live.arn,
+        aws_lambda_alias.generation_service_live.arn,
+        aws_lambda_function.context_reviewer.qualified_arn,
+        aws_lambda_function.context_console.qualified_arn,
+        aws_lambda_function.generation_service.qualified_arn,
+        aws_lambda_function.generation_canary.qualified_arn,
+      ],
+      var.web_bff_rollback_service_version_arns,
+    )
   }
 }
 
@@ -308,18 +417,37 @@ resource "aws_cloudwatch_log_group" "context_service" {
   retention_in_days = 3
 }
 
+resource "aws_cloudwatch_log_group" "context_reviewer" {
+  name              = "/aws/lambda/${local.function_names.context_reviewer}"
+  retention_in_days = 3
+}
+
+resource "aws_cloudwatch_log_group" "context_console" {
+  name              = "/aws/lambda/${local.function_names.context_console}"
+  retention_in_days = 3
+}
+
 resource "aws_cloudwatch_log_group" "generation_service" {
   name              = "/aws/lambda/${local.function_names.generation_service}"
   retention_in_days = 3
 }
 
+resource "aws_cloudwatch_log_group" "generation_canary" {
+  name              = "/aws/lambda/${local.function_names.generation_canary}"
+  retention_in_days = 3
+}
+
+# Expand-only compatibility island. Existing deployments retain the exact
+# combined Context code/configuration at this address; new Reviewer and Console
+# versions never assume this role. The contract release removes this resource
+# only after the old BFF rollback window closes.
 resource "aws_lambda_function" "context_service" {
   function_name                  = local.function_names.context_service
   role                           = aws_iam_role.context_service.arn
   handler                        = "main.handler"
   runtime                        = "nodejs24.x"
   memory_size                    = 256
-  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 5 : null
+  reserved_concurrent_executions = null
   timeout                        = 7
   filename                       = var.context_artifact_path
   source_code_hash               = filebase64sha256(var.context_artifact_path)
@@ -327,10 +455,28 @@ resource "aws_lambda_function" "context_service" {
 
   environment {
     variables = {
-      CONTEXT_DATABASE_URL_PARAMETER       = local.parameter_names.context_database_url
-      CONTEXT_WORK_PRIVATE_KEY_PARAMETER   = local.parameter_names.context_work_private_key
-      GENERATION_WORK_PUBLIC_KEY_PARAMETER = local.parameter_names.generation_work_public_key
+      CONTEXT_DATABASE_URL_PARAMETER              = local.parameter_names.context_database_url_legacy
+      CONTEXT_RUNTIME_DATABASE_URL_PARAMETER      = local.parameter_names.context_runtime_database_url
+      CONSOLE_CONTROL_DATABASE_URL_PARAMETER      = local.parameter_names.console_control_database_url
+      CONTEXT_WORK_PRIVATE_KEY_PARAMETER          = local.parameter_names.context_work_private_key
+      CONSOLE_AUTHORITY_PRIVATE_KEY_PEM_PARAMETER = local.parameter_names.console_authority_private_key
+      CONSOLE_DATABASE_AUTHORITY_SECRET_PARAMETER = local.parameter_names.console_database_authority_secret
+      GENERATION_WORK_PUBLIC_KEY_PARAMETER        = local.parameter_names.generation_work_public_key
+      PUBLIC_SOURCE_RATE_HMAC_SECRET_PARAMETER    = local.parameter_names.public_source_rate_hmac_secret
+      REVIEW_PROVIDER_MODE                        = var.deployment_profile == "student-low-quota" ? "fake-only" : "paid-enabled"
     }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      filename,
+      source_code_hash,
+      handler,
+      runtime,
+      memory_size,
+      timeout,
+      environment,
+    ]
   }
 
   depends_on = [aws_cloudwatch_log_group.context_service]
@@ -340,6 +486,85 @@ resource "aws_lambda_alias" "context_service_live" {
   name             = "live"
   function_name    = aws_lambda_function.context_service.function_name
   function_version = aws_lambda_function.context_service.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_function" "context_reviewer" {
+  function_name                  = local.function_names.context_reviewer
+  role                           = aws_iam_role.context_reviewer.arn
+  handler                        = "reviewer-main.handler"
+  runtime                        = "nodejs24.x"
+  memory_size                    = 256
+  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 4 : null
+  timeout                        = 7
+  filename                       = var.context_artifact_path
+  source_code_hash               = filebase64sha256(var.context_artifact_path)
+  publish                        = true
+
+  environment {
+    variables = {
+      CONTEXT_RUNTIME_DATABASE_URL_PARAMETER   = local.parameter_names.context_runtime_database_url
+      CONTEXT_WORK_PRIVATE_KEY_PARAMETER       = local.parameter_names.context_work_private_key
+      GENERATION_WORK_PUBLIC_KEY_PARAMETER     = local.parameter_names.generation_work_public_key
+      PUBLIC_SOURCE_RATE_HMAC_SECRET_PARAMETER = local.parameter_names.public_source_rate_hmac_secret
+      REVIEW_PROVIDER_MODE                     = var.deployment_profile == "student-low-quota" ? "fake-only" : "paid-enabled"
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.context_reviewer]
+}
+
+resource "aws_lambda_alias" "context_reviewer_live" {
+  name             = "live"
+  function_name    = aws_lambda_function.context_reviewer.function_name
+  function_version = aws_lambda_function.context_reviewer.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_alias" "context_reviewer_candidate" {
+  name             = "candidate"
+  function_name    = aws_lambda_function.context_reviewer.function_name
+  function_version = aws_lambda_function.context_reviewer.version
+}
+
+resource "aws_lambda_function" "context_console" {
+  function_name                  = local.function_names.context_console
+  role                           = aws_iam_role.context_console.arn
+  handler                        = "console-main.handler"
+  runtime                        = "nodejs24.x"
+  memory_size                    = 256
+  reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 1 : null
+  timeout                        = 7
+  filename                       = var.context_artifact_path
+  source_code_hash               = filebase64sha256(var.context_artifact_path)
+  publish                        = true
+
+  environment {
+    variables = {
+      CONSOLE_CONTROL_DATABASE_URL_PARAMETER      = local.parameter_names.console_control_database_url
+      CONSOLE_AUTHORITY_PRIVATE_KEY_PEM_PARAMETER = local.parameter_names.console_authority_private_key
+      CONSOLE_DATABASE_AUTHORITY_SECRET_PARAMETER = local.parameter_names.console_database_authority_secret
+      REVIEW_PROVIDER_MODE                        = var.deployment_profile == "student-low-quota" ? "fake-only" : "paid-enabled"
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.context_console]
+}
+
+resource "aws_lambda_alias" "context_console_live" {
+  name             = "live"
+  function_name    = aws_lambda_function.context_console.function_name
+  function_version = aws_lambda_function.context_console.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_alias" "context_console_candidate" {
+  name             = "candidate"
+  function_name    = aws_lambda_function.context_console.function_name
+  function_version = aws_lambda_function.context_console.version
 }
 
 resource "aws_lambda_function" "generation_service" {
@@ -355,30 +580,86 @@ resource "aws_lambda_function" "generation_service" {
   publish                        = true
 
   environment {
-    variables = {
-      GENERATION_DATABASE_URL_PARAMETER     = local.parameter_names.generation_database_url
-      CONTEXT_WORK_PUBLIC_KEY_PARAMETER     = local.parameter_names.context_work_public_key
-      GENERATION_WORK_PRIVATE_KEY_PARAMETER = local.parameter_names.generation_work_private_key
-      # Names the parameter, never the key. Generation reads it at cold start
-      # and falls back to the deterministic provider when it is absent.
-      GEMINI_API_KEY_PARAMETER = local.parameter_names.gemini_api_key
-      REVIEW_FAKE_DELAY_MS     = "0"
-    }
+    variables = merge(
+      {
+        GENERATION_DATABASE_URL_PARAMETER          = local.parameter_names.generation_database_url
+        CONTEXT_WORK_PUBLIC_KEY_PARAMETER          = local.parameter_names.context_work_public_key
+        CONSOLE_AUTHORITY_PUBLIC_KEY_PEM_PARAMETER = local.parameter_names.console_authority_public_key
+        GENERATION_WORK_PRIVATE_KEY_PARAMETER      = local.parameter_names.generation_work_private_key
+        REVIEW_FAKE_DELAY_MS                       = "0"
+        REVIEW_PROVIDER_MODE                       = var.deployment_profile == "student-low-quota" ? "fake-only" : "paid-enabled"
+      },
+      var.deployment_profile == "reserved-concurrency" ? {
+        # Names the parameter, never the key. Low-quota deployments do not
+        # receive either this name or permission to resolve it.
+        GEMINI_API_KEY_PARAMETER = local.parameter_names.gemini_api_key
+      } : {},
+    )
   }
 
   depends_on = [aws_cloudwatch_log_group.generation_service]
+
+  # Deployment freezes the whole function before a paid -> fake-only cutover
+  # and releases it only after the verified alias is live. Terraform must not
+  # clear that safety lock while applying mutable infrastructure.
+  lifecycle { ignore_changes = [reserved_concurrent_executions] }
 }
 
 resource "aws_lambda_alias" "generation_service_live" {
   name             = "live"
   function_name    = aws_lambda_function.generation_service.function_name
   function_version = aws_lambda_function.generation_service.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_alias" "generation_service_candidate" {
+  name             = "candidate"
+  function_name    = aws_lambda_function.generation_service.function_name
+  function_version = aws_lambda_function.generation_service.version
+}
+
+# Low-quota cutovers freeze the entire live Generation function, including its
+# candidate alias. This separate function runs the exact candidate artifact
+# with a fixed FakeProvider-only environment and no paid-credential reference.
+resource "aws_lambda_function" "generation_canary" {
+  function_name    = "review-generation-canary-student"
+  role             = aws_iam_role.generation_service.arn
+  handler          = "main.handler"
+  runtime          = "nodejs24.x"
+  memory_size      = 512
+  timeout          = 75
+  filename         = var.generation_artifact_path
+  source_code_hash = filebase64sha256(var.generation_artifact_path)
+  publish          = true
+
+  environment {
+    variables = {
+      GENERATION_DATABASE_URL_PARAMETER          = local.parameter_names.generation_database_url
+      CONTEXT_WORK_PUBLIC_KEY_PARAMETER          = local.parameter_names.context_work_public_key
+      CONSOLE_AUTHORITY_PUBLIC_KEY_PEM_PARAMETER = local.parameter_names.console_authority_public_key
+      GENERATION_WORK_PRIVATE_KEY_PARAMETER      = local.parameter_names.generation_work_private_key
+      REVIEW_FAKE_DELAY_MS                       = "0"
+      REVIEW_PROVIDER_MODE                       = "fake-only"
+    }
+  }
+
+  depends_on = [aws_cloudwatch_log_group.generation_canary]
 }
 
 locals {
   web_bff_environment = {
-    CONTEXT_FUNCTION_ALIAS_ARN        = aws_lambda_alias.context_service_live.arn
-    GENERATION_FUNCTION_ALIAS_ARN     = aws_lambda_alias.generation_service_live.arn
+    # The names remain backward-compatible with the BFF runtime, but the values
+    # are exact published version ARNs rather than mutable aliases.
+    CONTEXT_REVIEWER_FUNCTION_ALIAS_ARN = aws_lambda_function.context_reviewer.qualified_arn
+    CONTEXT_CONSOLE_FUNCTION_ALIAS_ARN  = aws_lambda_function.context_console.qualified_arn
+    GENERATION_FUNCTION_ALIAS_ARN       = aws_lambda_function.generation_service.qualified_arn
+    GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN = (
+      var.deployment_profile == "student-low-quota"
+      ? aws_lambda_function.generation_canary.qualified_arn
+      : aws_lambda_function.generation_service.qualified_arn
+    )
+    REVIEW_CONFIGURATION_RELEASE_ID   = var.configuration_candidate_release_id
     REVIEW_CSRF_SECRET_PARAMETER      = local.parameter_names.review_csrf_secret
     OPERATOR_SESSION_SECRET_PARAMETER = local.parameter_names.operator_session_secret
     OPERATOR_OIDC_CONFIG_PARAMETER    = local.parameter_names.operator_oidc_config
@@ -405,6 +686,14 @@ resource "aws_lambda_alias" "web_bff_fast_live" {
   name             = "live"
   function_name    = aws_lambda_function.web_bff_fast.function_name
   function_version = aws_lambda_function.web_bff_fast.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_alias" "web_bff_fast_candidate" {
+  name             = "candidate"
+  function_name    = aws_lambda_function.web_bff_fast.function_name
+  function_version = aws_lambda_function.web_bff_fast.version
 }
 
 resource "aws_lambda_function" "web_bff_stream" {
@@ -427,6 +716,14 @@ resource "aws_lambda_alias" "web_bff_stream_live" {
   name             = "live"
   function_name    = aws_lambda_function.web_bff_stream.function_name
   function_version = aws_lambda_function.web_bff_stream.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_alias" "web_bff_stream_candidate" {
+  name             = "candidate"
+  function_name    = aws_lambda_function.web_bff_stream.function_name
+  function_version = aws_lambda_function.web_bff_stream.version
 }
 
 resource "aws_lambda_function" "web_bff_reconcile" {
@@ -446,6 +743,14 @@ resource "aws_lambda_function" "web_bff_reconcile" {
 
 resource "aws_lambda_alias" "web_bff_reconcile_live" {
   name             = "live"
+  function_name    = aws_lambda_function.web_bff_reconcile.function_name
+  function_version = aws_lambda_function.web_bff_reconcile.version
+
+  lifecycle { ignore_changes = [function_version] }
+}
+
+resource "aws_lambda_alias" "web_bff_reconcile_candidate" {
+  name             = "candidate"
   function_name    = aws_lambda_function.web_bff_reconcile.function_name
   function_version = aws_lambda_function.web_bff_reconcile.version
 }
@@ -476,6 +781,51 @@ resource "aws_cloudfront_function" "api_origin" {
   runtime = "cloudfront-js-2.0"
   publish = true
   code    = file("${path.module}/api-origin.js")
+}
+
+resource "aws_cloudfront_response_headers_policy" "browser_security" {
+  name = "review-browser-security-student"
+
+  security_headers_config {
+    content_security_policy {
+      content_security_policy = "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'; form-action 'self'"
+      override                = true
+    }
+
+    content_type_options {
+      override = true
+    }
+
+    frame_options {
+      frame_option = "DENY"
+      override     = true
+    }
+
+    referrer_policy {
+      referrer_policy = "strict-origin-when-cross-origin"
+      override        = true
+    }
+
+    strict_transport_security {
+      access_control_max_age_sec = 63072000
+      include_subdomains         = true
+      preload                    = true
+      override                   = true
+    }
+  }
+
+  custom_headers_config {
+    items {
+      header   = "Permissions-Policy"
+      value    = "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+      override = true
+    }
+    items {
+      header   = "X-Robots-Tag"
+      value    = "noindex, nofollow, noarchive"
+      override = true
+    }
+  }
 }
 
 resource "aws_cloudfront_distribution" "student" {
@@ -521,12 +871,13 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   default_cache_behavior {
-    target_origin_id       = "ui"
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS"]
-    cached_methods         = ["GET", "HEAD"]
-    cache_policy_id        = data.aws_cloudfront_cache_policy.caching_optimized.id
-    compress               = true
+    target_origin_id           = "ui"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_optimized.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.browser_security.id
+    compress                   = true
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.spa_rewrite.arn
@@ -534,14 +885,15 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   ordered_cache_behavior {
-    path_pattern             = "/auth/*"
-    target_origin_id         = "web-bff-fast"
-    viewer_protocol_policy   = "https-only"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
-    cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-    compress                 = false
+    path_pattern               = "/auth/*"
+    target_origin_id           = "web-bff-fast"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.browser_security.id
+    compress                   = false
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.api_origin.arn
@@ -549,14 +901,15 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   ordered_cache_behavior {
-    path_pattern             = "/api/v1/review-sessions/*/generations"
-    target_origin_id         = "web-bff-stream"
-    viewer_protocol_policy   = "https-only"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
-    cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-    compress                 = false
+    path_pattern               = "/api/v1/review-sessions/*/generations"
+    target_origin_id           = "web-bff-stream"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.browser_security.id
+    compress                   = false
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.api_origin.arn
@@ -564,14 +917,15 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   ordered_cache_behavior {
-    path_pattern             = "/api/v1/*"
-    target_origin_id         = "web-bff-fast"
-    viewer_protocol_policy   = "https-only"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
-    cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-    compress                 = false
+    path_pattern               = "/api/v1/*"
+    target_origin_id           = "web-bff-fast"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.browser_security.id
+    compress                   = false
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.api_origin.arn
@@ -579,14 +933,15 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   ordered_cache_behavior {
-    path_pattern             = "/s/*"
-    target_origin_id         = "web-bff-fast"
-    viewer_protocol_policy   = "https-only"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS"]
-    cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-    compress                 = false
+    path_pattern               = "/s/*"
+    target_origin_id           = "web-bff-fast"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.browser_security.id
+    compress                   = false
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.api_origin.arn
@@ -594,14 +949,15 @@ resource "aws_cloudfront_distribution" "student" {
   }
 
   ordered_cache_behavior {
-    path_pattern             = "/health"
-    target_origin_id         = "web-bff-fast"
-    viewer_protocol_policy   = "https-only"
-    allowed_methods          = ["GET", "HEAD", "OPTIONS"]
-    cached_methods           = ["GET", "HEAD"]
-    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-    compress                 = false
+    path_pattern               = "/health"
+    target_origin_id           = "web-bff-fast"
+    viewer_protocol_policy     = "redirect-to-https"
+    allowed_methods            = ["GET", "HEAD", "OPTIONS"]
+    cached_methods             = ["GET", "HEAD"]
+    cache_policy_id            = data.aws_cloudfront_cache_policy.caching_disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.browser_security.id
+    compress                   = false
     function_association {
       event_type   = "viewer-request"
       function_arn = aws_cloudfront_function.api_origin.arn
@@ -711,9 +1067,15 @@ resource "aws_cognito_user_pool_client" "operator_console" {
   logout_urls                          = ["https://${aws_cloudfront_distribution.student.domain_name}/console"]
   prevent_user_existence_errors        = "ENABLED"
   enable_token_revocation              = true
-  id_token_validity                    = 60
-  access_token_validity                = 60
-  refresh_token_validity               = 1
+
+  refresh_token_rotation {
+    feature                    = "ENABLED"
+    retry_grace_period_seconds = 10
+  }
+
+  id_token_validity      = 60
+  access_token_validity  = 60
+  refresh_token_validity = 1
 
   token_validity_units {
     id_token      = "minutes"

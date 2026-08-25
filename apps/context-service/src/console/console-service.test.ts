@@ -62,6 +62,8 @@ function freshData(): FakeConsoleData {
         slug: "brightsmile",
         name: "BrightSmile",
         locale: "en-GB",
+        platformDefaults: defaultTenantSettings("en-GB"),
+        tenantValues: defaultTenantSettings("en-GB"),
         settings: defaultTenantSettings("en-GB"),
         keywordCategories: [
           { key: "service", label: "Service", sortOrder: 0 },
@@ -78,6 +80,8 @@ function freshData(): FakeConsoleData {
         slug: "speicher-neun",
         name: "Speicher Neun",
         locale: "de-DE",
+        platformDefaults: defaultTenantSettings("de-DE"),
+        tenantValues: defaultTenantSettings("de-DE"),
         settings: defaultTenantSettings("de-DE"),
         keywordCategories: [{ key: "kueche", label: "Küche", sortOrder: 0 }],
         category: "Restaurant",
@@ -237,7 +241,7 @@ function freshData(): FakeConsoleData {
         id: "prompt-generate-1",
         action: "generate",
         version: 1,
-        hash: "sha256:aaa",
+        hash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         status: "candidate",
         createdAt: "2026-08-01T09:00:00.000Z",
         createdBy: "operator-1",
@@ -250,7 +254,7 @@ function freshData(): FakeConsoleData {
         id: "prompt-generate-2",
         action: "generate",
         version: 2,
-        hash: "sha256:bbb",
+        hash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         status: "draft",
         createdAt: "2026-08-05T09:00:00.000Z",
         createdBy: "operator-1",
@@ -271,14 +275,14 @@ function freshData(): FakeConsoleData {
         variants: [
           {
             promptVersionId: "prompt-generate-1",
-            promptVersionHash: "sha256:aaa",
+            promptVersionHash: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             weightPct: 50,
             generations: 40,
             accepted: 26,
           },
           {
             promptVersionId: "prompt-generate-2",
-            promptVersionHash: "sha256:bbb",
+            promptVersionHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             weightPct: 50,
             generations: 38,
             accepted: 30,
@@ -334,11 +338,13 @@ async function command(
   body: ConsoleCommandDto,
   scope: { tenantId: string | null; locationId: string | null },
   access?: OperatorAccessProjectionDto,
+  ifMatch?: string,
 ): Promise<ConsoleRequestInvocationResultDto["result"]> {
   return await service(access).request({
     identity,
     scope,
     publicOrigin: "https://review.example.test",
+    ...(ifMatch === undefined ? {} : { ifMatch }),
     request: { mode: "command", command: body },
   });
 }
@@ -353,6 +359,301 @@ function viewData<T>(result: ConsoleRequestInvocationResultDto["result"]): T {
 beforeEach(() => {
   data = freshData();
   store = createFakeConsoleStore(data);
+});
+
+describe("US-04.2 Tenant configuration publication", () => {
+  it("saves a Draft without changing published settings", async () => {
+    const before = viewData<{
+      configuration: { etag: string; draft: unknown };
+      settings: { key: string; value: unknown }[];
+    }>(
+      await query({ view: "tenant-settings" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    );
+
+    expect(
+      await command(
+        {
+          command: "save-tenant-settings",
+          changes: [{ key: "toneGuidelines", value: "Calm and precise." }],
+        },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        before.configuration.etag,
+      ),
+    ).toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const after = viewData<{
+      configuration: {
+        etag: string;
+        draft: { changes: { key: string; value: unknown }[] } | null;
+      };
+      settings: { key: string; value: unknown }[];
+    }>(
+      await query({ view: "tenant-settings" }, {
+        tenantId: "tenant-bright",
+        locationId: null,
+      }),
+    );
+    expect(
+      after.settings.find((setting) => setting.key === "toneGuidelines")?.value,
+    ).toBe("Plain, factual, first person.");
+    expect(after.configuration.etag).not.toBe(before.configuration.etag);
+    expect(after.configuration.draft?.changes).toEqual([
+      { key: "toneGuidelines", value: "Calm and precise." },
+    ]);
+  });
+
+  it("binds the ETag to one Draft revision so a stale tab cannot overwrite or cancel it", async () => {
+    const initial = viewData<{
+      configuration: { etag: string };
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+
+    await expect(
+      command(
+        {
+          command: "save-tenant-settings",
+          changes: [{ key: "toneGuidelines", value: "First tab." }],
+        },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        initial.configuration.etag,
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const afterFirstSave = viewData<{
+      configuration: { etag: string };
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    expect(afterFirstSave.configuration.etag).not.toBe(initial.configuration.etag);
+
+    await expect(
+      command(
+        {
+          command: "save-tenant-settings",
+          changes: [{ key: "toneGuidelines", value: "Stale second tab." }],
+        },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        initial.configuration.etag,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", code: "CONFIG_CONFLICT" });
+
+    await expect(
+      command(
+        { command: "cancel-configuration-draft" },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        initial.configuration.etag,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", code: "CONFIG_CONFLICT" });
+
+    await expect(
+      command(
+        {
+          command: "save-tenant-settings",
+          changes: [{ key: "requireDisclosure", value: false }],
+        },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        afterFirstSave.configuration.etag,
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const afterSecondSave = viewData<{
+      configuration: {
+        etag: string;
+        draft: { changes: { key: string; value: unknown }[] } | null;
+      };
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    expect(afterSecondSave.configuration.etag).not.toBe(
+      afterFirstSave.configuration.etag,
+    );
+    expect(afterSecondSave.configuration.draft?.changes).toEqual([
+      { key: "toneGuidelines", value: "First tab." },
+      { key: "requireDisclosure", value: false },
+    ]);
+  });
+
+  it("publishes one CAS revision and materializes every affected Location", async () => {
+    data.locations.push({
+      ...data.locations[0]!,
+      id: "location-harbour",
+      slug: "harbour",
+      name: "Harbour",
+    });
+    const before = viewData<{
+      configuration: { etag: string };
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+
+    await command(
+      {
+        command: "save-tenant-settings",
+        changes: [{ key: "toneGuidelines", value: "Calm and precise." }],
+      },
+      { tenantId: "tenant-bright", locationId: null },
+      undefined,
+      before.configuration.etag,
+    );
+    const withDraft = viewData<{
+      configuration: { etag: string };
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    expect(
+      await command(
+        { command: "publish-configuration" },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        withDraft.configuration.etag,
+      ),
+    ).toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const after = viewData<{
+      configuration: { etag: string; draft: unknown };
+      settings: { key: string; value: unknown }[];
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    expect(after.configuration).toEqual({
+      etag: '"configuration:tenant-bright:tenant:2:draft:none"',
+      draft: null,
+    });
+    expect(
+      after.settings.find((setting) => setting.key === "toneGuidelines")?.value,
+    ).toBe("Calm and precise.");
+    expect(store.calls).toEqual(
+      expect.arrayContaining([
+        "materializeConfiguration:tenant-bright:location-downtown",
+        "materializeConfiguration:tenant-bright:location-harbour",
+      ]),
+    );
+  });
+
+  it("requires ai:operate again when publishing a Draft that deploys a Prompt Version", async () => {
+    const baseAccess = grants();
+    if (baseAccess.status !== "authorized") {
+      throw new Error("expected authorized fixture");
+    }
+    const aiAccess = grants({
+      tenantGrants: [
+        {
+          ...baseAccess.tenantGrants[0]!,
+          capabilities: [...tenantCapabilities, "ai:operate"],
+        },
+      ],
+    });
+    const before = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+        aiAccess,
+      ),
+    );
+
+    await expect(
+      command(
+        {
+          command: "stage-configuration-changes",
+          changes: [
+            {
+              operation: "deploy-prompt-version",
+              action: "generate",
+              promptVersionId: "prompt-generate-1",
+            },
+          ],
+        },
+        { tenantId: "tenant-bright", locationId: null },
+        aiAccess,
+        before.configuration.etag,
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const staged = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    await expect(
+      command(
+        { command: "publish-configuration" },
+        { tenantId: "tenant-bright", locationId: null },
+        undefined,
+        staged.configuration.etag,
+      ),
+    ).resolves.toEqual({ status: "not-found" });
+    expect(
+      store.calls.some((call) => call.startsWith("publishConfiguration:")),
+    ).toBe(false);
+  });
+
+  it("rejects a staged Prompt deployment whose immutable Action does not match", async () => {
+    const baseAccess = grants();
+    if (baseAccess.status !== "authorized") {
+      throw new Error("expected authorized fixture");
+    }
+    const aiAccess = grants({
+      tenantGrants: [
+        {
+          ...baseAccess.tenantGrants[0]!,
+          capabilities: [...tenantCapabilities, "ai:operate"],
+        },
+      ],
+    });
+    const before = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+        aiAccess,
+      ),
+    );
+
+    await expect(
+      command(
+        {
+          command: "stage-configuration-changes",
+          changes: [
+            {
+              operation: "deploy-prompt-version",
+              action: "paraphrase",
+              promptVersionId: "prompt-generate-1",
+            },
+          ],
+        },
+        { tenantId: "tenant-bright", locationId: null },
+        aiAccess,
+        before.configuration.etag,
+      ),
+    ).resolves.toMatchObject({ status: "rejected", code: "INVALID_VALUE" });
+  });
 });
 
 describe("ADM-AUTH-01/03 bootstrap", () => {
@@ -452,9 +753,210 @@ describe("ADM-AUTH-04 Tenant isolation", () => {
       }),
     ).toEqual({ status: "not-found" });
   });
+
+  it("does not mint an execution receipt for a crossed Tenant/Location pair", async () => {
+    const signed: unknown[] = [];
+    const minted: unknown[] = [];
+    const consoleService = createConsoleService({
+      store,
+      resolveAccess: async () => grants(),
+      now: () => new Date("2026-08-18T12:00:00.000Z"),
+      readAuthority: {
+        signRead(input) {
+          signed.push(input);
+          return "signed-receipt";
+        },
+      },
+      executionAuthorizationStore: {
+        mint: async (input) => {
+          minted.push(input);
+          return null;
+        },
+      },
+    });
+
+    await expect(
+      consoleService.authorizeRead({
+        identity,
+        scope: {
+          tenantId: "tenant-bright",
+          locationId: "location-hafencity",
+        },
+        query: {
+          view: "analytics",
+          query: {
+            from: "2026-08-01T00:00:00.000Z",
+            to: "2026-08-18T00:00:00.000Z",
+            sortKey: "generations",
+            sortDirection: "desc",
+          },
+        },
+      }),
+    ).resolves.toEqual({ status: "not-found" });
+    expect(signed).toEqual([]);
+    expect(minted).toEqual([]);
+  });
+
+  it("signs only the opaque authorization PostgreSQL minted for current Grants", async () => {
+    const minted: unknown[] = [];
+    const signed: unknown[] = [];
+    const consoleService = createConsoleService({
+      store,
+      resolveAccess: async () => grants(),
+      now: () => new Date("2026-08-18T12:00:00.000Z"),
+      executionAuthorizationStore: {
+        mint: async (input) => {
+          minted.push(input);
+          return {
+            authorizationId: "2ffad1ca-22f2-41ad-a9b3-07991a66cf76",
+            expiresAt: "2026-08-18T12:00:30.000Z",
+            readMode: "redacted",
+          };
+        },
+      },
+      readAuthority: {
+        signRead(input) {
+          signed.push(input);
+          return "signed-receipt";
+        },
+      },
+    });
+
+    const query = {
+      view: "analytics" as const,
+      query: {
+        from: "2026-08-01T00:00:00.000Z",
+        to: "2026-08-18T00:00:00.000Z",
+        sortKey: "generations" as const,
+        sortDirection: "desc" as const,
+      },
+    };
+    await expect(
+      consoleService.authorizeRead({
+        identity,
+        scope: { tenantId: "tenant-bright", locationId: null },
+        query,
+      }),
+    ).resolves.toEqual({
+      status: "authorized",
+      authorizationId: "2ffad1ca-22f2-41ad-a9b3-07991a66cf76",
+      receipt: "signed-receipt",
+      projectionScope: expect.objectContaining({ type: "tenant" }),
+      query,
+    });
+    expect(minted).toEqual([
+      {
+        operatorId: "operator-1",
+        scope: { type: "tenant", tenantId: "tenant-bright" },
+        query,
+        expiresAt: "2026-08-18T12:00:30.000Z",
+      },
+    ]);
+    expect(signed).toEqual([
+      {
+        authorizationId: "2ffad1ca-22f2-41ad-a9b3-07991a66cf76",
+        view: "analytics",
+        readMode: "redacted",
+        expiresAt: "2026-08-18T12:00:30.000Z",
+      },
+    ]);
+  });
 });
 
 describe("ADM-LOC-01/03 Locations and inheritance", () => {
+  it("projects the actual Platform, Tenant and Location source for each value", async () => {
+    const tenantIndex = data.tenants.findIndex(
+      (candidate) => candidate.id === "tenant-bright",
+    );
+    const tenant = data.tenants[tenantIndex];
+    if (tenant === undefined) {
+      throw new Error("Expected BrightSmile fixture");
+    }
+    const platformDefaults = {
+      ...tenant.platformDefaults,
+      requireDisclosure: true,
+      requireVerifiedExperience: true,
+    };
+    const tenantValues = { requireDisclosure: false };
+    data.tenants[tenantIndex] = {
+      ...tenant,
+      platformDefaults,
+      tenantValues,
+      settings: {
+        ...platformDefaults,
+        ...tenantValues,
+      },
+    };
+    const locationIndex = data.locations.findIndex(
+      (candidate) => candidate.id === "location-downtown",
+    );
+    const location = data.locations[locationIndex];
+    if (location === undefined) {
+      throw new Error("Expected Downtown fixture");
+    }
+    data.locations[locationIndex] = {
+      ...location,
+      overrides: { requireVerifiedExperience: false },
+    };
+
+    const tenantSettings = viewData<{
+      settings: {
+        key: string;
+        source: string;
+        platformDefault: unknown;
+        tenantValue: unknown;
+      }[];
+    }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    expect(
+      tenantSettings.settings.find(
+        (setting) => setting.key === "requireVerifiedExperience",
+      ),
+    ).toMatchObject({
+      source: "platform",
+      platformDefault: true,
+      tenantValue: null,
+    });
+    expect(
+      tenantSettings.settings.find(
+        (setting) => setting.key === "requireDisclosure",
+      ),
+    ).toMatchObject({
+      source: "tenant",
+      platformDefault: true,
+      tenantValue: false,
+    });
+
+    const locationSettings = viewData<{
+      settings: {
+        key: string;
+        source: string;
+        platformDefault: unknown;
+        tenantValue: unknown;
+        locationOverride: unknown;
+      }[];
+    }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    );
+    expect(
+      locationSettings.settings.find(
+        (setting) => setting.key === "requireVerifiedExperience",
+      ),
+    ).toMatchObject({
+      source: "location",
+      platformDefault: true,
+      tenantValue: null,
+      locationOverride: false,
+    });
+  });
+
   it("lists Locations with the effective entry mode and its source", async () => {
     const result = viewData<{ locations: unknown[] }>(
       await query({ view: "locations" }, {
@@ -494,7 +996,10 @@ describe("ADM-LOC-01/03 Locations and inheritance", () => {
   });
 
   it("shows a venue inheriting until it holds its own override", async () => {
-    const before = viewData<{ settings: { key: string; source: string }[] }>(
+    const before = viewData<{
+      configuration: { etag: string };
+      settings: { key: string; source: string }[];
+    }>(
       await query({ view: "location-settings" }, {
         tenantId: "tenant-bright",
         locationId: "location-downtown",
@@ -504,14 +1009,57 @@ describe("ADM-LOC-01/03 Locations and inheritance", () => {
       before.settings.find((setting) => setting.key === "requireDisclosure"),
     ).toMatchObject({ source: "tenant", locationOverride: null });
 
-    await command(
-      {
-        command: "set-location-override",
-        key: "requireDisclosure",
-        value: false,
-      },
-      { tenantId: "tenant-bright", locationId: "location-downtown" },
+    await expect(
+      command(
+        {
+          command: "set-location-override",
+          change: { key: "requireDisclosure", value: false },
+        },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      code: "CONFIG_DRAFT_REQUIRED",
+    });
+
+    await expect(
+      command(
+        {
+          command: "stage-configuration-changes",
+          changes: [
+            {
+              operation: "set-location-override",
+              change: { key: "requireDisclosure", value: false },
+            },
+          ],
+        },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+        undefined,
+        before.configuration.etag,
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
+
+    const staged = viewData<{
+      configuration: { etag: string };
+      settings: { key: string; source: string }[];
+    }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
     );
+    expect(
+      staged.settings.find((setting) => setting.key === "requireDisclosure"),
+    ).toMatchObject({ source: "tenant", locationOverride: null });
+
+    await expect(
+      command(
+        { command: "publish-configuration" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+        undefined,
+        staged.configuration.etag,
+      ),
+    ).resolves.toEqual({ status: "command", result: { outcome: "accepted" } });
 
     const after = viewData<{ settings: { key: string; source: string }[] }>(
       await query({ view: "location-settings" }, {
@@ -530,17 +1078,66 @@ describe("ADM-LOC-01/03 Locations and inheritance", () => {
   });
 
   it("resets by deleting the override row, not by copying the Tenant value", async () => {
-    await command(
-      {
-        command: "set-location-override",
-        key: "requireDisclosure",
-        value: false,
-      },
-      { tenantId: "tenant-bright", locationId: "location-downtown" },
+    const before = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
     );
     await command(
-      { command: "reset-location-override", key: "requireDisclosure" },
+      {
+        command: "stage-configuration-changes",
+        changes: [
+          {
+            operation: "set-location-override",
+            change: { key: "requireDisclosure", value: false },
+          },
+        ],
+      },
       { tenantId: "tenant-bright", locationId: "location-downtown" },
+      undefined,
+      before.configuration.etag,
+    );
+    const withSetDraft = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    );
+    await command(
+      { command: "publish-configuration" },
+      { tenantId: "tenant-bright", locationId: "location-downtown" },
+      undefined,
+      withSetDraft.configuration.etag,
+    );
+    const afterSet = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    );
+    await command(
+      {
+        command: "stage-configuration-changes",
+        changes: [
+          { operation: "reset-location-override", key: "requireDisclosure" },
+        ],
+      },
+      { tenantId: "tenant-bright", locationId: "location-downtown" },
+      undefined,
+      afterSet.configuration.etag,
+    );
+    const withResetDraft = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    );
+    await command(
+      { command: "publish-configuration" },
+      { tenantId: "tenant-bright", locationId: "location-downtown" },
+      undefined,
+      withResetDraft.configuration.etag,
     );
 
     const location = data.locations.find(
@@ -562,7 +1159,10 @@ describe("ADM-LOC-01/03 Locations and inheritance", () => {
   it("refuses to override a Tenant-owned field", async () => {
     expect(
       await command(
-        { command: "set-location-override", key: "locale", value: "de-DE" },
+        {
+          command: "set-location-override",
+          change: { key: "locale", value: "de-DE" } as never,
+        },
         { tenantId: "tenant-bright", locationId: "location-downtown" },
       ),
     ).toMatchObject({ status: "rejected", code: "NOT_OVERRIDABLE" });
@@ -708,15 +1308,59 @@ describe("ADM-CFG-02 keyword taxonomy", () => {
   });
 
   it("adds a keyword into the scope the operator chose", async () => {
+    await expect(
+      command(
+        {
+          command: "create-keyword",
+          label: "Late opening",
+          categoryKey: "service",
+          polarity: "positive",
+          ownerScope: "location",
+        },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    ).resolves.toMatchObject({
+      status: "rejected",
+      code: "CONFIG_DRAFT_REQUIRED",
+    });
+    const before = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    );
     await command(
       {
-        command: "create-keyword",
-        label: "Late opening",
-        categoryKey: "service",
-        polarity: "positive",
-        ownerScope: "location",
+        command: "stage-configuration-changes",
+        changes: [
+          {
+            operation: "create-fact-option",
+            mutationId: "keyword-late-opening",
+            label: "Late opening",
+            categoryKey: "service",
+            polarity: "positive",
+            ownerScope: "location",
+          },
+        ],
       },
       { tenantId: "tenant-bright", locationId: "location-downtown" },
+      undefined,
+      before.configuration.etag,
+    );
+    expect(
+      data.keywords.find((keyword) => keyword.label === "Late opening"),
+    ).toBeUndefined();
+    const staged = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "location-settings" },
+        { tenantId: "tenant-bright", locationId: "location-downtown" },
+      ),
+    );
+    await command(
+      { command: "publish-configuration" },
+      { tenantId: "tenant-bright", locationId: "location-downtown" },
+      undefined,
+      staged.configuration.etag,
     );
 
     expect(
@@ -736,7 +1380,10 @@ describe("ADM-CFG-02 keyword taxonomy", () => {
         },
         { tenantId: "tenant-bright", locationId: null },
       ),
-    ).toMatchObject({ status: "rejected", code: "INVALID_VALUE" });
+    ).toMatchObject({
+      status: "rejected",
+      code: "CONFIG_DRAFT_REQUIRED",
+    });
   });
 });
 
@@ -847,7 +1494,44 @@ describe("ADM-CFG-05 Action policy", () => {
         { command: "set-action-enablement", action: "condense", enabled: false },
         { tenantId: "tenant-bright", locationId: null },
       ),
-    ).toEqual({ status: "command", result: { outcome: "accepted" } });
+    ).toMatchObject({ status: "rejected", code: "CONFIG_DRAFT_REQUIRED" });
+
+    const before = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    await command(
+      {
+        command: "stage-configuration-changes",
+        changes: [
+          {
+            operation: "set-action-enablement",
+            action: "condense",
+            enabled: false,
+          },
+        ],
+      },
+      { tenantId: "tenant-bright", locationId: null },
+      undefined,
+      before.configuration.etag,
+    );
+    const staged = viewData<{ configuration: { etag: string } }>(
+      await query(
+        { view: "tenant-settings" },
+        { tenantId: "tenant-bright", locationId: null },
+      ),
+    );
+    await command(
+      { command: "publish-configuration" },
+      { tenantId: "tenant-bright", locationId: null },
+      undefined,
+      staged.configuration.etag,
+    );
+    expect(
+      data.actions.find((action) => action.key === "condense")?.enabled,
+    ).toBe(false);
   });
 });
 
@@ -1114,15 +1798,19 @@ describe("ADM-LOC-04 tenant-wide distribution", () => {
   });
 
 describe("US-04.2 publishing configuration to a venue", () => {
-  it("materialises the venue's own snapshot", async () => {
+  it("rejects the legacy direct republish path in favour of Draft CAS publication", async () => {
     expect(
       await command({ command: "republish-configuration" }, {
         tenantId: "tenant-bright",
         locationId: "location-downtown",
       }),
-    ).toEqual({ status: "command", result: { outcome: "accepted" } });
+    ).toEqual({
+      status: "rejected",
+      code: "INVALID_VALUE",
+      message: "Direct republish is retired; save a Draft and publish it with its base revision.",
+    });
 
-    expect(store.calls).toContain(
+    expect(store.calls).not.toContain(
       "republishConfiguration:tenant-bright:location-downtown",
     );
   });

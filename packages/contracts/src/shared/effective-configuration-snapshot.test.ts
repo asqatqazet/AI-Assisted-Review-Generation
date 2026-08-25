@@ -11,6 +11,8 @@ describe("Effective Configuration Snapshot wire value", () => {
       requireDisclosure: true,
       requireVerifiedExperience: true,
       maxReviewFormatsPerRequest: 1,
+      minimumFactSelections: 2,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: ["guaranteed"],
       enabledReviewFormatVersionIds: ["format-a@1"],
       enabledCommands: ["generate" as const],

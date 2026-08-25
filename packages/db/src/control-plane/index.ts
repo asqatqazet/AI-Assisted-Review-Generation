@@ -1,5 +1,9 @@
 export * from "./console-store.js";
+export * from "./console-execution-authorization.js";
+export * from "./database-identity.js";
 import { PrismaClient } from "../generated/control-plane/index.js";
+
+import { createConsoleIdentityAuthorizationProof } from "./console-database-authority.js";
 
 export interface OperatorIdentity {
   readonly issuer: string;
@@ -64,42 +68,36 @@ interface LocationRow {
 
 export function createPostgresOperatorAccessStore({
   databaseUrl,
+  consoleDatabaseAuthoritySecret,
 }: {
   readonly databaseUrl: string;
+  readonly consoleDatabaseAuthoritySecret: string;
 }): PostgresOperatorAccessStore {
   const client = new PrismaClient({ datasourceUrl: databaseUrl });
 
   return {
     async resolveAccess(identity) {
       return await client.$transaction(async (transaction) => {
-        let operators = await transaction.$queryRaw<OperatorRow[]>`
-          SELECT id::text, email::text
-          FROM operators
-          WHERE external_issuer = ${identity.issuer}
-            AND external_subject = ${identity.subject}
-            AND status = 'ACTIVE'
-          LIMIT 1
+        const proof = createConsoleIdentityAuthorizationProof({
+          secretHex: consoleDatabaseAuthoritySecret,
+          identity,
+        });
+        const operators = await transaction.$queryRaw<OperatorRow[]>`
+          SELECT operator_id::text AS id, email::text
+          FROM console_resolve_operator_identity(
+            ${identity.issuer},
+            ${identity.subject},
+            ${identity.email},
+            ${proof.issuedAtMs}::bigint,
+            ${proof.nonce}::uuid,
+            ${proof.mac}
+          )
         `;
-        if (operators.length === 0) {
-          operators = await transaction.$queryRaw<OperatorRow[]>`
-            UPDATE operators
-            SET external_issuer = ${identity.issuer},
-                external_subject = ${identity.subject}
-            WHERE email = ${identity.email}
-              AND status = 'ACTIVE'
-              AND external_issuer IS NULL
-              AND external_subject IS NULL
-            RETURNING id::text, email::text
-          `;
-        }
         const operator = operators[0];
         if (operator === undefined) {
           return { status: "unauthorized" };
         }
 
-        await transaction.$executeRaw`
-          SELECT set_config('app.operator_id', ${operator.id}, true)
-        `;
         const platformRows = await transaction.$queryRaw<PlatformGrantRow[]>`
           SELECT access_grant.role_key, role.capabilities
           FROM platform_access_grants AS access_grant

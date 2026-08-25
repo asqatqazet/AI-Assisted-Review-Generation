@@ -1,0 +1,111 @@
+name: student-cutoff
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Disable the assessment now, before its persisted teardown date
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: student-deployment
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+  TF_DIR: infra/terraform/student
+
+jobs:
+  cutoff:
+    environment: student
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.14.7
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: review-generation-student-cutoff
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve only trusted cutoff targets from Terraform state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          STATE_BUCKET="review-gen-student-tfstate-$ACCOUNT_ID"
+          aws s3api head-bucket --bucket "$STATE_BUCKET"
+          terraform -chdir="$TF_DIR" init \
+            -backend-config="bucket=$STATE_BUCKET" \
+            -backend-config="key=student/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+          terraform -chdir="$TF_DIR" output -json cutoff_lambda_function_names \
+            > "$RUNNER_TEMP/cutoff-functions.json"
+          echo "distribution_id=$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "event_rule=$(terraform -chdir="$TF_DIR" output -raw reconcile_event_rule_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Compare UTC time with the persisted cutoff
+        id: due
+        shell: bash
+        env:
+          FORCE: ${{ inputs.force || false }}
+        run: |
+          set -euo pipefail
+          TEARDOWN_DATE="$(aws ssm get-parameter --name /review-gen/student/teardown-date --query Parameter.Value --output text)"
+          [[ "$TEARDOWN_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]
+          TODAY="$(date -u +%F)"
+          if [ "$FORCE" = "true" ] || [[ "$TODAY" > "$TEARDOWN_DATE" ]] || [ "$TODAY" = "$TEARDOWN_DATE" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "Student cutoff is not due."
+          fi
+
+      - name: Disable public delivery, schedules and every Lambda
+        if: ${{ steps.due.outputs.run == 'true' }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          DISTRIBUTION_ID: ${{ steps.state.outputs.distribution_id }}
+          EVENT_RULE: ${{ steps.state.outputs.event_rule }}
+        run: |
+          set -euo pipefail
+          # The owner-only purge is intentionally not exposed through Context.
+          # If it fails, stop before recording or applying a partial cutoff.
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c 'SELECT public.purge_public_source_rate_limits();'
+          aws cloudfront get-distribution-config --id "$DISTRIBUTION_ID" \
+            > "$RUNNER_TEMP/distribution.json"
+          if [ "$(jq -r .DistributionConfig.Enabled "$RUNNER_TEMP/distribution.json")" = "true" ]; then
+            jq '.DistributionConfig | .Enabled = false' "$RUNNER_TEMP/distribution.json" \
+              > "$RUNNER_TEMP/disabled-distribution.json"
+            aws cloudfront update-distribution \
+              --id "$DISTRIBUTION_ID" \
+              --if-match "$(jq -r .ETag "$RUNNER_TEMP/distribution.json")" \
+              --distribution-config "file://$RUNNER_TEMP/disabled-distribution.json" >/dev/null
+          fi
+          aws events disable-rule --name "$EVENT_RULE"
+          jq -r '.[]' "$RUNNER_TEMP/cutoff-functions.json" | while IFS= read -r function_name; do
+            aws lambda put-function-concurrency \
+              --function-name "$function_name" \
+              --reserved-concurrent-executions 0 >/dev/null
+          done
+          aws ssm put-parameter \
+            --name /review-gen/student/cutoff-applied-at \
+            --type String \
+            --value "$(date -u +%FT%TZ)" \
+            --overwrite >/dev/null

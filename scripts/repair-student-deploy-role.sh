@@ -138,18 +138,120 @@ write_env() {
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
 }
 
-# set_secret NAME VALUE — set a GitHub Actions repo secret via gh. Falls back
-# to a warning (and records it) if gh is unavailable or unauthenticated.
+remove_repo_secret_copy() {
+  local name="$1" names
+  if ! names="$(gh secret list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect repository-scoped secrets; refusing to install a deployment secret"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    gh secret delete "$name" --repo "$REPO_SLUG" >/dev/null
+  fi
+  if ! names="$(gh secret list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot verify repository-scoped secret deletion"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    warn "REPOSITORY_SECRET_COPY_STILL_PRESENT: $name"
+    return 1
+  fi
+}
+
+remove_repo_variable_copy() {
+  local name="$1" names
+  if ! names="$(gh variable list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect repository-scoped variables; refusing to install a deployment variable"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    gh variable delete "$name" --repo "$REPO_SLUG" >/dev/null
+  fi
+  if ! names="$(gh variable list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot verify repository-scoped variable deletion"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    warn "REPOSITORY_VARIABLE_COPY_STILL_PRESENT: $name"
+    return 1
+  fi
+}
+
+refuse_repo_scoped_deployment_values() {
+  local names name
+  if ! names="$(gh variable list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect repository-scoped variables"
+    return 1
+  fi
+  for name in AWS_DEPLOY_ROLE_ARN COST_ALERT_EMAIL; do
+    if grep -Fxq "$name" <<< "$names"; then
+      warn "REPOSITORY_SCOPED_DEPLOYMENT_VALUE_FOUND: move $name to the student environment and delete the repository copy"
+      return 1
+    fi
+  done
+  if ! names="$(gh secret list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect repository-scoped secrets"
+    return 1
+  fi
+  for name in \
+    NEON_MIGRATION_DATABASE_URL \
+    NEON_CONTEXT_RUNTIME_DATABASE_URL \
+    NEON_CONSOLE_CONTROL_DATABASE_URL \
+    NEON_GENERATION_DATABASE_URL \
+    REVIEW_CSRF_SECRET \
+    CONTEXT_WORK_PRIVATE_KEY_PEM \
+    CONTEXT_WORK_PUBLIC_KEY_PEM \
+    CONSOLE_AUTHORITY_PRIVATE_KEY_PEM \
+    CONSOLE_AUTHORITY_PUBLIC_KEY_PEM \
+    CONSOLE_DATABASE_AUTHORITY_SECRET \
+    GENERATION_WORK_PRIVATE_KEY_PEM \
+    GENERATION_WORK_PUBLIC_KEY_PEM \
+    GEMINI_API_KEY; do
+    if grep -Fxq "$name" <<< "$names"; then
+      warn "REPOSITORY_SCOPED_DEPLOYMENT_VALUE_FOUND: move $name to the student environment and delete the repository copy"
+      return 1
+    fi
+  done
+}
+
+require_student_environment_secrets() {
+  local names name
+  if ! names="$(gh secret list --env "$GITHUB_ENVIRONMENT" --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect student-environment secrets"
+    return 1
+  fi
+  for name in \
+    NEON_MIGRATION_DATABASE_URL \
+    NEON_CONTEXT_RUNTIME_DATABASE_URL \
+    NEON_CONSOLE_CONTROL_DATABASE_URL \
+    NEON_GENERATION_DATABASE_URL \
+    REVIEW_CSRF_SECRET \
+    CONTEXT_WORK_PRIVATE_KEY_PEM \
+    CONTEXT_WORK_PUBLIC_KEY_PEM \
+    CONSOLE_AUTHORITY_PRIVATE_KEY_PEM \
+    CONSOLE_AUTHORITY_PUBLIC_KEY_PEM \
+    CONSOLE_DATABASE_AUTHORITY_SECRET \
+    GENERATION_WORK_PRIVATE_KEY_PEM \
+    GENERATION_WORK_PUBLIC_KEY_PEM; do
+    if ! grep -Fxq "$name" <<< "$names"; then
+      warn "MISSING_STUDENT_ENVIRONMENT_SECRET: run the setup wizard to install $name"
+      return 1
+    fi
+  done
+}
+
+# set_secret NAME VALUE — set a GitHub Actions environment secret via gh.
+# An identically named repository secret is a hard failure, not a fallback.
 set_secret() {
   local name="$1" value="$2"
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    if printf '%s' "$value" | gh secret set "$name" >/dev/null 2>&1; then
+    remove_repo_secret_copy "$name" || exit 1
+    if printf '%s' "$value" | gh secret set "$name" --env "$GITHUB_ENVIRONMENT" >/dev/null 2>&1; then
       WRITTEN_SECRET+=("$name")
       printf '  %s✓ set%s GitHub secret %s\n' "$GREEN" "$RESET" "$name"
       return
     fi
   fi
-  SKIPPED+=("GitHub secret $name (set it manually: gh secret set $name)")
+  SKIPPED+=("GitHub environment secret $name (set it manually with --env $GITHUB_ENVIRONMENT)")
   warn "skipped GitHub secret $name — gh not ready; set it later"
 }
 
@@ -157,7 +259,8 @@ set_secret() {
 set_var() {
   local name="$1" value="$2"
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    if gh variable set "$name" --body "$value" >/dev/null 2>&1; then
+    remove_repo_variable_copy "$name" || exit 1
+    if gh variable set "$name" --env "$GITHUB_ENVIRONMENT" --body "$value" >/dev/null 2>&1; then
       printf '  %s✓ set%s GitHub variable %s\n' "$GREEN" "$RESET" "$name"
       return
     fi
@@ -186,8 +289,10 @@ finish() {
 
 TOTAL_STAGES=4
 REPO_SLUG="asqatqazet/AI-Assisted-Review-Generation"
+GITHUB_ENVIRONMENT="student"
 DEPLOY_ROLE_NAME="review-github-deploy-student"
 POLICY_NAME="ReviewStudentServiceRoleManagement"
+PERMISSIONS_BOUNDARY_NAME="ReviewStudentLambdaBoundary"
 ROLE_URL="https://us-east-1.console.aws.amazon.com/iam/home#/roles/details/${DEPLOY_ROLE_NAME}?section=permissions"
 
 banner "Repair student deployment IAM permissions"
@@ -210,7 +315,9 @@ CURRENT_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
   warn "Expected $REPO_SLUG, got $CURRENT_REPO"
   exit 1
 }
-AWS_DEPLOY_ROLE_ARN=$(gh variable get AWS_DEPLOY_ROLE_ARN --repo "$REPO_SLUG")
+refuse_repo_scoped_deployment_values || exit 1
+require_student_environment_secrets || exit 1
+AWS_DEPLOY_ROLE_ARN=$(gh variable get AWS_DEPLOY_ROLE_ARN --env student --repo "$REPO_SLUG")
 if [[ "$AWS_DEPLOY_ROLE_ARN" =~ ^arn:aws:iam::([0-9]{12}):role/review-github-deploy-student$ ]]; then
   AWS_ACCOUNT_ID="${BASH_REMATCH[1]}"
 else
@@ -233,6 +340,32 @@ if ! confirm "Are you on the Permissions tab for $DEPLOY_ROLE_NAME in account $A
 fi
 
 stage "Install and verify the scoped inline policy"
+PERMISSIONS_BOUNDARY_ARN="arn:aws:iam::$AWS_ACCOUNT_ID:policy/$PERMISSIONS_BOUNDARY_NAME"
+say "First verify the customer-managed boundary $PERMISSIONS_BOUNDARY_NAME exists with only these runtime permissions:"
+cat <<BOUNDARY
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+      "Resource": "arn:aws:logs:eu-central-1:$AWS_ACCOUNT_ID:log-group:/aws/lambda/review-*-student:*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "ssm:GetParameter",
+      "Resource": "arn:aws:ssm:eu-central-1:$AWS_ACCOUNT_ID:parameter/review-gen/student/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "lambda:InvokeFunction",
+      "Resource": "arn:aws:lambda:eu-central-1:$AWS_ACCOUNT_ID:function:review-*-student:*"
+    }
+  ]
+}
+BOUNDARY
+step "In IAM Policies, create or inspect $PERMISSIONS_BOUNDARY_NAME and confirm it contains no IAM, STS, S3, or database permissions."
+pause "Confirm the permissions boundary exists, then press Enter."
 POLICY_FILE=$(mktemp "${TMPDIR:-/tmp}/review-student-role-policy.XXXXXX")
 trap 'rm -f "$POLICY_FILE"' EXIT
 cat > "$POLICY_FILE" <<POLICY
@@ -240,10 +373,29 @@ cat > "$POLICY_FILE" <<POLICY
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ManageStudentLambdaServiceRoles",
+      "Sid": "CreateOnlyBoundedStudentLambdaRoles",
       "Effect": "Allow",
       "Action": [
         "iam:CreateRole",
+        "iam:PutRolePermissionsBoundary"
+      ],
+      "Resource": [
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-web-bff-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-service-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-reviewer-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-console-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-generation-service-student-role"
+      ],
+      "Condition": {
+        "ArnEquals": {
+          "iam:PermissionsBoundary": "$PERMISSIONS_BOUNDARY_ARN"
+        }
+      }
+    },
+    {
+      "Sid": "ManageExactStudentLambdaRoles",
+      "Effect": "Allow",
+      "Action": [
         "iam:GetRole",
         "iam:DeleteRole",
         "iam:UpdateAssumeRolePolicy",
@@ -257,13 +409,25 @@ cat > "$POLICY_FILE" <<POLICY
         "iam:ListInstanceProfilesForRole",
         "iam:ListRoleTags"
       ],
-      "Resource": "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-*-student-role"
+      "Resource": [
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-web-bff-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-service-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-reviewer-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-console-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-generation-service-student-role"
+      ]
     },
     {
       "Sid": "PassStudentRolesOnlyToLambda",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-*-student-role",
+      "Resource": [
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-web-bff-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-service-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-reviewer-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-console-student-role",
+        "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-generation-service-student-role"
+      ],
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": "lambda.amazonaws.com"
@@ -287,11 +451,11 @@ else
 fi
 step "Choose Add permissions → Create inline policy."
 step "Choose JSON, replace the editor contents with the copied policy, then choose Next."
-step "Name the policy $POLICY_NAME. Review that its Resource ends role/review-*-student-role."
+step "Name the policy $POLICY_NAME. Verify it names exactly five roles and requires boundary $PERMISSIONS_BOUNDARY_NAME on creation."
 step "Choose Create policy. This is the only permission-changing action in the wizard."
 pause "Create the inline policy, then press Enter."
 open_url "$ROLE_URL"
-step "Under Permissions policies, expand $POLICY_NAME and verify both statements are present."
+step "Under Permissions policies, expand $POLICY_NAME and verify all three statements are present."
 if ! confirm "Is $POLICY_NAME now listed on $DEPLOY_ROLE_NAME?"; then
   warn "Deployment remains blocked until the inline policy is visible on the role."
   exit 1
@@ -305,9 +469,32 @@ ask REVIEW_TEARDOWN_DATE "Enter the teardown date [2026-09-07]:"
   warn "The teardown date must use YYYY-MM-DD."
   exit 1
 }
+ask REVIEW_OPERATOR_EMAIL "Enter the initial Console operator email:"
+[[ "$REVIEW_OPERATOR_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || {
+  warn "The Console operator email is not valid."
+  exit 1
+}
+ask REVIEW_TENANT_OPERATOR_EMAIL "Enter the distinct Tenant-only Console operator email:"
+[[ "$REVIEW_TENANT_OPERATOR_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || {
+  warn "The Tenant-only Console operator email is not valid."
+  exit 1
+}
+if [ "$REVIEW_OPERATOR_EMAIL" = "$REVIEW_TENANT_OPERATOR_EMAIL" ]; then
+  warn "The Platform and Tenant-only assessment identities must be distinct."
+  exit 1
+fi
+ask REVIEW_BOOTSTRAP_INITIAL_OPERATOR "Is this the first global Operator bootstrap? [false]:"
+[[ -n "$REVIEW_BOOTSTRAP_INITIAL_OPERATOR" ]] || REVIEW_BOOTSTRAP_INITIAL_OPERATOR=false
+if [ "$REVIEW_BOOTSTRAP_INITIAL_OPERATOR" != "true" ] && [ "$REVIEW_BOOTSTRAP_INITIAL_OPERATOR" != "false" ]; then
+  warn "Bootstrap state must be true or false. Use false for every routine redeploy."
+  exit 1
+fi
 say "Deployment profile: student-low-quota"
 say "Provider mode: FakeProvider only"
 say "Teardown date: $REVIEW_TEARDOWN_DATE"
+say "Initial Console operator: $REVIEW_OPERATOR_EMAIL"
+say "Tenant-only assessment operator: $REVIEW_TENANT_OPERATOR_EMAIL"
+say "First global bootstrap: $REVIEW_BOOTSTRAP_INITIAL_OPERATOR"
 if ! confirm "Dispatch this deployment from main now?"; then
   SKIPPED+=("Deployment not dispatched; run deploy-student with student-low-quota later")
   finish
@@ -318,7 +505,10 @@ RUN_URL=$(gh workflow run deploy-student.yml \
   --ref main \
   -f "teardown_date=$REVIEW_TEARDOWN_DATE" \
   -f "deployment_profile=student-low-quota" \
-  -f "acknowledge_fake_provider_only=true")
+  -f "operator_email=$REVIEW_OPERATOR_EMAIL" \
+  -f "tenant_operator_email=$REVIEW_TENANT_OPERATOR_EMAIL" \
+  -f "bootstrap_initial_operator=$REVIEW_BOOTSTRAP_INITIAL_OPERATOR" \
+  -f "acknowledge_provider_cost=false")
 RUN_ID="${RUN_URL##*/}"
 say "Deployment dispatched: $RUN_URL"
 open_url "$RUN_URL"

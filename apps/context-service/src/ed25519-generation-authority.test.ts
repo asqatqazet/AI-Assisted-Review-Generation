@@ -36,6 +36,16 @@ const dispositionScope = {
   finalTextHash: `sha256:${createHash("sha256").update(finalText).digest("hex")}`,
   idempotencyKey: "disposition-a",
 };
+const draftRevisionScope = {
+  tenantId: bindings.tenantId,
+  locationId: bindings.locationId,
+  reviewSessionId: bindings.reviewSessionId,
+  draftId: "draft-a",
+  generationId: bindings.generationId,
+  expectedRevision: 1,
+  textHash: `sha256:${createHash("sha256").update(finalText).digest("hex")}`,
+  idempotencyKey: "draft-save-a",
+};
 
 const encode = (value: string | Uint8Array): string =>
   Buffer.from(value).toString("base64url");
@@ -109,6 +119,23 @@ describe("US-03.2 Context Ed25519 generation authority", () => {
       permitJti: "disposition-permit-a",
       expiresAt: "2026-08-17T12:01:00.000Z",
       scope: dispositionScope,
+    });
+
+    const draftRevisionPermit = await authority.signDraftRevisionPermit({
+      permitJti: "draft-revision-permit-a",
+      expiresAt: "2026-08-17T12:01:00.000Z",
+      scope: draftRevisionScope,
+    });
+    const [draftRevisionPayload] = draftRevisionPermit.split(".");
+    expect(
+      JSON.parse(Buffer.from(draftRevisionPayload!, "base64url").toString()),
+    ).toEqual({
+      kind: "reviewer-draft-revision-permit",
+      issuer: "context-service",
+      audience: "generation-service",
+      permitJti: "draft-revision-permit-a",
+      expiresAt: "2026-08-17T12:01:00.000Z",
+      scope: draftRevisionScope,
     });
 
     const leaseReceipt = signedBy(

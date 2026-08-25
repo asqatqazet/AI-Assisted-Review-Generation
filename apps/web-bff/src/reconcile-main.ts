@@ -23,7 +23,7 @@ const createRuntime = (): (() => Promise<unknown>) => {
   const context = createInvokedReconciliationContextPort(
     createAwsLambdaJsonInvoker(
       client,
-      qualifiedAliasArn("CONTEXT_FUNCTION_ALIAS_ARN"),
+      qualifiedAliasArn("CONTEXT_REVIEWER_FUNCTION_ALIAS_ARN"),
     ),
   );
   const generation = createInvokedReconciliationGenerationPort(

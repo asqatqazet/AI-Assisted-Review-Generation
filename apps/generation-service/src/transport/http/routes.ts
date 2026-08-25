@@ -7,6 +7,7 @@ import { emitGenerationMetric } from "@review/observability";
 import { Hono } from "hono";
 
 import {
+  ActionSourceEvidenceUnavailableError,
   createGenerationOrchestrator,
   GroundingRejectedError,
   type GenerationOrchestrator,
@@ -83,6 +84,15 @@ export function createGenerationApp(options: GenerationAppOptions = {}): Hono {
       if (error instanceof GroundingRejectedError) {
         return c.json(
           { status: "failed", code: "GROUNDING_REJECTED" },
+          422,
+        );
+      }
+      if (error instanceof ActionSourceEvidenceUnavailableError) {
+        return c.json(
+          {
+            status: "failed",
+            code: "ACTION_SOURCE_EVIDENCE_NOT_RESOLVED",
+          },
           422,
         );
       }

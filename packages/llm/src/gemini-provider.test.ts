@@ -1,8 +1,52 @@
 import { describe, expect, it } from "vitest";
 
 import { GeminiProvider } from "./gemini-provider.js";
+import { ModelGatewayError } from "./model-gateway.js";
 
 describe("Gemini ModelGateway adapter", () => {
+  it("does not read an ambient credential when none was injected", async () => {
+    const previousCredential = process.env["GEMINI_API_KEY"];
+    process.env["GEMINI_API_KEY"] = "ambient-key-that-must-be-ignored";
+    let providerWasCalled = false;
+    try {
+      const provider = new GeminiProvider({
+        fetchFn: async () => {
+          providerWasCalled = true;
+          return new Response(
+            JSON.stringify({
+              candidates: [
+                {
+                  content: { parts: [{ text: "{}" }] },
+                  finishReason: "STOP",
+                },
+              ],
+            }),
+            { status: 200 },
+          );
+        },
+      });
+
+      const error = await provider
+        .generate({
+          model: "gemini-test-model",
+          messages: [{ role: "user", content: "Draft review" }],
+          maxOutputTokens: 100,
+          outputSchema: { name: "review", schema: { type: "object" } },
+        })
+        .catch((reason: unknown) => reason);
+
+      expect(error).toBeInstanceOf(ModelGatewayError);
+      expect(error).toMatchObject({ code: "auth" });
+      expect(providerWasCalled).toBe(false);
+    } finally {
+      if (previousCredential === undefined) {
+        delete process.env["GEMINI_API_KEY"];
+      } else {
+        process.env["GEMINI_API_KEY"] = previousCredential;
+      }
+    }
+  });
+
   it("calls generateContent with Gemini's own request shape", async () => {
     let receivedUrl: string | URL | Request | undefined;
     let receivedInit: RequestInit | undefined;
@@ -119,5 +163,75 @@ describe("Gemini ModelGateway adapter", () => {
         },
       },
     });
+  });
+
+  it("does not expose transport exception details", async () => {
+    const provider = new GeminiProvider({
+      apiKey: "injected-test-key",
+      fetchFn: async () => {
+        throw new Error("tenant-a secret-value internal-host");
+      },
+    });
+
+    const error = await provider
+      .generate({
+        model: "gemini-test-model",
+        messages: [{ role: "user", content: "Draft review" }],
+        maxOutputTokens: 100,
+        outputSchema: { name: "review", schema: { type: "object" } },
+      })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({ code: "unavailable" });
+    expect(String(error)).not.toContain("tenant-a");
+    expect(String(error)).not.toContain("secret-value");
+    expect(String(error)).not.toContain("internal-host");
+  });
+
+  it("normalizes a malformed provider envelope as invalid output", async () => {
+    const provider = new GeminiProvider({
+      apiKey: "injected-test-key",
+      fetchFn: async () => new Response("not-json", { status: 200 }),
+    });
+
+    const error = await provider
+      .generate({
+        model: "gemini-test-model",
+        messages: [{ role: "user", content: "Draft review" }],
+        maxOutputTokens: 100,
+        outputSchema: { name: "review", schema: { type: "object" } },
+      })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({ code: "invalid-output" });
+  });
+
+  it("normalizes a blocked response as a content filter failure", async () => {
+    const provider = new GeminiProvider({
+      apiKey: "injected-test-key",
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            candidates: [],
+            promptFeedback: { blockReason: "sensitive-provider-detail" },
+          }),
+          { status: 200 },
+        ),
+    });
+
+    const error = await provider
+      .generate({
+        model: "gemini-test-model",
+        messages: [{ role: "user", content: "Draft review" }],
+        maxOutputTokens: 100,
+        outputSchema: { name: "review", schema: { type: "object" } },
+      })
+      .catch((reason: unknown) => reason);
+
+    expect(error).toBeInstanceOf(ModelGatewayError);
+    expect(error).toMatchObject({ code: "content-filter" });
+    expect(String(error)).not.toContain("sensitive-provider-detail");
   });
 });

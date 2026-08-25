@@ -3,6 +3,7 @@ export const MAX_EDIT_DISTANCE_CHARACTERS = 4_000;
 export interface DraftSystemAnnotation {
   readonly kind: "assisted-review-disclosure";
   readonly text: string;
+  readonly policyVersionId: string;
 }
 
 /**

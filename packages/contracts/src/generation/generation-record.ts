@@ -60,6 +60,7 @@ export const DraftDtoSchema = z.strictObject({
   text: z.string(),
   systemAnnotations: z.array(
     z.strictObject({
+      kind: z.literal("assisted-review-disclosure"),
       text: z.string().min(1),
       policyVersionId: IdentifierDtoSchema,
     }),

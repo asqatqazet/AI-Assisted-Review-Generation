@@ -3,7 +3,80 @@ import { describe, expect, it } from "vitest";
 import { createWebBffApp } from "./app.js";
 import type { ContextPort } from "./ports/context.port.js";
 
+const allowedPublicSource = {
+  sourceRateLimitPort: {
+    consume: async () => ({ status: "allowed" as const }),
+  },
+  resolveTrustedViewerSource: () => "203.0.113.8",
+};
+
 describe("reviewer entry preparation", () => {
+  it("does not allocate an Entry Challenge for a HEAD probe", async () => {
+    let preparationCalls = 0;
+    const contextPort: ContextPort = {
+      prepareEntry: async () => {
+        preparationCalls += 1;
+        return {
+          status: "prepared",
+          entryChallengeHandle: "must-not-be-created",
+        };
+      },
+      readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async () => ({ status: "unavailable" }),
+      readReviewSession: async () => ({ status: "unavailable" }),
+    };
+    const app = createWebBffApp({ ...allowedPublicSource, contextPort });
+
+    const response = await app.request("/s/apex-dental/central", {
+      method: "HEAD",
+      headers: { Accept: "text/html" },
+    });
+
+    expect({
+      status: response.status,
+      allow: response.headers.get("allow"),
+      cookie: response.headers.get("set-cookie"),
+      preparationCalls,
+    }).toEqual({
+      status: 405,
+      allow: "GET",
+      cookie: null,
+      preparationCalls: 0,
+    });
+  });
+
+  it("routes an unavailable browser link to the generic local writing surface", async () => {
+    const contextPort: ContextPort = {
+      prepareEntry: async () => ({ status: "unavailable" }),
+      readEntryChallenge: async () => ({ status: "unavailable" }),
+      advanceEntry: async () => ({ status: "unavailable" }),
+      readReviewSession: async () => ({ status: "unavailable" }),
+    };
+    const app = createWebBffApp({
+      ...allowedPublicSource,
+      contextPort,
+      newRequestId: () => "request-must-not-appear-in-html",
+    });
+
+    const response = await app.request("/s/unknown/place?v=secret-token", {
+      headers: { Accept: "text/html" },
+    });
+
+    expect({
+      status: response.status,
+      location: response.headers.get("location"),
+      cacheControl: response.headers.get("cache-control"),
+      robots: response.headers.get("x-robots-tag"),
+      body: await response.text(),
+    }).toEqual({
+      status: 303,
+      location: "/start/unavailable",
+      cacheControl: "private, no-store",
+      robots: "noindex, nofollow, noarchive",
+      body: "",
+    });
+  });
+
   it("redirects a prepared link without exposing its Invitation Token", async () => {
     const contextPort: ContextPort = {
       prepareEntry: async () => ({
@@ -15,6 +88,7 @@ describe("reviewer entry preparation", () => {
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       newBrowserCapability: () => "opaque-browser-capability",
     });
@@ -52,6 +126,7 @@ describe("reviewer entry preparation", () => {
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       newBrowserCapability: () => "unexpected-replacement-capability",
     });
@@ -81,6 +156,8 @@ describe("reviewer entry preparation", () => {
         input.entryChallengeHandle === "entry-challenge-demo"
           ? {
               status: "ready",
+              stage: "verification-required",
+              provisionalSelection: { rating: 4, action: "paraphrase" },
               context: {
                 tenantDisplayName: "Apex Dental",
                 locationDisplayName: "Central Clinic",
@@ -99,9 +176,11 @@ describe("reviewer entry preparation", () => {
             }
           : { status: "unavailable" },
       advanceEntry: async () => ({ status: "unavailable" }),
+      verifyEntry: async () => ({ status: "unavailable" }),
       readReviewSession: async () => ({ status: "unavailable" }),
     };
     const app = createWebBffApp({
+      ...allowedPublicSource,
       contextPort,
       csrfProtector: {
         issue: async () => "csrf-token-with-at-least-thirty-two-characters",
@@ -135,6 +214,8 @@ describe("reviewer entry preparation", () => {
         status: "ready",
         entryChallengeHandle: "entry-challenge-demo",
         csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+        stage: "verification-required",
+        provisionalSelection: { rating: 4, action: "paraphrase" },
         context: {
           tenantDisplayName: "Apex Dental",
           locationDisplayName: "Central Clinic",

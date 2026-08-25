@@ -8,8 +8,10 @@ import {
 } from "node:crypto";
 import {
   GenerationWorkloadBindingsDtoSchema,
+  ReviewerDraftRevisionScopeDtoSchema,
   ReviewerDispositionScopeDtoSchema,
   type GenerationWorkloadDto,
+  type ReviewerDraftRevisionScopeDto,
   type ReviewerDispositionScopeDto,
 } from "@review/contracts/generation";
 
@@ -37,6 +39,11 @@ export interface GenerationEd25519WorkAuthority
     permit: string,
     scope: ReviewerDispositionScopeDto,
     finalText: string,
+  ): Promise<{ readonly permitJti: string }>;
+  verifyDraftRevisionPermit(
+    permit: string,
+    scope: ReviewerDraftRevisionScopeDto,
+    text: string,
   ): Promise<{ readonly permitJti: string }>;
 }
 
@@ -231,6 +238,37 @@ export function createGenerationEd25519WorkAuthority({
       if (
         JSON.stringify(signedScope) !== JSON.stringify(scope) ||
         signedScope.finalTextHash !== finalTextHash(finalText) ||
+        new Date(expiresAt).getTime() <= now().getTime()
+      ) {
+        throw new Error("GENERATION_WORK_AUTHORITY_INVALID");
+      }
+      return { permitJti: stringField(payload, "permitJti") };
+    },
+
+    async verifyDraftRevisionPermit(permit, scope, text) {
+      const payload = verifyToken(permit, contextPublicKey);
+      exactKeys(payload, [
+        "kind",
+        "issuer",
+        "audience",
+        "permitJti",
+        "expiresAt",
+        "scope",
+      ]);
+      if (
+        payload["kind"] !== "reviewer-draft-revision-permit" ||
+        payload["issuer"] !== "context-service" ||
+        payload["audience"] !== "generation-service"
+      ) {
+        throw new Error("GENERATION_WORK_AUTHORITY_INVALID");
+      }
+      const signedScope = ReviewerDraftRevisionScopeDtoSchema.parse(
+        payload["scope"],
+      );
+      const expiresAt = stringField(payload, "expiresAt");
+      if (
+        JSON.stringify(signedScope) !== JSON.stringify(scope) ||
+        signedScope.textHash !== finalTextHash(text) ||
         new Date(expiresAt).getTime() <= now().getTime()
       ) {
         throw new Error("GENERATION_WORK_AUTHORITY_INVALID");

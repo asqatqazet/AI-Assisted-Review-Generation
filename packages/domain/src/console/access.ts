@@ -10,6 +10,7 @@ export const CONSOLE_CAPABILITIES = [
   "tenant:configure",
   "tenant:switch",
   "analytics:read",
+  "audit:read-raw",
   "ai:operate",
 ] as const;
 

@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { IdentifierDtoSchema, IsoDateTimeDtoSchema } from "../shared/primitives.js";
+import {
+  IdentifierDtoSchema,
+  IsoDateTimeDtoSchema,
+  Sha256DigestDtoSchema,
+} from "../shared/primitives.js";
 import { ConsoleActionKeyDtoSchema } from "./overview.js";
 import { ConsoleScopeDtoSchema, MoneyDtoSchema } from "./primitives.js";
 
@@ -8,6 +12,7 @@ export const ConsolePromptStatusDtoSchema = z.enum([
   "draft",
   "candidate",
   "in-experiment",
+  "published",
   "retired",
 ]);
 
@@ -15,7 +20,7 @@ export const ConsolePromptVersionDtoSchema = z.strictObject({
   id: IdentifierDtoSchema,
   action: ConsoleActionKeyDtoSchema,
   version: z.number().int().min(1),
-  hash: z.string().min(1).max(128),
+  hash: Sha256DigestDtoSchema,
   status: ConsolePromptStatusDtoSchema,
   createdAt: IsoDateTimeDtoSchema,
   createdBy: z.string().max(320).nullable(),
@@ -55,7 +60,7 @@ export const ConsolePromptComparisonDtoSchema = z.strictObject({
 
 export const ConsoleExperimentVariantDtoSchema = z.strictObject({
   promptVersionId: IdentifierDtoSchema,
-  promptVersionHash: z.string().min(1).max(128),
+  promptVersionHash: Sha256DigestDtoSchema,
   weightPct: z.number().int().min(0).max(100),
   generations: z.number().int().min(0),
   accepted: z.number().int().min(0),
@@ -98,6 +103,16 @@ export const ConsoleBenchInputDtoSchema = z.strictObject({
   keywordIds: z.array(IdentifierDtoSchema).max(100),
   freeText: z.string().max(4000),
   sourceText: z.string().max(20_000),
+  /** Optional in old saved replays; new starts default to five stars. */
+  rating: z.number().int().min(1).max(5).optional(),
+});
+
+/** A Prompt reference copied from one immutable published snapshot. */
+export const ConsoleBenchPromptOptionDtoSchema = z.strictObject({
+  id: IdentifierDtoSchema,
+  action: ConsoleActionKeyDtoSchema,
+  key: IdentifierDtoSchema,
+  hash: Sha256DigestDtoSchema,
 });
 
 export const ConsoleBenchFormDtoSchema = z.strictObject({
@@ -120,7 +135,7 @@ export const ConsoleBenchFormDtoSchema = z.strictObject({
       }),
     )
     .max(200),
-  promptVersions: z.array(ConsolePromptVersionDtoSchema).max(500),
+  promptVersions: z.array(ConsoleBenchPromptOptionDtoSchema).max(500),
   providers: z
     .array(
       z.strictObject({
@@ -169,6 +184,11 @@ export const ConsoleBenchResultDtoSchema = z.strictObject({
   estimatedCost: MoneyDtoSchema,
   /** Bench work is never production analytics, experiment traffic or billing. */
   isBench: z.literal(true),
+  guard: z.strictObject({
+    verdict: z.literal("passed"),
+    supportedClaimIds: z.array(IdentifierDtoSchema).max(200),
+    removedClaimCount: z.number().int().nonnegative(),
+  }),
 });
 
 export type ConsolePromptsDto = z.infer<typeof ConsolePromptsDtoSchema>;

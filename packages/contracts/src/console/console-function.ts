@@ -31,9 +31,10 @@ import {
   ConsoleDistributionDtoSchema,
   ConsoleDistributionOverviewDtoSchema,
   ConsoleEntryModeDtoSchema,
+  ConsoleLocationOverrideChangeDtoSchema,
   ConsoleLocationListDtoSchema,
   ConsoleLocationSettingsDtoSchema,
-  ConsoleSettingValueDtoSchema,
+  ConsoleTenantSettingChangeDtoSchema,
   ConsoleTenantSettingsDtoSchema,
 } from "./locations.js";
 import { ConsoleOverviewDtoSchema } from "./overview.js";
@@ -45,9 +46,18 @@ import {
   PlatformTenantsDtoSchema,
 } from "./platform.js";
 import {
+  ConsoleReadAuthorizationQueryDtoSchema,
+  ConsoleReadQueryDtoSchema,
+} from "./console-read.js";
+import {
+  ConfigurationEtagDtoSchema,
+  ConsoleScopeDtoSchema,
   ConsoleScopeRequestDtoSchema,
 } from "./primitives.js";
 import { LocaleDtoSchema } from "../shared/primitives.js";
+import { GenerationWorkloadDtoSchema } from "../generation/generation-request.js";
+import { ConsoleConfigurationDraftChangeDtoSchema } from "./configuration-draft.js";
+import { ConsolePlatformConfigurationDraftChangeDtoSchema } from "./platform-configuration-draft.js";
 
 export const ConsoleQueryDtoSchema = z.discriminatedUnion("view", [
   z.strictObject({ view: z.literal("bootstrap") }),
@@ -111,12 +121,22 @@ export const ConsoleCommandDtoSchema = z.discriminatedUnion("command", [
   }),
   z.strictObject({
     command: z.literal("save-tenant-settings"),
-    values: z.record(IdentifierDtoSchema, ConsoleSettingValueDtoSchema),
+    changes: z.array(ConsoleTenantSettingChangeDtoSchema).min(1).max(20),
+  }),
+  z.strictObject({
+    command: z.literal("stage-configuration-changes"),
+    changes: z.array(ConsoleConfigurationDraftChangeDtoSchema).min(1).max(1000),
+  }),
+  z.strictObject({
+    command: z.literal("stage-platform-configuration-changes"),
+    changes: z
+      .array(ConsolePlatformConfigurationDraftChangeDtoSchema)
+      .min(1)
+      .max(1000),
   }),
   z.strictObject({
     command: z.literal("set-location-override"),
-    key: IdentifierDtoSchema,
-    value: ConsoleSettingValueDtoSchema,
+    change: ConsoleLocationOverrideChangeDtoSchema,
   }),
   z.strictObject({
     command: z.literal("reset-location-override"),
@@ -182,6 +202,10 @@ export const ConsoleCommandDtoSchema = z.discriminatedUnion("command", [
     variables: z.array(z.string().min(1).max(80)).max(100),
   }),
   z.strictObject({
+    command: z.literal("promote-prompt-version"),
+    promptVersionId: IdentifierDtoSchema,
+  }),
+  z.strictObject({
     command: z.literal("create-experiment"),
     action: ConsoleActionKeyDtoSchema,
     variants: z
@@ -222,6 +246,14 @@ export const ConsoleCommandDtoSchema = z.discriminatedUnion("command", [
      * it has been published here.
      */
     command: z.literal("republish-configuration"),
+  }),
+  z.strictObject({ command: z.literal("cancel-configuration-draft") }),
+  z.strictObject({ command: z.literal("publish-configuration") }),
+  z.strictObject({
+    command: z.literal("cancel-platform-configuration-draft"),
+  }),
+  z.strictObject({
+    command: z.literal("publish-platform-configuration"),
   }),
   z.strictObject({
     command: z.literal("set-tenant-status"),
@@ -372,6 +404,8 @@ export const ConsoleRejectionCodeDtoSchema = z.enum([
   "INVALID_MANIFEST",
   "NOT_OVERRIDABLE",
   "INVALID_VALUE",
+  "CONFIG_CONFLICT",
+  "CONFIG_DRAFT_REQUIRED",
   "REPLAY_DEPENDENCY_MISSING",
   /**
    * The deployment cannot serve this view yet. It depends only on what is
@@ -391,6 +425,8 @@ export const ConsoleRequestInvocationDtoSchema = z.strictObject({
      * establish its own public origin.
      */
     publicOrigin: z.string().url().nullable(),
+    /** The BFF copies the HTTP If-Match header here; browser scope is never trusted. */
+    ifMatch: ConfigurationEtagDtoSchema.nullable().optional(),
     request: z.discriminatedUnion("mode", [
       z.strictObject({ mode: z.literal("query"), query: ConsoleQueryDtoSchema }),
       z.strictObject({
@@ -422,11 +458,70 @@ export const ConsoleRequestInvocationResultDtoSchema = z.strictObject({
   ]),
 });
 
+export const AuthorizeConsoleReadInvocationDtoSchema = z.strictObject({
+  operation: z.literal("authorize-console-read"),
+  input: z.strictObject({
+    identity: OperatorIdentityDtoSchema,
+    scope: ConsoleScopeRequestDtoSchema,
+    query: ConsoleReadAuthorizationQueryDtoSchema,
+  }),
+});
+
+export const AuthorizeConsoleReadInvocationResultDtoSchema = z.strictObject({
+  operation: z.literal("authorize-console-read"),
+  result: z.discriminatedUnion("status", [
+    z.strictObject({ status: z.literal("not-found") }),
+    z.strictObject({ status: z.literal("unavailable") }),
+    z.strictObject({
+      status: z.literal("authorized"),
+      receipt: z.string().min(1).max(4000),
+      authorizationId: IdentifierDtoSchema,
+      projectionScope: ConsoleScopeDtoSchema,
+      query: ConsoleReadQueryDtoSchema,
+    }),
+  ]),
+});
+
+/** Context resolves and signs one immutable fake-only Bench workload. */
+export const AuthorizeConsoleBenchInvocationDtoSchema = z.strictObject({
+  operation: z.literal("authorize-console-bench"),
+  input: z.strictObject({
+    identity: OperatorIdentityDtoSchema,
+    scope: ConsoleScopeRequestDtoSchema,
+    input: ConsoleBenchInputDtoSchema,
+  }),
+});
+
+export const AuthorizeConsoleBenchInvocationResultDtoSchema = z.strictObject({
+  operation: z.literal("authorize-console-bench"),
+  result: z.discriminatedUnion("status", [
+    z.strictObject({ status: z.literal("not-found") }),
+    z.strictObject({ status: z.literal("unavailable") }),
+    z.strictObject({
+      status: z.literal("authorized"),
+      receipt: z.string().min(1).max(4000),
+      workload: GenerationWorkloadDtoSchema,
+    }),
+  ]),
+});
+
 export type ConsoleQueryDto = z.infer<typeof ConsoleQueryDtoSchema>;
 export type ConsoleCommandDto = z.infer<typeof ConsoleCommandDtoSchema>;
 export type ConsoleViewDto = z.infer<typeof ConsoleViewDtoSchema>;
 export type ConsoleCommandResultDto = z.infer<
   typeof ConsoleCommandResultDtoSchema
+>;
+export type AuthorizeConsoleReadInvocationDto = z.infer<
+  typeof AuthorizeConsoleReadInvocationDtoSchema
+>;
+export type AuthorizeConsoleReadInvocationResultDto = z.infer<
+  typeof AuthorizeConsoleReadInvocationResultDtoSchema
+>;
+export type AuthorizeConsoleBenchInvocationDto = z.infer<
+  typeof AuthorizeConsoleBenchInvocationDtoSchema
+>;
+export type AuthorizeConsoleBenchInvocationResultDto = z.infer<
+  typeof AuthorizeConsoleBenchInvocationResultDtoSchema
 >;
 export type ConsoleRejectionCodeDto = z.infer<
   typeof ConsoleRejectionCodeDtoSchema

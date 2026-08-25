@@ -3,17 +3,27 @@ import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 
 import { createAwsLambdaJsonInvoker } from "./adapters/lambda-json-invoker.js";
 import {
+  createInvokedConsoleBenchAuthorizationPort,
   createInvokedConsolePort,
+  createInvokedConsoleExecutionAuthorizationPort,
   createInvokedContextPort,
   createInvokedOperatorContextPort,
+  createInvokedPublicSourceRateLimitPort,
   createInvokedReviewerDispositionContextPort,
   createInvokedReviewerGenerationContextPort,
 } from "./adapters/context-function.port.js";
 import {
+  createInvokedConsoleBenchExecutionPort,
+  createInvokedConsoleExecutionReadPort,
   createInvokedReviewerDispositionExecutionPort,
   createInvokedReviewerGenerationExecutionPort,
 } from "./adapters/generation-function.port.js";
+import {
+  createInvokedReviewerDraftRevisionContextPort,
+  createInvokedReviewerDraftRevisionExecutionPort,
+} from "./adapters/reviewer-draft-revision-function.ports.js";
 import { createWebBffApp } from "./app.js";
+import { cloudFrontViewerSource } from "./ports/public-source-rate-limit.port.js";
 import { createCognitoOperatorAuth } from "./security/cognito-operator-auth.js";
 import { createHmacCsrfProtector } from "./security/csrf-protector.js";
 
@@ -24,6 +34,22 @@ const required = (name: string): string => {
   }
   return value;
 };
+
+const configurationReleaseIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+export function configurationReleaseIdForInvocation(
+  invokedFunctionArn: string | undefined,
+): string | undefined {
+  if (invokedFunctionArn?.endsWith(":candidate") !== true) {
+    return undefined;
+  }
+  const configurationReleaseId = required("REVIEW_CONFIGURATION_RELEASE_ID");
+  if (!configurationReleaseIdPattern.test(configurationReleaseId)) {
+    throw new Error("REVIEW_CONFIGURATION_RELEASE_ID must be a canonical UUID");
+  }
+  return configurationReleaseId;
+}
 
 const qualifiedAliasArn = (name: string): string => {
   const value = required(name);
@@ -99,22 +125,42 @@ async function requiredParameter(
   return value;
 }
 
-export async function createWebBffRuntime() {
+export async function createWebBffRuntime(
+  options: {
+    readonly candidateInvocation?: boolean;
+    readonly configurationReleaseId?: string;
+  } = {},
+) {
   const client = new LambdaClient({});
   const ssm = new SSMClient({});
+  const configurationReleaseId = options.configurationReleaseId;
+  if (
+    configurationReleaseId !== undefined &&
+    !configurationReleaseIdPattern.test(configurationReleaseId)
+  ) {
+    throw new Error("REVIEW_CONFIGURATION_RELEASE_ID must be a canonical UUID");
+  }
   const [csrfSecret, operatorSessionSecret, oidcConfigValue] = await Promise.all([
     requiredParameter(ssm, "REVIEW_CSRF_SECRET_PARAMETER"),
     requiredParameter(ssm, "OPERATOR_SESSION_SECRET_PARAMETER"),
     requiredParameter(ssm, "OPERATOR_OIDC_CONFIG_PARAMETER"),
   ]);
   const oidcConfig = parseOperatorOidcConfig(oidcConfigValue);
-  const contextInvoker = createAwsLambdaJsonInvoker(
+  const reviewerInvoker = createAwsLambdaJsonInvoker(
     client,
-    qualifiedAliasArn("CONTEXT_FUNCTION_ALIAS_ARN"),
+    qualifiedAliasArn("CONTEXT_REVIEWER_FUNCTION_ALIAS_ARN"),
   );
+  const consoleInvoker = createAwsLambdaJsonInvoker(
+    client,
+    qualifiedAliasArn("CONTEXT_CONSOLE_FUNCTION_ALIAS_ARN"),
+  );
+  const generationVersionArn =
+    options.candidateInvocation === true
+      ? qualifiedAliasArn("GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN")
+      : qualifiedAliasArn("GENERATION_FUNCTION_ALIAS_ARN");
   const generationInvoker = createAwsLambdaJsonInvoker(
     client,
-    qualifiedAliasArn("GENERATION_FUNCTION_ALIAS_ARN"),
+    generationVersionArn,
   );
 
   return createWebBffApp({
@@ -122,17 +168,37 @@ export async function createWebBffRuntime() {
       ...oidcConfig,
       sessionSecret: operatorSessionSecret,
     }),
-    operatorContextPort: createInvokedOperatorContextPort(contextInvoker),
-    consolePort: createInvokedConsolePort(contextInvoker),
-    contextPort: createInvokedContextPort(contextInvoker),
+    operatorContextPort: createInvokedOperatorContextPort(consoleInvoker),
+    consolePort: createInvokedConsolePort(consoleInvoker),
+    consoleExecutionAuthorizationPort:
+      createInvokedConsoleExecutionAuthorizationPort(consoleInvoker),
+    consoleExecutionReadPort:
+      createInvokedConsoleExecutionReadPort(generationInvoker),
+    consoleBenchAuthorizationPort:
+      createInvokedConsoleBenchAuthorizationPort(consoleInvoker),
+    consoleBenchExecutionPort:
+      createInvokedConsoleBenchExecutionPort(generationInvoker),
+    contextPort:
+      configurationReleaseId === undefined
+        ? createInvokedContextPort(reviewerInvoker)
+        : createInvokedContextPort(reviewerInvoker, {
+            configurationReleaseId,
+          }),
+    sourceRateLimitPort:
+      createInvokedPublicSourceRateLimitPort(reviewerInvoker),
+    resolveTrustedViewerSource: cloudFrontViewerSource,
     reviewerGenerationContextPort:
-      createInvokedReviewerGenerationContextPort(contextInvoker),
+      createInvokedReviewerGenerationContextPort(reviewerInvoker),
     reviewerGenerationExecutionPort:
       createInvokedReviewerGenerationExecutionPort(generationInvoker),
     reviewerDispositionContextPort:
-      createInvokedReviewerDispositionContextPort(contextInvoker),
+      createInvokedReviewerDispositionContextPort(reviewerInvoker),
     reviewerDispositionExecutionPort:
       createInvokedReviewerDispositionExecutionPort(generationInvoker),
+    reviewerDraftRevisionContextPort:
+      createInvokedReviewerDraftRevisionContextPort(reviewerInvoker),
+    reviewerDraftRevisionExecutionPort:
+      createInvokedReviewerDraftRevisionExecutionPort(generationInvoker),
     csrfProtector: createHmacCsrfProtector(csrfSecret),
     trustedPublicOriginHeader: "x-review-public-origin",
   });

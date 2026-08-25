@@ -79,6 +79,15 @@ export class GroundingRejectedError extends Error {
   }
 }
 
+export class ActionSourceEvidenceUnavailableError extends Error {
+  public readonly code = "ACTION_SOURCE_EVIDENCE_NOT_RESOLVED";
+
+  public constructor() {
+    super("The immutable source evidence required by this Action was not resolved.");
+    this.name = "ActionSourceEvidenceUnavailableError";
+  }
+}
+
 function calculateCostMicros(
   rate: PriceRate | undefined,
   inputTokens: number,
@@ -101,6 +110,10 @@ export function createGenerationOrchestrator(
 
   return {
     async generate(request: GenerationRequest, signal?: AbortSignal): Promise<GenerationResult> {
+      if (request.action !== "generate") {
+        throw new ActionSourceEvidenceUnavailableError();
+      }
+
       // 1. Check idempotency store
       const cached = idempotencyStore.get(request.idempotencyKey);
       if (cached) {
@@ -222,68 +235,11 @@ export function createGenerationOrchestrator(
       };
 
       // 7. Evaluate Grounding Guard
-      const postcondition: GroundingPostcondition =
-        action === "generate"
-          ? {
-              kind: "generate",
-              allowedAssertionIds: (request.assertions ?? []).map((a) => a.id),
-              allowedContextFactIds: (request.contextFacts ?? []).map((cf) => cf.id),
-            }
-          : action === "reformat"
-            ? {
-                kind: "reformat",
-                sourceClaims: (request.sourceGeneration?.claims ?? []).map((sc) => ({
-                  semanticId: sc.id,
-                  grounding: (request.assertions ?? []).map((a) => ({
-                    kind: "assertion" as const,
-                    assertionId: a.id,
-                    assertionVersion: a.version,
-                  })),
-                })),
-              }
-            : action === "condense"
-              ? {
-                  kind: "condense",
-                  sourceClaims: (request.sourceGeneration?.claims ?? []).map((sc) => ({
-                    semanticId: sc.id,
-                    grounding: (request.assertions ?? []).map((a) => ({
-                      kind: "assertion" as const,
-                      assertionId: a.id,
-                      assertionVersion: a.version,
-                    })),
-                  })),
-                  sourceDraftCharacterLength: request.sourceGeneration?.draft.length ?? 100,
-                }
-              : action === "expand"
-                ? {
-                    kind: "expand",
-                    sourceClaims: (request.sourceGeneration?.claims ?? []).map((sc) => ({
-                      semanticId: sc.id,
-                      grounding: (request.assertions ?? []).map((a) => ({
-                        kind: "assertion" as const,
-                        assertionId: a.id,
-                        assertionVersion: a.version,
-                      })),
-                    })),
-                    sourceDraftCharacterLength: request.sourceGeneration?.draft.length ?? 20,
-                  }
-                : action === "revise-wording"
-                  ? {
-                      kind: "revise-wording",
-                      sourceClaims: (request.sourceGeneration?.claims ?? []).map((sc) => ({
-                        semanticId: sc.id,
-                        grounding: (request.assertions ?? []).map((a) => ({
-                          kind: "assertion" as const,
-                          assertionId: a.id,
-                          assertionVersion: a.version,
-                        })),
-                      })),
-                    }
-                  : {
-                      kind: "generate",
-                      allowedAssertionIds: (request.assertions ?? []).map((a) => a.id),
-                      allowedContextFactIds: [],
-                    };
+      const postcondition: GroundingPostcondition = {
+        kind: "generate",
+        allowedAssertionIds: (request.assertions ?? []).map((a) => a.id),
+        allowedContextFactIds: (request.contextFacts ?? []).map((cf) => cf.id),
+      };
 
       const groundingVerdict = evaluateGrounding({
         reviewSessionId: request.reviewSessionId,

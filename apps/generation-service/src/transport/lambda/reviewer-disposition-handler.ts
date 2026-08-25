@@ -16,6 +16,11 @@ export interface ReviewerDispositionPermitVerifier {
 export interface ReviewerDispositionStore {
   readOriginal(input: ReviewerDispositionScopeDto): Promise<{
     readonly text: string;
+    readonly systemAnnotations: readonly {
+      readonly kind: "assisted-review-disclosure";
+      readonly text: string;
+      readonly policyVersionId: string;
+    }[];
   }>;
   record(input: ReviewerDispositionScopeDto & {
     readonly permitJti: string;
@@ -44,8 +49,11 @@ export function createReviewerDispositionHandler({
     );
     const original = await store.readOriginal(invocation.scope);
     const normalizedEditDistance = normalisedEditDistance(
-      { body: original.text, systemAnnotations: [] },
-      { body: invocation.finalText, systemAnnotations: [] },
+      { body: original.text, systemAnnotations: original.systemAnnotations },
+      {
+        body: invocation.finalText,
+        systemAnnotations: original.systemAnnotations,
+      },
     );
     const recorded = await store.record({
       ...invocation.scope,

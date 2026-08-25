@@ -24,16 +24,42 @@ const requiredParameter = async (name: string): Promise<string> => {
   return value;
 };
 
+const requiredProviderMode = (): "fake-only" | "paid-enabled" => {
+  const value = required("REVIEW_PROVIDER_MODE");
+  if (value !== "fake-only" && value !== "paid-enabled") {
+    throw new Error("REVIEW_PROVIDER_MODE must be fake-only or paid-enabled");
+  }
+  return value;
+};
+
 const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
+  const providerMode = requiredProviderMode();
   runtime ??= Promise.all([
-    requiredParameter("CONTEXT_DATABASE_URL_PARAMETER"),
+    requiredParameter("CONTEXT_RUNTIME_DATABASE_URL_PARAMETER"),
+    requiredParameter("CONSOLE_CONTROL_DATABASE_URL_PARAMETER"),
     requiredParameter("CONTEXT_WORK_PRIVATE_KEY_PARAMETER"),
+    requiredParameter("CONSOLE_AUTHORITY_PRIVATE_KEY_PEM_PARAMETER"),
+    requiredParameter("CONSOLE_DATABASE_AUTHORITY_SECRET_PARAMETER"),
     requiredParameter("GENERATION_WORK_PUBLIC_KEY_PARAMETER"),
-  ]).then(([databaseUrl, contextPrivateKeyPem, generationPublicKeyPem]) =>
+    requiredParameter("PUBLIC_SOURCE_RATE_HMAC_SECRET_PARAMETER"),
+  ]).then(([
+    runtimeDatabaseUrl,
+    consoleControlDatabaseUrl,
+    contextPrivateKeyPem,
+    consoleAuthorityPrivateKeyPem,
+    consoleDatabaseAuthoritySecret,
+    generationPublicKeyPem,
+    publicSourceRateHmacSecret,
+  ]) =>
     createContextRuntime({
-      databaseUrl,
+      runtimeDatabaseUrl,
+      consoleControlDatabaseUrl,
       contextPrivateKeyPem,
+      consoleAuthorityPrivateKeyPem,
+      consoleDatabaseAuthoritySecret,
       generationPublicKeyPem,
+      publicSourceRateHmacSecret,
+      providerMode,
     }),
   );
   return runtime;

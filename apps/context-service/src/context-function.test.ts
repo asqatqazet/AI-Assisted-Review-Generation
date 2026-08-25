@@ -3,6 +3,52 @@ import { describe, expect, it } from "vitest";
 import { createContextFunctionHandler } from "./context-function.js";
 
 describe("private Context Function", () => {
+  it("consumes a public source limit only through the reviewer application seam", async () => {
+    let received: unknown;
+    const handler = createContextFunctionHandler({
+      entryService: {
+        prepareEntry: async () => ({ status: "unavailable" }),
+        readEntryChallenge: async () => ({ status: "unavailable" }),
+        advanceEntry: async () => ({ status: "unavailable" }),
+        verifyEntry: async () => ({ status: "unavailable" }),
+        readReviewSession: async () => ({ status: "unavailable" }),
+        prepareReviewerDisposition: async () => ({ status: "rejected" }),
+        prepareReviewerGeneration: async () => ({
+          status: "rejected",
+          code: "GENERATION_FAILED",
+          retryable: true,
+        }),
+        activateGeneration: async () => ({ status: "rejected" }),
+        settleGeneration: async () => ({ status: "rejected" }),
+        listReconciliationCandidates: async () => ({ candidates: [] }),
+        releaseReconciledGeneration: async () => ({ status: "rejected" }),
+      },
+      publicSourceRateLimiter: {
+        consume: async (input) => {
+          received = input;
+          return { status: "limited", retryAfterSeconds: 17 };
+        },
+      },
+    });
+
+    await expect(
+      handler({
+        operation: "consume-public-source-rate-limit",
+        input: {
+          policy: "entry-start",
+          sourceAddress: "203.0.113.8",
+        },
+      }),
+    ).resolves.toEqual({
+      operation: "consume-public-source-rate-limit",
+      result: { status: "limited", retryAfterSeconds: 17 },
+    });
+    expect(received).toEqual({
+      policy: "entry-start",
+      sourceAddress: "203.0.113.8",
+    });
+  });
+
   it("prepares an Entry Challenge through the Context-owned application boundary", async () => {
     let received: unknown;
     const handler = createContextFunctionHandler({
@@ -16,6 +62,7 @@ describe("private Context Function", () => {
         },
         readEntryChallenge: async () => ({ status: "unavailable" }),
         advanceEntry: async () => ({ status: "unavailable" }),
+        verifyEntry: async () => ({ status: "unavailable" }),
         readReviewSession: async () => ({ status: "unavailable" }),
         prepareReviewerDisposition: async () => ({ status: "rejected" }),
         prepareReviewerGeneration: async () => ({
@@ -58,12 +105,64 @@ describe("private Context Function", () => {
     });
   });
 
+  it("routes browser-bound verification evidence without accepting scope identity", async () => {
+    let received: unknown;
+    const handler = createContextFunctionHandler({
+      entryService: {
+        prepareEntry: async () => ({ status: "unavailable" }),
+        readEntryChallenge: async () => ({ status: "unavailable" }),
+        advanceEntry: async () => ({ status: "unavailable" }),
+        verifyEntry: async (input) => {
+          received = input;
+          return {
+            status: "admitted",
+            reviewSessionHandle: "review-session-route",
+          };
+        },
+        readReviewSession: async () => ({ status: "unavailable" }),
+        prepareReviewerDisposition: async () => ({ status: "rejected" }),
+        prepareReviewerGeneration: async () => ({
+          status: "rejected",
+          code: "GENERATION_FAILED",
+          retryable: true,
+        }),
+        activateGeneration: async () => ({ status: "rejected" }),
+        settleGeneration: async () => ({ status: "rejected" }),
+        listReconciliationCandidates: async () => ({ candidates: [] }),
+        releaseReconciledGeneration: async () => ({ status: "rejected" }),
+      },
+    });
+
+    await expect(
+      handler({
+        operation: "verify-entry",
+        input: {
+          entryChallengeHandle: "entry-challenge-demo",
+          browserCapability: "existing-browser-capability-123",
+          verificationEvidence: "Booking-A7",
+        },
+      }),
+    ).resolves.toEqual({
+      operation: "verify-entry",
+      result: {
+        status: "admitted",
+        reviewSessionHandle: "review-session-route",
+      },
+    });
+    expect(received).toEqual({
+      entryChallengeHandle: "entry-challenge-demo",
+      browserCapability: "existing-browser-capability-123",
+      verificationEvidence: "Booking-A7",
+    });
+  });
+
   it("resolves current Operator Access Grants from a verified OIDC identity", async () => {
     let received: unknown;
     const entryService = {
       prepareEntry: async () => ({ status: "unavailable" as const }),
       readEntryChallenge: async () => ({ status: "unavailable" as const }),
       advanceEntry: async () => ({ status: "unavailable" as const }),
+      verifyEntry: async () => ({ status: "unavailable" as const }),
       readReviewSession: async () => ({ status: "unavailable" as const }),
       prepareReviewerDisposition: async () => ({ status: "rejected" as const }),
       prepareReviewerGeneration: async () => ({
@@ -137,5 +236,59 @@ describe("private Context Function", () => {
         email: "owner@example.com",
       },
     });
+  });
+
+  it("routes Bench authorization without routing execution through Context", async () => {
+    let received: unknown;
+    const handler = createContextFunctionHandler({
+      entryService: {
+        prepareEntry: async () => ({ status: "unavailable" }),
+        readEntryChallenge: async () => ({ status: "unavailable" }),
+        advanceEntry: async () => ({ status: "unavailable" }),
+        verifyEntry: async () => ({ status: "unavailable" }),
+        readReviewSession: async () => ({ status: "unavailable" }),
+        prepareReviewerDisposition: async () => ({ status: "rejected" }),
+        prepareReviewerGeneration: async () => ({
+          status: "rejected",
+          code: "GENERATION_FAILED",
+          retryable: true,
+        }),
+        activateGeneration: async () => ({ status: "rejected" }),
+        settleGeneration: async () => ({ status: "rejected" }),
+        listReconciliationCandidates: async () => ({ candidates: [] }),
+        releaseReconciledGeneration: async () => ({ status: "rejected" }),
+      },
+      consoleBenchAuthorizer: {
+        authorize: async (input) => {
+          received = input;
+          return { status: "not-found" };
+        },
+      },
+    });
+
+    const input = {
+      identity: {
+        issuer: "https://issuer.example.test",
+        subject: "operator-a",
+        email: "operator@example.test",
+      },
+      scope: { tenantId: "tenant-a", locationId: "location-a" },
+      input: {
+        action: "generate",
+        styleId: "format-a@1",
+        promptVersionId: "prompt-generate@1",
+        provider: "fake",
+        keywordIds: ["fact-a"],
+        freeText: "",
+        sourceText: "",
+      },
+    } as const;
+    await expect(
+      handler({ operation: "authorize-console-bench", input }),
+    ).resolves.toEqual({
+      operation: "authorize-console-bench",
+      result: { status: "not-found" },
+    });
+    expect(received).toEqual(input);
   });
 });

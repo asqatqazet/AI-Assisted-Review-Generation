@@ -2,9 +2,16 @@ import {
   EntryChallengeProjectionDtoSchema,
   OperatorAccessProjectionDtoSchema,
   ReviewSessionProjectionDtoSchema,
+  SaveReviewSessionProgressInvocationDtoSchema,
+  SaveReviewSessionProgressInvocationResultDtoSchema,
   StartEntryRequestDtoSchema,
+  VerifyEntryInvocationDtoSchema,
 } from "@review/contracts/context";
-import { ReviewerGenerationCommandDtoSchema } from "@review/contracts/generation";
+import {
+  ReviewerDraftRevisionCommandDtoSchema,
+  ReviewerDraftRevisionResultDtoSchema,
+  ReviewerGenerationCommandDtoSchema,
+} from "@review/contracts/generation";
 import { ReviewerDispositionCommandDtoSchema } from "@review/contracts/generation";
 import { BffErrorDtoSchema } from "@review/contracts/shared";
 import { Hono } from "hono";
@@ -12,6 +19,10 @@ import { getCookie } from "hono/cookie";
 import { streamSSE } from "hono/streaming";
 
 import type { ContextPort } from "./ports/context.port.js";
+import type {
+  ReviewerDraftRevisionContextPort,
+  ReviewerDraftRevisionExecutionPort,
+} from "./ports/reviewer-draft-revision.port.js";
 import type {
   ReviewerGenerationContextPort,
   ReviewerGenerationExecutionPort,
@@ -21,8 +32,15 @@ import type {
   ReviewerDispositionExecutionPort,
 } from "./ports/reviewer-disposition.port.js";
 import type { ConsolePort } from "./ports/console.port.js";
+import type {
+  ConsoleBenchAuthorizationPort,
+  ConsoleBenchExecutionPort,
+  ConsoleExecutionAuthorizationPort,
+  ConsoleExecutionReadPort,
+} from "./ports/console-execution.port.js";
 import type { OperatorAuthPort } from "./ports/operator-auth.port.js";
 import type { OperatorContextPort } from "./ports/operator-context.port.js";
+import type { PublicSourceRateLimitPort } from "./ports/public-source-rate-limit.port.js";
 import { registerConsoleRoutes } from "./console-routes.js";
 import { createReviewerGenerationCoordinator } from "./reviewer-generation.js";
 import {
@@ -49,12 +67,34 @@ export interface WebBffOptions {
   readonly reviewerDispositionExecutionPort?:
     | ReviewerDispositionExecutionPort
     | undefined;
+  readonly reviewerDraftRevisionContextPort?:
+    | ReviewerDraftRevisionContextPort
+    | undefined;
+  readonly reviewerDraftRevisionExecutionPort?:
+    | ReviewerDraftRevisionExecutionPort
+    | undefined;
   readonly operatorAuth?: OperatorAuthPort | undefined;
   readonly operatorContextPort?: OperatorContextPort | undefined;
   readonly consolePort?: ConsolePort | undefined;
+  readonly consoleExecutionAuthorizationPort?:
+    | ConsoleExecutionAuthorizationPort
+    | undefined;
+  readonly consoleExecutionReadPort?: ConsoleExecutionReadPort | undefined;
+  readonly consoleBenchAuthorizationPort?:
+    | ConsoleBenchAuthorizationPort
+    | undefined;
+  readonly consoleBenchExecutionPort?: ConsoleBenchExecutionPort | undefined;
+  readonly sourceRateLimitPort?: PublicSourceRateLimitPort | undefined;
+  readonly resolveTrustedViewerSource?:
+    | ((headers: Headers) => string | null)
+    | undefined;
 }
 
 const encoder = new TextEncoder();
+const VerifyEntryRequestDtoSchema =
+  VerifyEntryInvocationDtoSchema.shape.input
+    .pick({ verificationEvidence: true })
+    .extend({ csrfToken: StartEntryRequestDtoSchema.shape.csrfToken });
 
 async function sha256Hex(value: string): Promise<string> {
   const digest = await globalThis.crypto.subtle.digest(
@@ -71,6 +111,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     prepareEntry: async () => ({ status: "unavailable" }),
     readEntryChallenge: async () => ({ status: "unavailable" }),
     advanceEntry: async () => ({ status: "unavailable" }),
+    verifyEntry: async () => ({ status: "unavailable" }),
     readReviewSession: async () => ({ status: "unavailable" }),
   };
   const newBrowserCapability =
@@ -82,6 +123,23 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       : new URL(options.publicOrigin).origin;
   const trustedPublicOriginHeader = options.trustedPublicOriginHeader;
   const newRequestId = options.newRequestId ?? (() => globalThis.crypto.randomUUID());
+  const consumePublicSourceLimit = async (
+    headers: Headers,
+    policy: "entry-prepare" | "entry-start" | "generation",
+  ): Promise<
+    | { readonly status: "allowed" }
+    | { readonly status: "limited"; readonly retryAfterSeconds: number }
+  > => {
+    const sourceAddress = options.resolveTrustedViewerSource?.(headers) ?? null;
+    if (sourceAddress === null || options.sourceRateLimitPort === undefined) {
+      return { status: "limited", retryAfterSeconds: 60 };
+    }
+    try {
+      return await options.sourceRateLimitPort.consume({ policy, sourceAddress });
+    } catch {
+      return { status: "limited", retryAfterSeconds: 60 };
+    }
+  };
   const errorBody = (
     code: string,
     message: string,
@@ -125,6 +183,10 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
   registerConsoleRoutes(app, {
     operatorAuth: options.operatorAuth,
     consolePort: options.consolePort,
+    consoleExecutionAuthorizationPort: options.consoleExecutionAuthorizationPort,
+    consoleExecutionReadPort: options.consoleExecutionReadPort,
+    consoleBenchAuthorizationPort: options.consoleBenchAuthorizationPort,
+    consoleBenchExecutionPort: options.consoleBenchExecutionPort,
     errorBody,
     expectedPublicOrigin,
   });
@@ -191,7 +253,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     }
     c.header(
       "Set-Cookie",
-      `__Host-operator_session=${result.sessionCookie}; Max-Age=3600; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      `__Host-operator_session=${result.sessionCookie}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`,
       { append: true },
     );
     c.header(
@@ -217,14 +279,22 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
         401,
       );
     }
-    const identity = await options.operatorAuth.readSession({ sessionCookie });
-    if (identity === null) {
+    const session = await options.operatorAuth.readSession({ sessionCookie });
+    if (session === null) {
       return c.json(
         errorBody("OPERATOR_UNAUTHENTICATED", "Sign in is required.", false),
         401,
       );
     }
-    const access = await options.operatorContextPort.resolveAccess(identity);
+    if (session.refreshedSessionCookie !== null) {
+      c.header(
+        "Set-Cookie",
+        `__Host-operator_session=${session.refreshedSessionCookie}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      );
+    }
+    const access = await options.operatorContextPort.resolveAccess(
+      session.identity,
+    );
     if (access.status !== "authorized") {
       return c.json(
         errorBody("OPERATOR_FORBIDDEN", "Console access is unavailable.", false),
@@ -234,7 +304,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     return c.json(OperatorAccessProjectionDtoSchema.parse(access), 200);
   });
 
-  app.post("/auth/logout", (c) => {
+  app.post("/auth/logout", async (c) => {
     const origin = c.req.header("Origin");
     const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
     if (expectedOrigin === undefined || origin !== expectedOrigin) {
@@ -243,15 +313,69 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
         404,
       );
     }
+    const sessionCookie = getCookie(c, "__Host-operator_session") ?? "";
+    // Local sign-out is unconditional once the same-origin request is valid.
+    // Provider revocation is best-effort and must never keep a stolen or stale
+    // browser session alive merely because Cognito is unavailable.
     c.header(
       "Set-Cookie",
       "__Host-operator_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
     );
     c.header("Cache-Control", "private, no-store");
-    return c.body(null, 204);
+    if (options.operatorAuth === undefined) {
+      return c.json(
+        errorBody(
+          "OPERATOR_AUTH_UNAVAILABLE",
+          "Sign out could not be completed.",
+          true,
+        ),
+        503,
+      );
+    }
+    let logoutUrl: string;
+    try {
+      ({ logoutUrl } = await options.operatorAuth.logout({ sessionCookie }));
+    } catch {
+      return c.json(
+        errorBody(
+          "OPERATOR_AUTH_UNAVAILABLE",
+          "Sign out could not be completed.",
+          true,
+        ),
+        503,
+      );
+    }
+    return c.json({ logoutUrl }, 200);
+  });
+
+  app.use("/s/*", async (c, next) => {
+    if (c.req.method !== "HEAD") {
+      await next();
+      return;
+    }
+    c.header("Allow", "GET");
+    c.header("Cache-Control", "private, no-store");
+    c.header("X-Robots-Tag", "noindex, nofollow, noarchive");
+    return c.body(null, 405);
   });
 
   app.get("/s/:tenantSlug/:locationSlug", async (c) => {
+    const sourceLimit = await consumePublicSourceLimit(
+      c.req.raw.headers,
+      "entry-prepare",
+    );
+    if (sourceLimit.status === "limited") {
+      c.header("Retry-After", String(sourceLimit.retryAfterSeconds));
+      c.header("Cache-Control", "private, no-store");
+      return c.json(
+        errorBody(
+          "EDGE_THROTTLED",
+          "Please wait before trying again.",
+          true,
+        ),
+        429,
+      );
+    }
     const existingBrowserCapability = getCookie(c, "__Host-review_browser");
     const reuseBrowserCapability =
       existingBrowserCapability !== undefined &&
@@ -268,8 +392,12 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     });
 
     c.header("Cache-Control", "private, no-store");
+    c.header("X-Robots-Tag", "noindex, nofollow, noarchive");
 
     if (preparation.status !== "prepared") {
+      if (c.req.header("Accept")?.includes("text/html") === true) {
+        return c.redirect("/start/unavailable", 303);
+      }
       return c.json(
         errorBody(
           "ENTRY_UNAVAILABLE",
@@ -291,6 +419,7 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
   app.get("/api/v1/entry-challenges/:entryChallengeHandle", async (c) => {
     c.header("Cache-Control", "private, no-store");
+    c.header("Vary", "Cookie");
     const browserCapability = getCookie(c, "__Host-review_browser");
 
     if (
@@ -332,6 +461,10 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
           entryChallengeHandle,
           browserCapability,
         }),
+        ...(entry.stage === undefined ? {} : { stage: entry.stage }),
+        ...(entry.provisionalSelection === undefined
+          ? {}
+          : { provisionalSelection: entry.provisionalSelection }),
         context: entry.context,
       }),
       200,
@@ -340,6 +473,22 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
   app.post("/api/v1/entry-challenges/:entryChallengeHandle/start", async (c) => {
     c.header("Cache-Control", "private, no-store");
+    c.header("Vary", "Cookie");
+    const sourceLimit = await consumePublicSourceLimit(
+      c.req.raw.headers,
+      "entry-start",
+    );
+    if (sourceLimit.status === "limited") {
+      c.header("Retry-After", String(sourceLimit.retryAfterSeconds));
+      return c.json(
+        errorBody(
+          "EDGE_THROTTLED",
+          "Please wait before trying again.",
+          true,
+        ),
+        429,
+      );
+    }
     const browserCapability = getCookie(c, "__Host-review_browser");
     const entryChallengeHandle = c.req.param("entryChallengeHandle");
     const origin = c.req.header("Origin");
@@ -413,6 +562,10 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
       action: body.data.action,
     });
 
+    if (result.status === "verification-required") {
+      return c.json({ status: "verification-required" as const }, 202);
+    }
+
     if (result.status !== "admitted") {
       return c.json(
         errorBody(
@@ -426,6 +579,99 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
 
     return c.redirect(`/review/${result.reviewSessionHandle}`, 303);
   });
+
+  app.post(
+    "/api/v1/entry-challenges/:entryChallengeHandle/verify",
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      c.header("Vary", "Cookie");
+      const browserCapability = getCookie(c, "__Host-review_browser");
+      const entryChallengeHandle = c.req.param("entryChallengeHandle");
+      const origin = c.req.header("Origin");
+      const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
+      const claimedBodyHash = c.req.header("x-amz-content-sha256");
+      const rawBody = await c.req.text();
+
+      if (
+        contextPort.verifyEntry === undefined ||
+        expectedOrigin === undefined ||
+        origin !== expectedOrigin ||
+        c.req.header("Content-Type")?.startsWith(
+          "application/x-www-form-urlencoded",
+        ) !== true ||
+        browserCapability === undefined ||
+        !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+        claimedBodyHash === undefined ||
+        rawBody.length > 4_096 ||
+        claimedBodyHash !== (await sha256Hex(rawBody))
+      ) {
+        return c.json(
+          errorBody(
+            "ENTRY_UNAVAILABLE",
+            "This review link is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      let rawInput: unknown;
+      try {
+        const fields = new URLSearchParams(rawBody);
+        const entries = Array.from(fields.entries());
+        const expectedNames = new Set(["verificationEvidence", "csrfToken"]);
+        rawInput =
+          entries.length === expectedNames.size &&
+          entries.every(([name]) => expectedNames.has(name))
+            ? {
+                verificationEvidence: fields.get("verificationEvidence"),
+                csrfToken: fields.get("csrfToken"),
+              }
+            : undefined;
+      } catch {
+        rawInput = undefined;
+      }
+
+      const input = VerifyEntryRequestDtoSchema.safeParse(rawInput);
+      if (
+        !input.success ||
+        !(await csrfProtector.verify({
+          entryChallengeHandle,
+          browserCapability,
+          token: input.data.csrfToken,
+        }))
+      ) {
+        return c.json(
+          errorBody(
+            "ENTRY_UNAVAILABLE",
+            "This review link is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      const result = await contextPort.verifyEntry({
+        entryChallengeHandle,
+        browserCapability,
+        verificationEvidence: input.data.verificationEvidence,
+      });
+      if (result.status === "admitted") {
+        return c.redirect(`/review/${result.reviewSessionHandle}`, 303);
+      }
+      if (result.status === "verification-unavailable") {
+        return c.json({ status: "verification-unavailable" as const }, 200);
+      }
+      return c.json(
+        errorBody(
+          "ENTRY_UNAVAILABLE",
+          "This review link is unavailable.",
+          false,
+        ),
+        404,
+      );
+    },
+  );
 
   app.get("/api/v1/review-sessions/:reviewSessionHandle", async (c) => {
     c.header("Cache-Control", "private, no-store");
@@ -462,10 +708,236 @@ export function createWebBffApp(options: WebBffOptions = {}): Hono {
     return c.json(ReviewSessionProjectionDtoSchema.parse(result), 200);
   });
 
+  app.delete("/api/v1/review-sessions/:reviewSessionHandle", async (c) => {
+    c.header("Cache-Control", "private, no-store");
+    c.header("Vary", "Cookie");
+    const browserCapability = getCookie(c, "__Host-review_browser");
+    const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
+    const origin = c.req.header("Origin");
+    const claimedBodyHash = c.req.header("x-amz-content-sha256");
+    const rawBody = await c.req.text();
+
+    if (
+      contextPort.forgetReviewSession === undefined ||
+      expectedOrigin === undefined ||
+      origin !== expectedOrigin ||
+      browserCapability === undefined ||
+      !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+      rawBody.length !== 0 ||
+      claimedBodyHash !== (await sha256Hex(rawBody))
+    ) {
+      return c.json(
+        errorBody(
+          "REVIEW_SESSION_UNAVAILABLE",
+          "This review is unavailable.",
+          false,
+        ),
+        404,
+      );
+    }
+
+    const result = await contextPort.forgetReviewSession({
+      reviewSessionHandle: c.req.param("reviewSessionHandle"),
+      browserCapability,
+    });
+    if (result.status !== "forgotten") {
+      return c.json(
+        errorBody(
+          "REVIEW_SESSION_UNAVAILABLE",
+          "This review is unavailable.",
+          false,
+        ),
+        404,
+      );
+    }
+    return c.body(null, 204);
+  });
+
+  app.put(
+    "/api/v1/review-sessions/:reviewSessionHandle/progress",
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      c.header("Vary", "Cookie");
+      const browserCapability = getCookie(c, "__Host-review_browser");
+      const claimedBodyHash = c.req.header("x-amz-content-sha256");
+      const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
+      const origin = c.req.header("Origin");
+      const rawBody = await c.req.text();
+
+      if (
+        contextPort.saveReviewSessionProgress === undefined ||
+        expectedOrigin === undefined ||
+        origin !== expectedOrigin ||
+        browserCapability === undefined ||
+        !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+        claimedBodyHash === undefined ||
+        rawBody.length > 32_768 ||
+        claimedBodyHash !== (await sha256Hex(rawBody))
+      ) {
+        return c.json(
+          errorBody(
+            "REVIEW_SESSION_UNAVAILABLE",
+            "This review is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      let rawInput: unknown;
+      try {
+        rawInput = JSON.parse(rawBody) as unknown;
+      } catch {
+        rawInput = undefined;
+      }
+      const invocation = SaveReviewSessionProgressInvocationDtoSchema.safeParse({
+        operation: "save-review-session-progress",
+        input:
+          typeof rawInput === "object" && rawInput !== null
+            ? {
+                ...rawInput,
+                reviewSessionHandle: c.req.param("reviewSessionHandle"),
+                browserCapability,
+              }
+            : rawInput,
+      });
+      if (!invocation.success) {
+        return c.json(
+          errorBody(
+            "REVIEW_SESSION_UNAVAILABLE",
+            "This review is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      const result = SaveReviewSessionProgressInvocationResultDtoSchema.parse({
+        operation: "save-review-session-progress",
+        result: await contextPort.saveReviewSessionProgress(
+          invocation.data.input,
+        ),
+      }).result;
+      if (result.status === "unavailable") {
+        return c.json(
+          errorBody(
+            "REVIEW_SESSION_UNAVAILABLE",
+            "This review is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+      return c.json(result, result.status === "conflict" ? 409 : 200);
+    },
+  );
+
+  app.put(
+    "/api/v1/review-sessions/:reviewSessionHandle/draft-revisions",
+    async (c) => {
+      c.header("Cache-Control", "private, no-store");
+      c.header("Vary", "Cookie");
+      const browserCapability = getCookie(c, "__Host-review_browser");
+      const expectedOrigin = expectedPublicOrigin(c.req.raw.headers);
+      const origin = c.req.header("Origin");
+      const idempotencyKey = c.req.header("Idempotency-Key");
+      const claimedBodyHash = c.req.header("x-amz-content-sha256");
+      const rawBody = await c.req.text();
+
+      if (
+        options.reviewerDraftRevisionContextPort === undefined ||
+        options.reviewerDraftRevisionExecutionPort === undefined ||
+        expectedOrigin === undefined ||
+        origin !== expectedOrigin ||
+        browserCapability === undefined ||
+        !/^[A-Za-z0-9_-]{20,128}$/.test(browserCapability) ||
+        c.req.header("Content-Type")?.startsWith("application/json") !== true ||
+        idempotencyKey === undefined ||
+        idempotencyKey.length < 1 ||
+        idempotencyKey.length > 200 ||
+        claimedBodyHash === undefined ||
+        rawBody.length > 32_768 ||
+        claimedBodyHash !== (await sha256Hex(rawBody))
+      ) {
+        return c.json(
+          errorBody(
+            "REVIEW_SESSION_UNAVAILABLE",
+            "This review is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      let rawCommand: unknown;
+      try {
+        rawCommand = JSON.parse(rawBody) as unknown;
+      } catch {
+        rawCommand = undefined;
+      }
+      const command = ReviewerDraftRevisionCommandDtoSchema.safeParse(rawCommand);
+      if (!command.success) {
+        return c.json(
+          errorBody(
+            "REVIEW_SESSION_UNAVAILABLE",
+            "This review is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      const authorization =
+        await options.reviewerDraftRevisionContextPort.authorize({
+          reviewSessionHandle: c.req.param("reviewSessionHandle"),
+          browserCapability,
+          idempotencyKey,
+          draftId: command.data.draftId,
+          generationId: command.data.generationId,
+          expectedRevision: command.data.expectedRevision,
+          textHash: `sha256:${await sha256Hex(command.data.text)}`,
+        });
+      if (authorization.status !== "authorized") {
+        return c.json(
+          errorBody(
+            "REVIEW_SESSION_UNAVAILABLE",
+            "This review is unavailable.",
+            false,
+          ),
+          404,
+        );
+      }
+
+      const result = ReviewerDraftRevisionResultDtoSchema.parse(
+        await options.reviewerDraftRevisionExecutionPort.record({
+          permit: authorization.permit,
+          scope: authorization.scope,
+          text: command.data.text,
+        }),
+      );
+      return c.json(result, result.status === "conflict" ? 409 : 200);
+    },
+  );
+
   app.post(
     "/api/v1/review-sessions/:reviewSessionHandle/generations",
     async (c) => {
       c.header("Cache-Control", "private, no-store");
+      const sourceLimit = await consumePublicSourceLimit(
+        c.req.raw.headers,
+        "generation",
+      );
+      if (sourceLimit.status === "limited") {
+        c.header("Retry-After", String(sourceLimit.retryAfterSeconds));
+        return c.json(
+          errorBody(
+            "EDGE_THROTTLED",
+            "Please wait before trying again.",
+            true,
+          ),
+          429,
+        );
+      }
       const browserCapability = getCookie(c, "__Host-review_browser");
       const idempotencyKey = c.req.header("Idempotency-Key");
       const claimedBodyHash = c.req.header("x-amz-content-sha256");

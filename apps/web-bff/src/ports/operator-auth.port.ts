@@ -14,6 +14,12 @@ export interface OperatorIdentity {
   readonly email: string;
 }
 
+export interface ReadOperatorSessionResult {
+  readonly identity: OperatorIdentity;
+  /** Present only when Cognito rotated/refreshed provider tokens. */
+  readonly refreshedSessionCookie: string | null;
+}
+
 export interface OperatorAuthPort {
   begin(input: {
     readonly returnTo: string;
@@ -25,5 +31,9 @@ export interface OperatorAuthPort {
   }): Promise<CompleteOperatorLoginResult>;
   readSession(input: {
     readonly sessionCookie: string;
-  }): Promise<OperatorIdentity | null>;
+  }): Promise<ReadOperatorSessionResult | null>;
+  /** Revokes the encrypted refresh token before sending the browser to SSO logout. */
+  logout(input: {
+    readonly sessionCookie: string;
+  }): Promise<{ readonly logoutUrl: string }>;
 }

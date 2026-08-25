@@ -4,14 +4,14 @@ import {
   GenerationStatusResultDtoSchema,
   PrivateGenerationTerminalEventDtoSchema,
   PrepareGenerationResultDtoSchema,
-  type GenerationStatusInvocationDto,
+  type CancelExpiredLeaseInvocationDto,
   type GenerationWorkloadDto,
   type ReviewerDraftDto,
 } from "@review/contracts/generation";
 
-import type { CompletedPaidWorkAttemptResult } from "../../application/paid-work-attempt.js";
+import type { PaidWorkAttemptResult } from "../../application/paid-work-attempt.js";
 
-type GenerationExecutionScope = GenerationStatusInvocationDto["scope"];
+type GenerationExecutionScope = CancelExpiredLeaseInvocationDto["scope"];
 
 export interface VerifiedGenerationPermit {
   readonly permitJti: string;
@@ -49,13 +49,24 @@ export interface GenerationLeaseJournal {
     | { readonly status: "existing"; readonly attemptId: string }
   >;
   status(scope: GenerationExecutionScope): Promise<{
-    readonly state: "no-lease" | "leased" | "running" | "cancelled" | "terminal";
+    readonly state:
+      | "no-lease"
+      | "leased"
+      | "running"
+      | "indeterminate"
+      | "cancelled"
+      | "terminal";
   }>;
   cancelExpired(input: {
     readonly leaseId: string;
     readonly scope: GenerationExecutionScope;
   }): Promise<{
-    readonly state: "cancelled" | "running" | "terminal" | "no-lease";
+    readonly state:
+      | "cancelled"
+      | "running"
+      | "indeterminate"
+      | "terminal"
+      | "no-lease";
   }>;
 }
 
@@ -63,6 +74,22 @@ export interface VerifiedGenerationActivation {
   readonly expiresAt: string;
   readonly permitJti: string;
 }
+
+export type GenerationPersistedTerminal = {
+  readonly actualCostMicros: number;
+} & (
+  | { readonly draft: ReviewerDraftDto }
+  | {
+      readonly rejection: {
+        readonly code:
+          | "GROUNDING_REJECTED"
+          | "POLICY_REJECTED"
+          | "FORMAT_REJECTED"
+          | "PROVIDER_UNAVAILABLE";
+        readonly retryable: boolean;
+      };
+    }
+);
 
 export interface GenerationActivationVerifier {
   verify(
@@ -100,13 +127,19 @@ export interface GenerationReceiptSigner {
             | "no-lease"
             | "leased"
             | "running"
+            | "indeterminate"
             | "cancelled"
             | "terminal";
           readonly scope: GenerationExecutionScope;
         }
       | {
           readonly operation: "cancel-expired-lease";
-          readonly state: "cancelled" | "running" | "terminal" | "no-lease";
+          readonly state:
+            | "cancelled"
+            | "running"
+            | "indeterminate"
+            | "terminal"
+            | "no-lease";
           readonly leaseId: string;
           readonly scope: GenerationExecutionScope;
         },
@@ -134,16 +167,53 @@ export interface GenerationReceiptSigner {
 }
 
 export interface GenerationTerminalStore {
+  checkpoint(input: {
+    readonly leaseId: string;
+    readonly attemptId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+    readonly result: PaidWorkAttemptResult;
+  }): Promise<void>;
   complete(input: {
     readonly leaseId: string;
     readonly attemptId: string;
     readonly permitJti: string;
     readonly workload: GenerationWorkloadDto;
-    readonly result: CompletedPaidWorkAttemptResult;
-  }): Promise<{
-    readonly draft: ReviewerDraftDto;
-    readonly actualCostMicros: number;
-  }>;
+  }): Promise<GenerationPersistedTerminal>;
+  recover(input: {
+    readonly leaseId: string;
+    readonly attemptId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<
+    | { readonly state: "none" | "indeterminate" }
+    | {
+        readonly state: "completed";
+        readonly terminal: GenerationPersistedTerminal;
+      }
+  >;
+  recoverByScope(input: {
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<
+    | { readonly state: "none" | "indeterminate" }
+    | {
+        readonly state: "completed";
+        readonly leaseId: string;
+        readonly terminal: GenerationPersistedTerminal;
+      }
+  >;
+  markIndeterminate(input: {
+    readonly leaseId: string;
+    readonly attemptId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+    readonly reason: "provider-timeout" | "checkpoint-unavailable";
+  }): Promise<
+    | { readonly state: "indeterminate" }
+    | { readonly state: "checkpointed" }
+    | { readonly state: "terminal" }
+  >;
   reject(input: {
     readonly leaseId: string;
     readonly attemptId: string;
@@ -168,7 +238,7 @@ export interface PaidWorkGenerationHandlerOptions {
     readonly requestPayload: unknown;
     readonly execute: (
       attemptId: string,
-    ) => Promise<CompletedPaidWorkAttemptResult>;
+    ) => Promise<PaidWorkAttemptResult>;
   }>;
   readonly tailExisting: (input: {
     readonly attemptId: string;
@@ -177,6 +247,9 @@ export interface PaidWorkGenerationHandlerOptions {
     readonly workload: GenerationWorkloadDto;
   }) => Promise<unknown>;
   readonly recordDisposition?: ((event: unknown) => Promise<unknown>) | undefined;
+  readonly recordDraftRevision?:
+    | ((event: unknown) => Promise<unknown>)
+    | undefined;
 }
 
 export function createPaidWorkGenerationHandler({
@@ -188,7 +261,99 @@ export function createPaidWorkGenerationHandler({
   prepareAttempt,
   tailExisting,
   recordDisposition,
+  recordDraftRevision,
 }: PaidWorkGenerationHandlerOptions): (event: unknown) => Promise<unknown> {
+  const completeCheckpoint = async (input: {
+    readonly leaseId: string;
+    readonly attemptId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<GenerationPersistedTerminal> => {
+    let firstFailure: unknown;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        return await terminalStore.complete(input);
+      } catch (error) {
+        firstFailure ??= error;
+      }
+    }
+    throw firstFailure;
+  };
+
+  const projectTerminal = async ({
+    terminal,
+    leaseId,
+    permitJti,
+    workload,
+  }: {
+    readonly terminal: GenerationPersistedTerminal;
+    readonly leaseId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<unknown> => {
+    const outcome = "draft" in terminal ? "completed" : "rejected";
+    const terminalReceipt = await receiptSigner.signTerminal({
+      leaseId,
+      permitJti,
+      outcome,
+      actualCostMicros: terminal.actualCostMicros,
+      ...workload.bindings,
+    });
+    return PrivateGenerationTerminalEventDtoSchema.parse(
+      "draft" in terminal
+        ? {
+            type: "terminal",
+            status: "completed",
+            terminalReceipt,
+            draft: terminal.draft,
+          }
+        : {
+            type: "terminal",
+            status: "rejected",
+            terminalReceipt,
+            code: terminal.rejection.code,
+            retryable: terminal.rejection.retryable,
+          },
+    );
+  };
+
+  const executionScope = (
+    workload: GenerationWorkloadDto,
+    permitJti: string,
+  ): GenerationExecutionScope => ({
+    tenantId: workload.bindings.tenantId,
+    locationId: workload.bindings.locationId,
+    reviewSessionId: workload.bindings.reviewSessionId,
+    generationBatchId: workload.bindings.generationBatchId,
+    generationId: workload.bindings.generationId,
+    permitJti,
+  });
+
+  const terminalStatus = async ({
+    terminal,
+    leaseId,
+    permitJti,
+    workload,
+  }: {
+    readonly terminal: GenerationPersistedTerminal;
+    readonly leaseId: string;
+    readonly permitJti: string;
+    readonly workload: GenerationWorkloadDto;
+  }): Promise<unknown> => {
+    const terminalReceipt = await receiptSigner.signTerminal({
+      leaseId,
+      permitJti,
+      outcome: "draft" in terminal ? "completed" : "rejected",
+      actualCostMicros: terminal.actualCostMicros,
+      ...workload.bindings,
+    });
+    return GenerationStatusResultDtoSchema.parse({
+      operation: "status",
+      state: "terminal",
+      terminalReceipt,
+    });
+  };
+
   return async (event) => {
     const invocation = GenerationFunctionInvocationDtoSchema.parse(event);
     if (invocation.operation === "record-reviewer-disposition") {
@@ -196,6 +361,12 @@ export function createPaidWorkGenerationHandler({
         throw new Error("GENERATION_OPERATION_NOT_IMPLEMENTED");
       }
       return await recordDisposition(invocation);
+    }
+    if (invocation.operation === "record-reviewer-draft-revision") {
+      if (recordDraftRevision === undefined) {
+        throw new Error("GENERATION_OPERATION_NOT_IMPLEMENTED");
+      }
+      return await recordDraftRevision(invocation);
     }
     if (invocation.operation === "prepare") {
       const verifiedPermit = await permitVerifier.verify(
@@ -246,13 +417,43 @@ export function createPaidWorkGenerationHandler({
       };
 
       if (claim.status === "existing") {
+        const recovered = await terminalStore.recover(executionInput);
+        if (recovered.state === "indeterminate") {
+          throw new Error("PROVIDER_RESULT_INDETERMINATE");
+        }
+        if (recovered.state === "completed") {
+          return await projectTerminal({
+            terminal: recovered.terminal,
+            leaseId: invocation.leaseId,
+            permitJti: verifiedActivation.permitJti,
+            workload: invocation.workload,
+          });
+        }
         return await tailExisting(executionInput);
       }
 
-      let result: CompletedPaidWorkAttemptResult;
+      let result: PaidWorkAttemptResult;
       try {
         result = await preparedAttempt.execute(claim.attemptId);
       } catch (error) {
+        if (error instanceof Error && Reflect.get(error, "code") === "timeout") {
+          const marked = await terminalStore.markIndeterminate({
+            ...executionInput,
+            reason: "provider-timeout",
+          });
+          if (marked.state !== "indeterminate") {
+            const recovered = await terminalStore.recover(executionInput);
+            if (recovered.state === "completed") {
+              return await projectTerminal({
+                terminal: recovered.terminal,
+                leaseId: invocation.leaseId,
+                permitJti: verifiedActivation.permitJti,
+                workload: invocation.workload,
+              });
+            }
+          }
+          throw new Error("PROVIDER_RESULT_INDETERMINATE", { cause: error });
+        }
         const knownCode =
           error instanceof Error &&
           ["GROUNDING_REJECTED", "POLICY_REJECTED", "FORMAT_REJECTED"].includes(
@@ -285,34 +486,142 @@ export function createPaidWorkGenerationHandler({
           retryable,
         });
       }
-      const terminal = await terminalStore.complete({
+      let checkpointFailure: unknown;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          await terminalStore.checkpoint({
+            ...executionInput,
+            result,
+          });
+          checkpointFailure = undefined;
+          break;
+        } catch (error) {
+          checkpointFailure = error;
+        }
+      }
+      if (checkpointFailure !== undefined) {
+        let recoveredAfterFailure:
+          | Awaited<ReturnType<GenerationTerminalStore["recover"]>>
+          | undefined;
+        try {
+          recoveredAfterFailure = await terminalStore.recover(executionInput);
+        } catch {
+          // A failed read cannot distinguish an absent checkpoint from a
+          // committed checkpoint whose acknowledgement was lost.
+        }
+        if (recoveredAfterFailure?.state === "completed") {
+          return await projectTerminal({
+            terminal: recoveredAfterFailure.terminal,
+            leaseId: invocation.leaseId,
+            permitJti: verifiedActivation.permitJti,
+            workload: invocation.workload,
+          });
+        }
+        if (recoveredAfterFailure?.state === "indeterminate") {
+          throw new Error("PROVIDER_RESULT_INDETERMINATE", {
+            cause: checkpointFailure,
+          });
+        }
+
+        try {
+          const marked = await terminalStore.markIndeterminate({
+            ...executionInput,
+            reason: "checkpoint-unavailable",
+          });
+          if (marked.state !== "indeterminate") {
+            const recovered = await terminalStore.recover(executionInput);
+            if (recovered.state === "completed") {
+              return await projectTerminal({
+                terminal: recovered.terminal,
+                leaseId: invocation.leaseId,
+                permitJti: verifiedActivation.permitJti,
+                workload: invocation.workload,
+              });
+            }
+            if (recovered.state !== "indeterminate") {
+              throw new Error("PROVIDER_RESULT_CHECKPOINT_UNAVAILABLE");
+            }
+          }
+        } catch (markError) {
+          let racedRecovery:
+            | Awaited<ReturnType<GenerationTerminalStore["recover"]>>
+            | undefined;
+          try {
+            racedRecovery = await terminalStore.recover(executionInput);
+          } catch {
+            throw new Error("PROVIDER_RESULT_CHECKPOINT_UNAVAILABLE", {
+              cause: markError,
+            });
+          }
+          if (racedRecovery.state === "completed") {
+            return await projectTerminal({
+              terminal: racedRecovery.terminal,
+              leaseId: invocation.leaseId,
+              permitJti: verifiedActivation.permitJti,
+              workload: invocation.workload,
+            });
+          }
+          if (racedRecovery.state !== "indeterminate") {
+            throw new Error("PROVIDER_RESULT_CHECKPOINT_UNAVAILABLE", {
+              cause: markError,
+            });
+          }
+        }
+        throw new Error("PROVIDER_RESULT_INDETERMINATE", {
+          cause: checkpointFailure,
+        });
+      }
+      const terminal = await completeCheckpoint({
         leaseId: invocation.leaseId,
         attemptId: claim.attemptId,
         permitJti: verifiedActivation.permitJti,
         workload: invocation.workload,
-        result,
       });
-      const terminalReceipt = await receiptSigner.signTerminal({
+      return await projectTerminal({
+        terminal,
         leaseId: invocation.leaseId,
         permitJti: verifiedActivation.permitJti,
-        outcome: "completed",
-        actualCostMicros: terminal.actualCostMicros,
-        ...invocation.workload.bindings,
-      });
-      return PrivateGenerationTerminalEventDtoSchema.parse({
-        type: "terminal",
-        status: "completed",
-        terminalReceipt,
-        draft: terminal.draft,
+        workload: invocation.workload,
       });
     }
 
     if (invocation.operation === "status") {
-      const journalStatus = await leaseJournal.status(invocation.scope);
+      const scope = executionScope(invocation.workload, invocation.permitJti);
+      const recovered = await terminalStore.recoverByScope({
+        permitJti: invocation.permitJti,
+        workload: invocation.workload,
+      });
+      if (recovered.state === "completed") {
+        return await terminalStatus({
+          terminal: recovered.terminal,
+          leaseId: recovered.leaseId,
+          permitJti: invocation.permitJti,
+          workload: invocation.workload,
+        });
+      }
+      const journalStatus =
+        recovered.state === "indeterminate"
+          ? ({ state: "indeterminate" } as const)
+          : await leaseJournal.status(scope);
+      if (journalStatus.state === "terminal") {
+        const raced = await terminalStore.recoverByScope({
+          permitJti: invocation.permitJti,
+          workload: invocation.workload,
+        });
+        if (raced.state === "completed") {
+          return await terminalStatus({
+            terminal: raced.terminal,
+            leaseId: raced.leaseId,
+            permitJti: invocation.permitJti,
+            workload: invocation.workload,
+          });
+        }
+        throw new Error("GENERATION_TERMINAL_NOT_AVAILABLE");
+      }
       const unsigned = {
         operation: invocation.operation,
         state: journalStatus.state,
-        scope: invocation.scope,
+        scope,
       };
       const signedStatusReceipt = await receiptSigner.signStatus(unsigned);
       return GenerationStatusResultDtoSchema.parse({

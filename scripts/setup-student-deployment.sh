@@ -138,18 +138,57 @@ write_env() {
   printf '  %s✓ wrote%s %s → %s\n' "$GREEN" "$RESET" "$key" "$ENV_FILE"
 }
 
-# set_secret NAME VALUE — set a GitHub Actions repo secret via gh. Falls back
-# to a warning (and records it) if gh is unavailable or unauthenticated.
+remove_repo_secret_copy() {
+  local name="$1" names
+  if ! names="$(gh secret list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect repository-scoped secrets; refusing to install a deployment secret"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    gh secret delete "$name" --repo "$REPO_SLUG" >/dev/null
+  fi
+  if ! names="$(gh secret list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot verify repository-scoped secret deletion"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    warn "REPOSITORY_SECRET_COPY_STILL_PRESENT: $name"
+    return 1
+  fi
+}
+
+remove_repo_variable_copy() {
+  local name="$1" names
+  if ! names="$(gh variable list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot inspect repository-scoped variables; refusing to install a deployment variable"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    gh variable delete "$name" --repo "$REPO_SLUG" >/dev/null
+  fi
+  if ! names="$(gh variable list --repo "$REPO_SLUG" --json name --jq '.[].name')"; then
+    warn "cannot verify repository-scoped variable deletion"
+    return 1
+  fi
+  if grep -Fxq "$name" <<< "$names"; then
+    warn "REPOSITORY_VARIABLE_COPY_STILL_PRESENT: $name"
+    return 1
+  fi
+}
+
+# set_secret NAME VALUE — set a GitHub Actions environment secret via gh.
+# An identically named repository secret is a hard failure, not a fallback.
 set_secret() {
   local name="$1" value="$2"
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    if printf '%s' "$value" | gh secret set "$name" >/dev/null 2>&1; then
+    remove_repo_secret_copy "$name" || exit 1
+    if printf '%s' "$value" | gh secret set "$name" --env "$GITHUB_ENVIRONMENT" >/dev/null 2>&1; then
       WRITTEN_SECRET+=("$name")
-      printf '  %s✓ set%s GitHub secret %s\n' "$GREEN" "$RESET" "$name"
+      printf '  %s✓ set%s GitHub environment secret %s\n' "$GREEN" "$RESET" "$name"
       return
     fi
   fi
-  SKIPPED+=("GitHub secret $name (set it manually: gh secret set $name)")
+  SKIPPED+=("GitHub environment secret $name (set it manually with --env $GITHUB_ENVIRONMENT)")
   warn "skipped GitHub secret $name — gh not ready; set it later"
 }
 
@@ -157,8 +196,9 @@ set_secret() {
 set_var() {
   local name="$1" value="$2"
   if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    if gh variable set "$name" --body "$value" >/dev/null 2>&1; then
-      printf '  %s✓ set%s GitHub variable %s\n' "$GREEN" "$RESET" "$name"
+    remove_repo_variable_copy "$name" || exit 1
+    if gh variable set "$name" --env "$GITHUB_ENVIRONMENT" --body "$value" >/dev/null 2>&1; then
+      printf '  %s✓ set%s GitHub environment variable %s\n' "$GREEN" "$RESET" "$name"
       return
     fi
   fi
@@ -186,7 +226,9 @@ finish() {
 
 TOTAL_STAGES=7
 REPO_SLUG="asqatqazet/AI-Assisted-Review-Generation"
-IMMUTABLE_OIDC_SUBJECT="repo:asqatqazet@79821148/AI-Assisted-Review-Generation@1336406804:ref:refs/heads/main"
+GITHUB_ENVIRONMENT="student"
+IMMUTABLE_OIDC_SUBJECT="repo:asqatqazet@79821148/AI-Assisted-Review-Generation@1336406804:environment:student"
+PERMISSIONS_BOUNDARY_NAME="ReviewStudentLambdaBoundary"
 
 banner "Student AWS deployment setup"
 
@@ -238,26 +280,83 @@ ask AWS_ACCOUNT_ID "Enter the 12-digit AWS account ID:"
 say "After creation, edit the role Trust relationships policy to use this exact immutable subject:"
 note "$IMMUTABLE_OIDC_SUBJECT"
 say "The two StringEquals conditions must be aud=sts.amazonaws.com and sub=$IMMUTABLE_OIDC_SUBJECT."
-say "Add an inline IAM policy allowing project Lambda roles to be managed and passed to Lambda:"
+say "Create the customer-managed permissions boundary $PERMISSIONS_BOUNDARY_NAME first:"
+cat <<BOUNDARY
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "StudentLambdaLogs",
+        "Effect": "Allow",
+        "Action": ["logs:CreateLogStream", "logs:PutLogEvents"],
+        "Resource": "arn:aws:logs:eu-central-1:$AWS_ACCOUNT_ID:log-group:/aws/lambda/review-*-student:*"
+      },
+      {
+        "Sid": "StudentRuntimeParameters",
+        "Effect": "Allow",
+        "Action": "ssm:GetParameter",
+        "Resource": "arn:aws:ssm:eu-central-1:$AWS_ACCOUNT_ID:parameter/review-gen/student/*"
+      },
+      {
+        "Sid": "StudentServiceInvocation",
+        "Effect": "Allow",
+        "Action": "lambda:InvokeFunction",
+        "Resource": "arn:aws:lambda:eu-central-1:$AWS_ACCOUNT_ID:function:review-*-student:*"
+      }
+    ]
+  }
+BOUNDARY
+step "In IAM Policies, create that policy with the exact name $PERMISSIONS_BOUNDARY_NAME."
+say "Add an inline IAM policy allowing only the five exact bounded Lambda roles to be managed and passed:"
 cat <<POLICY
   {
     "Version": "2012-10-17",
     "Statement": [
       {
+        "Sid": "CreateOnlyBoundedStudentLambdaRoles",
+        "Effect": "Allow",
+        "Action": ["iam:CreateRole", "iam:PutRolePermissionsBoundary"],
+        "Resource": [
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-web-bff-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-service-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-reviewer-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-console-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-generation-service-student-role"
+        ],
+        "Condition": {
+          "ArnEquals": {
+            "iam:PermissionsBoundary": "arn:aws:iam::$AWS_ACCOUNT_ID:policy/$PERMISSIONS_BOUNDARY_NAME"
+          }
+        }
+      },
+      {
+        "Sid": "ManageExactStudentLambdaRoles",
         "Effect": "Allow",
         "Action": [
-          "iam:CreateRole", "iam:GetRole", "iam:DeleteRole",
+          "iam:GetRole", "iam:DeleteRole",
           "iam:UpdateAssumeRolePolicy", "iam:TagRole", "iam:UntagRole",
           "iam:PutRolePolicy", "iam:GetRolePolicy", "iam:DeleteRolePolicy",
           "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
           "iam:ListInstanceProfilesForRole", "iam:ListRoleTags"
         ],
-        "Resource": "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-*-student-role"
+        "Resource": [
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-web-bff-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-service-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-reviewer-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-console-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-generation-service-student-role"
+        ]
       },
       {
         "Effect": "Allow",
         "Action": "iam:PassRole",
-        "Resource": "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-*-student-role",
+        "Resource": [
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-web-bff-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-service-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-reviewer-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-context-console-student-role",
+          "arn:aws:iam::$AWS_ACCOUNT_ID:role/review-generation-service-student-role"
+        ],
         "Condition": {"StringEquals": {"iam:PassedToService": "lambda.amazonaws.com"}}
       }
     ]
@@ -274,6 +373,16 @@ ask COST_ALERT_EMAIL "Enter the email that will actively monitor AWS cost alerts
   warn "Enter a valid monitored email address."
   exit 1
 }
+open_url "https://github.com/$REPO_SLUG/settings/environments"
+step "Create the environment named student."
+step "Under Deployment branches and tags choose Selected branches and tags, then allow only main."
+if ! confirm "Is the student environment restricted to main?"; then
+  warn "OIDC deployment stops until the student environment is branch-protected."
+  exit 1
+fi
+# A paid-provider key is optional and not collected by this zero-cost wizard,
+# but a repository-scoped copy would still be visible to an environment job.
+remove_repo_secret_copy GEMINI_API_KEY || exit 1
 set_var AWS_DEPLOY_ROLE_ARN "$AWS_DEPLOY_ROLE_ARN"
 set_var COST_ALERT_EMAIL "$COST_ALERT_EMAIL"
 
@@ -296,11 +405,12 @@ fi
 DATABASE_URL="$NEON_MIGRATION_DATABASE_URL" pnpm --dir packages/db exec prisma migrate deploy --schema prisma/schema.prisma
 set_secret NEON_MIGRATION_DATABASE_URL "$NEON_MIGRATION_DATABASE_URL"
 
-stage "Create isolated Context and Generation connections"
-CONTEXT_DB_PASSWORD=$(openssl rand -hex 24)
+stage "Create isolated reviewer, Console and Generation connections"
+CONTEXT_RUNTIME_DB_PASSWORD=$(openssl rand -hex 24)
+CONSOLE_CONTROL_DB_PASSWORD=$(openssl rand -hex 24)
 GENERATION_DB_PASSWORD=$(openssl rand -hex 24)
-printf "ALTER ROLE context_svc PASSWORD '%s'; ALTER ROLE generation_svc PASSWORD '%s';" \
-  "$CONTEXT_DB_PASSWORD" "$GENERATION_DB_PASSWORD" |
+printf "ALTER ROLE context_runtime_svc PASSWORD '%s'; ALTER ROLE console_control_svc PASSWORD '%s'; ALTER ROLE generation_svc PASSWORD '%s';" \
+  "$CONTEXT_RUNTIME_DB_PASSWORD" "$CONSOLE_CONTROL_DB_PASSWORD" "$GENERATION_DB_PASSWORD" |
   DATABASE_URL="$NEON_MIGRATION_DATABASE_URL" pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin
 
 pooled_url() {
@@ -316,13 +426,16 @@ pooled_url() {
   '
 }
 
-NEON_CONTEXT_DATABASE_URL=$(pooled_url context_svc "$CONTEXT_DB_PASSWORD")
+NEON_CONTEXT_RUNTIME_DATABASE_URL=$(pooled_url context_runtime_svc "$CONTEXT_RUNTIME_DB_PASSWORD")
+NEON_CONSOLE_CONTROL_DATABASE_URL=$(pooled_url console_control_svc "$CONSOLE_CONTROL_DB_PASSWORD")
 NEON_GENERATION_DATABASE_URL=$(pooled_url generation_svc "$GENERATION_DB_PASSWORD")
-printf 'SELECT 1;' | DATABASE_URL="$NEON_CONTEXT_DATABASE_URL" pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin
+printf 'SELECT 1;' | DATABASE_URL="$NEON_CONTEXT_RUNTIME_DATABASE_URL" pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin
+printf 'SELECT 1;' | DATABASE_URL="$NEON_CONSOLE_CONTROL_DATABASE_URL" pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin
 printf 'SELECT 1;' | DATABASE_URL="$NEON_GENERATION_DATABASE_URL" pnpm --dir packages/db exec prisma db execute --schema prisma/schema.prisma --stdin
-set_secret NEON_CONTEXT_DATABASE_URL "$NEON_CONTEXT_DATABASE_URL"
+set_secret NEON_CONTEXT_RUNTIME_DATABASE_URL "$NEON_CONTEXT_RUNTIME_DATABASE_URL"
+set_secret NEON_CONSOLE_CONTROL_DATABASE_URL "$NEON_CONSOLE_CONTROL_DATABASE_URL"
 set_secret NEON_GENERATION_DATABASE_URL "$NEON_GENERATION_DATABASE_URL"
-say "Both service-role connections authenticated; neither runtime receives the owner URL."
+say "All three service-role connections authenticated; no runtime receives the owner URL."
 
 stage "Generate application signing material"
 KEY_DIRECTORY=$(mktemp -d)
@@ -331,26 +444,32 @@ cleanup_keys() { rm -rf "$KEY_DIRECTORY"; }
 trap cleanup_keys EXIT
 openssl genpkey -algorithm ED25519 -out "$KEY_DIRECTORY/context-private.pem" >/dev/null 2>&1
 openssl pkey -in "$KEY_DIRECTORY/context-private.pem" -pubout -out "$KEY_DIRECTORY/context-public.pem" >/dev/null 2>&1
+openssl genpkey -algorithm ED25519 -out "$KEY_DIRECTORY/console-authority-private.pem" >/dev/null 2>&1
+openssl pkey -in "$KEY_DIRECTORY/console-authority-private.pem" -pubout -out "$KEY_DIRECTORY/console-authority-public.pem" >/dev/null 2>&1
 openssl genpkey -algorithm ED25519 -out "$KEY_DIRECTORY/generation-private.pem" >/dev/null 2>&1
 openssl pkey -in "$KEY_DIRECTORY/generation-private.pem" -pubout -out "$KEY_DIRECTORY/generation-public.pem" >/dev/null 2>&1
 set_secret CONTEXT_WORK_PRIVATE_KEY_PEM "$(<"$KEY_DIRECTORY/context-private.pem")"
 set_secret CONTEXT_WORK_PUBLIC_KEY_PEM "$(<"$KEY_DIRECTORY/context-public.pem")"
+set_secret CONSOLE_AUTHORITY_PRIVATE_KEY_PEM "$(<"$KEY_DIRECTORY/console-authority-private.pem")"
+set_secret CONSOLE_AUTHORITY_PUBLIC_KEY_PEM "$(<"$KEY_DIRECTORY/console-authority-public.pem")"
+set_secret CONSOLE_DATABASE_AUTHORITY_SECRET "$(openssl rand -hex 32)"
 set_secret GENERATION_WORK_PRIVATE_KEY_PEM "$(<"$KEY_DIRECTORY/generation-private.pem")"
 set_secret GENERATION_WORK_PUBLIC_KEY_PEM "$(<"$KEY_DIRECTORY/generation-public.pem")"
 set_secret REVIEW_CSRF_SECRET "$(openssl rand -hex 32)"
+set_secret PUBLIC_SOURCE_RATE_HMAC_SECRET "$(openssl rand -hex 32)"
 cleanup_keys
 trap - EXIT
 say "The private keys were sent to GitHub and removed from the temporary directory."
 
 stage "Review configuration and open the deploy workflow"
-say "Expected repository variables:"
-gh variable list | grep -E '^(AWS_DEPLOY_ROLE_ARN|COST_ALERT_EMAIL)[[:space:]]' || true
-say "Expected repository secrets (GitHub never reveals their values):"
-gh secret list | grep -E '^(NEON_MIGRATION_DATABASE_URL|NEON_CONTEXT_DATABASE_URL|NEON_GENERATION_DATABASE_URL|REVIEW_CSRF_SECRET|CONTEXT_WORK_PRIVATE_KEY_PEM|CONTEXT_WORK_PUBLIC_KEY_PEM|GENERATION_WORK_PRIVATE_KEY_PEM|GENERATION_WORK_PUBLIC_KEY_PEM)[[:space:]]' || true
+say "Expected student-environment variables:"
+gh variable list --env "$GITHUB_ENVIRONMENT" | grep -E '^(AWS_DEPLOY_ROLE_ARN|COST_ALERT_EMAIL)[[:space:]]' || true
+say "Expected student-environment secrets (GitHub never reveals their values):"
+gh secret list --env "$GITHUB_ENVIRONMENT" | grep -E '^(NEON_MIGRATION_DATABASE_URL|NEON_CONTEXT_RUNTIME_DATABASE_URL|NEON_CONSOLE_CONTROL_DATABASE_URL|NEON_GENERATION_DATABASE_URL|REVIEW_CSRF_SECRET|PUBLIC_SOURCE_RATE_HMAC_SECRET|CONTEXT_WORK_PRIVATE_KEY_PEM|CONTEXT_WORK_PUBLIC_KEY_PEM|CONSOLE_AUTHORITY_PRIVATE_KEY_PEM|CONSOLE_AUTHORITY_PUBLIC_KEY_PEM|CONSOLE_DATABASE_AUTHORITY_SECRET|GENERATION_WORK_PRIVATE_KEY_PEM|GENERATION_WORK_PUBLIC_KEY_PEM)[[:space:]]' || true
 open_url "https://github.com/$REPO_SLUG/actions/workflows/deploy-student.yml"
 step "Choose Run workflow on main."
 step "Enter a teardown date before the AWS Free-plan expiry."
-step "Acknowledge FakeProvider only, run it, and require every step to pass."
+step "Keep student-low-quota, leave the provider-cost acknowledgement false, and require every step to pass."
 warn "Do not enable a paid model or put real customer/reviewer data into this assessment deployment."
 
 finish

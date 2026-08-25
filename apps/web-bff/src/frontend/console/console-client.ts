@@ -60,9 +60,10 @@ export interface ConsoleClient {
   runCommand(input: {
     readonly command: ConsoleCommandDto;
     readonly scope: ConsoleScopeRequestDto;
+    readonly ifMatch?: string | undefined;
     readonly signal?: AbortSignal | undefined;
   }): Promise<ConsoleCommandResultDto>;
-  logout(signal?: AbortSignal): Promise<void>;
+  logout(signal?: AbortSignal): Promise<string>;
 }
 
 export function consoleSearchParams(
@@ -160,14 +161,17 @@ export function createHttpConsoleClient(
       return parsed.data as ConsoleViewOf<typeof view>;
     },
 
-    async runCommand({ command, scope, signal }) {
+    async runCommand({ command, scope, ifMatch, signal }) {
       const response = await sendPayloadBoundPost(
         fetch,
         `/api/v1/console/commands?${consoleSearchParams(scope).toString()}`,
         JSON.stringify(command),
         {
           contentType: "application/json",
-          headers: { Accept: "application/json" },
+          headers: {
+            Accept: "application/json",
+            ...(ifMatch === undefined ? {} : { "If-Match": ifMatch }),
+          },
           signal,
         },
       );
@@ -197,6 +201,20 @@ export function createHttpConsoleClient(
       if (!response.ok) {
         throw new ConsoleAccessError("unavailable");
       }
+      const body = (await response.json()) as unknown;
+      if (
+        typeof body !== "object" ||
+        body === null ||
+        !("logoutUrl" in body) ||
+        typeof body.logoutUrl !== "string"
+      ) {
+        throw new ConsoleAccessError("unavailable");
+      }
+      const logoutUrl = new URL(body.logoutUrl);
+      if (logoutUrl.protocol !== "https:") {
+        throw new ConsoleAccessError("unavailable");
+      }
+      return logoutUrl.toString();
     },
   };
 }

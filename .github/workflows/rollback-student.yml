@@ -19,18 +19,19 @@ concurrency:
 
 env:
   AWS_REGION: eu-central-1
+  TF_DIR: infra/terraform/student
+  RELEASE_DIR: release
 
 jobs:
   rollback:
+    environment: student
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          role-session-name: review-generation-student-rollback
-          aws-region: ${{ env.AWS_REGION }}
+          terraform_version: 1.14.7
 
       - name: Retrieve and verify the immutable prior release
         shell: bash
@@ -38,34 +39,344 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          [[ "${{ inputs.release_run_id }}" =~ ^[1-9][0-9]*$ ]]
-          gh run download "${{ inputs.release_run_id }}" --name student-release --dir release
-          shasum -a 256 -c release/checksums.sha256
+          RELEASE_RUN_ID="${{ inputs.release_run_id }}"
+          [[ "$RELEASE_RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RELEASE_RUN_ID" > run-metadata.json
+          jq -e --arg repository "$GITHUB_REPOSITORY" '
+            .name == "deploy-student" and
+            .path == ".github/workflows/deploy-student.yml" and
+            .event == "workflow_dispatch" and
+            .head_branch == "main" and
+            .status == "completed" and
+            .conclusion == "success" and
+            .repository.full_name == $repository
+          ' run-metadata.json >/dev/null
+          HEAD_SHA="$(jq -r .head_sha run-metadata.json)"
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          echo "VERIFIED_RELEASE_SHA=$HEAD_SHA" >> "$GITHUB_ENV"
+          gh run download "$RELEASE_RUN_ID" --name student-release --dir release
+          (cd release && shasum -a 256 -c checksums.sha256)
           jq -e 'all(.[]; test("^[1-9][0-9]*$"))' release/alias-versions.json >/dev/null
+          jq -e --arg headSha "$HEAD_SHA" '
+            .releaseId == $headSha and
+            (.deploymentProfile == "student-low-quota" or .deploymentProfile == "reserved-concurrency") and
+            .dbCompatibility.phase == "expand" and
+            .dbCompatibility.legacyContextFunction == "review-context-service-student" and
+            .dbCompatibility.contractMigration == null and
+            (.dbCompatibility.legacyContextVersion == null or (.dbCompatibility.legacyContextVersion | test("^[1-9][0-9]*$"))) and
+            (.configurationCandidateReleaseId | test("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) and
+            (.sha256.webBff | test("^[0-9a-f]{64}$")) and
+            (.sha256.context | test("^[0-9a-f]{64}$")) and
+            (.sha256.generation | test("^[0-9a-f]{64}$")) and
+            (.sha256.aliasVersions | test("^[0-9a-f]{64}$")) and
+            (.sha256.ui | test("^[0-9a-f]{64}$"))
+          ' release/release-manifest.json >/dev/null
+          while read -r manifestKey artifact; do
+            ACTUAL_SHA="$(shasum -a 256 "release/$artifact" | cut -d ' ' -f 1)"
+            EXPECTED_SHA="$(jq -r --arg manifestKey "$manifestKey" '.sha256[$manifestKey]' release/release-manifest.json)"
+            test "$ACTUAL_SHA" = "$EXPECTED_SHA"
+          done <<'ARTIFACTS'
+          webBff web-bff.zip
+          context context-service.zip
+          generation generation-service.zip
+          ARTIFACTS
+          ALIAS_VERSIONS_SHA="$(shasum -a 256 "release/alias-versions.json" | cut -d ' ' -f 1)"
+          test "$ALIAS_VERSIONS_SHA" = "$(jq -r .sha256.aliasVersions release/release-manifest.json)"
+          echo "TARGET_DEPLOYMENT_PROFILE=$(jq -r .deploymentProfile release/release-manifest.json)" >> "$GITHUB_ENV"
+          echo "TARGET_CONFIGURATION_RELEASE_ID=$(jq -r .configurationCandidateReleaseId release/release-manifest.json)" >> "$GITHUB_ENV"
+          test "$(jq -r .releaseSha release/ui/release.json)" = "$HEAD_SHA"
+          UI_SHA="$(
+            cd release/ui
+            find . -type f -print0 | LC_ALL=C sort -z | xargs -0 shasum -a 256 | shasum -a 256 | cut -d ' ' -f 1
+          )"
+          test "$UI_SHA" = "$(jq -r .sha256.ui release/release-manifest.json)"
+          test "$UI_SHA" = "$(tr -d '[:space:]' < release/canonical-ui.sha256)"
 
-      - name: Move qualified aliases to the recorded versions
+      - uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: review-generation-student-rollback
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Probe retained legacy Context version
         shell: bash
         run: |
           set -euo pipefail
-          aws lambda update-alias --function-name review-context-service-student --name live --function-version "$(jq -r .context release/alias-versions.json)" >/dev/null
+          LEGACY_FUNCTION="$(jq -r .dbCompatibility.legacyContextFunction release/release-manifest.json)"
+          LEGACY_VERSION="$(jq -r .dbCompatibility.legacyContextVersion release/release-manifest.json)"
+          if [ "$LEGACY_VERSION" != "null" ]; then
+            LEGACY_VERSION_ARN="$(aws lambda get-function \
+              --function-name "$LEGACY_FUNCTION" \
+              --qualifier "$LEGACY_VERSION" \
+              --query Configuration.FunctionArn \
+              --output text)"
+            test "${LEGACY_VERSION_ARN##*:}" = "$LEGACY_VERSION"
+            LEGACY_CONTEXT_VERSION_ARN="$LEGACY_VERSION_ARN"
+            PROBE_PHASE=rollback-target-validation
+            export LEGACY_CONTEXT_VERSION_ARN PROBE_PHASE
+            scripts/probe-legacy-context-generation.sh
+          fi
+
+      - name: Resolve rollback targets from current trusted Terraform state
+        id: state
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+          STATE_BUCKET="review-gen-student-tfstate-$ACCOUNT_ID"
+          aws s3api head-bucket --bucket "$STATE_BUCKET"
+          terraform -chdir="$TF_DIR" init \
+            -backend-config="bucket=$STATE_BUCKET" \
+            -backend-config="key=student/terraform.tfstate" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+          CURRENT_DEPLOYMENT_PROFILE="$(terraform -chdir="$TF_DIR" output -raw deployment_profile)"
+          if [ "$TARGET_DEPLOYMENT_PROFILE" != "$CURRENT_DEPLOYMENT_PROFILE" ]; then
+            echo "::error::ROLLBACK_PROFILE_MISMATCH: use deploy-student to change provider/capacity profile." >&2
+            exit 1
+          fi
+          echo "ui_bucket=$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)" >> "$GITHUB_OUTPUT"
+          echo "distribution_id=$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)" >> "$GITHUB_OUTPUT"
+          echo "domain=$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)" >> "$GITHUB_OUTPUT"
+
+      - name: Freeze low-quota Generation for recoverable rollback
+        id: low_quota_freeze
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$TARGET_DEPLOYMENT_PROFILE" != "student-low-quota" ]; then
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          aws lambda get-function-concurrency \
+            --function-name review-generation-service-student \
+            | jq '{reservedConcurrentExecutions:(.ReservedConcurrentExecutions // null)}' \
+            > "$RUNNER_TEMP/generation-concurrency-before-rollback.json"
+          aws lambda put-function-concurrency \
+            --function-name review-generation-service-student \
+            --reserved-concurrent-executions 0 >/dev/null
+          echo "frozen=true" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke candidate aliases and staged UI
+        shell: bash
+        env:
+          UI_BUCKET: ${{ steps.state.outputs.ui_bucket }}
+          DISTRIBUTION_ID: ${{ steps.state.outputs.distribution_id }}
+          DOMAIN: ${{ steps.state.outputs.domain }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_ID="$VERIFIED_RELEASE_SHA"
+          aws lambda update-alias --function-name review-context-reviewer-student --name candidate --function-version "$(jq -r .contextReviewer release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-context-console-student --name candidate --function-version "$(jq -r .contextConsole release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-generation-service-student --name candidate --function-version "$(jq -r .generation release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-fast-student --name candidate --function-version "$(jq -r .webFast release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-stream-student --name candidate --function-version "$(jq -r .webStream release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-reconcile-student --name candidate --function-version "$(jq -r .webReconcile release/alias-versions.json)" >/dev/null
+          EXPECTED_PROVIDER_MODE=paid-enabled
+          if [ "$TARGET_DEPLOYMENT_PROFILE" = "student-low-quota" ]; then
+            EXPECTED_PROVIDER_MODE=fake-only
+          fi
+          test "$(aws lambda get-function-configuration \
+            --function-name review-generation-service-student \
+            --qualifier candidate \
+            --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
+            --output text)" = "$EXPECTED_PROVIDER_MODE"
+          HEALTH_EVENT='{"version":"2.0","routeKey":"GET /health","rawPath":"/health","rawQueryString":"","headers":{"host":"candidate.internal"},"requestContext":{"accountId":"candidate","apiId":"candidate","domainName":"candidate.internal","domainPrefix":"candidate","http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"rollback-smoke"},"requestId":"candidate","routeKey":"GET /health","stage":"$default","time":"01/Jan/2026:00:00:00 +0000","timeEpoch":0},"isBase64Encoded":false}'
+          REVIEWER_EVENT='{"operation":"prepare-entry","input":{"tenantSlug":"rollback-smoke-absent","locationSlug":"rollback-smoke-absent","browserCapability":"rollback-smoke-browser-capability"}}'
+          aws lambda invoke --function-name review-context-reviewer-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$REVIEWER_EVENT" "$RUNNER_TEMP/context-reviewer-candidate.json" >/dev/null
+          jq -e '.operation == "prepare-entry" and .result.status == "unavailable"' "$RUNNER_TEMP/context-reviewer-candidate.json" >/dev/null
+          OPERATOR_ISSUER="$(terraform -chdir="$TF_DIR" output -raw operator_oidc_issuer)"
+          CONSOLE_EVENT="$(jq -cn --arg issuer "$OPERATOR_ISSUER" '{operation:"resolve-operator-access",input:{identity:{issuer:$issuer,subject:"rollback-smoke-unknown",email:"rollback-smoke@example.invalid"}}}')"
+          aws lambda invoke --function-name review-context-console-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$CONSOLE_EVENT" "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
+          jq -e '.operation == "resolve-operator-access" and .result.status == "unauthorized"' "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
+          aws lambda invoke --function-name review-web-bff-fast-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$HEALTH_EVENT" "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
+          jq -e '.statusCode == 200' "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
+          if [ "$TARGET_DEPLOYMENT_PROFILE" != "student-low-quota" ]; then
+            aws lambda invoke --function-name review-generation-service-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$HEALTH_EVENT" "$RUNNER_TEMP/generation-candidate.json" >/dev/null
+            jq -e '.statusCode == 200' "$RUNNER_TEMP/generation-candidate.json" >/dev/null
+          fi
+          STREAM_METADATA="$(aws lambda invoke --function-name review-web-bff-stream-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$HEALTH_EVENT" "$RUNNER_TEMP/web-stream-candidate.json")"
+          test "$(jq -r '.FunctionError // empty' <<< "$STREAM_METADATA")" = ""
+          RECONCILE_METADATA="$(aws lambda invoke --function-name review-web-bff-reconcile-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload '{}' "$RUNNER_TEMP/web-reconcile-candidate.json")"
+          test "$(jq -r '.FunctionError // empty' <<< "$RECONCILE_METADATA")" = ""
+          aws s3 sync release/ui "s3://$UI_BUCKET" \
+            --exclude "index.html" --exclude "robots.txt" --exclude "release.json" \
+            --cache-control "public,max-age=31536000,immutable"
+          aws s3 sync release/ui "s3://$UI_BUCKET/__candidate/$CANDIDATE_ID" \
+            --cache-control "no-cache,no-store,must-revalidate"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/__candidate/$CANDIDATE_ID/*" '/assets/*' >/dev/null
+          curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/__candidate/$CANDIDATE_ID/index.html" >/dev/null
+          test "$(curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/__candidate/$CANDIDATE_ID/release.json" | jq -r .releaseSha)" = "$VERIFIED_RELEASE_SHA"
+
+      - name: Complete a reviewer Generation through the candidate UI and BFF
+        id: candidate_bff_smoke
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          CANDIDATE_ID="$VERIFIED_RELEASE_SHA"
+          UI_BUCKET="${{ steps.state.outputs.ui_bucket }}"
+          EXPECTED_RELEASE_SHA="$VERIFIED_RELEASE_SHA"
+          CONFIGURATION_CANDIDATE_RELEASE_ID="$TARGET_CONFIGURATION_RELEASE_ID"
+          export CANDIDATE_ID UI_BUCKET EXPECTED_RELEASE_SHA CONFIGURATION_CANDIDATE_RELEASE_ID
+          scripts/smoke-candidate-reviewer-flow.sh
+
+      - name: Capture previous live aliases and mutable UI
+        shell: bash
+        env:
+          UI_BUCKET: ${{ steps.state.outputs.ui_bucket }}
+        run: |
+          set -euo pipefail
+          PREVIOUS_ALIASES="$RUNNER_TEMP/previous-alias-versions.json"
+          PREVIOUS_UI="$RUNNER_TEMP/previous-ui"
+          mkdir -p "$PREVIOUS_UI"
+          jq -n \
+            --arg webFast "$(aws lambda get-alias --function-name review-web-bff-fast-student --name live --query FunctionVersion --output text)" \
+            --arg webStream "$(aws lambda get-alias --function-name review-web-bff-stream-student --name live --query FunctionVersion --output text)" \
+            --arg webReconcile "$(aws lambda get-alias --function-name review-web-bff-reconcile-student --name live --query FunctionVersion --output text)" \
+            --arg contextReviewer "$(aws lambda get-alias --function-name review-context-reviewer-student --name live --query FunctionVersion --output text)" \
+            --arg contextConsole "$(aws lambda get-alias --function-name review-context-console-student --name live --query FunctionVersion --output text)" \
+            --arg generation "$(aws lambda get-alias --function-name review-generation-service-student --name live --query FunctionVersion --output text)" \
+            '{webFast:$webFast,webStream:$webStream,webReconcile:$webReconcile,contextReviewer:$contextReviewer,contextConsole:$contextConsole,generation:$generation}' > "$PREVIOUS_ALIASES"
+          for mutable_file in index.html robots.txt release.json; do
+            aws s3 cp "s3://$UI_BUCKET/$mutable_file" "$PREVIOUS_UI/$mutable_file" 2>/dev/null || true
+          done
+
+      - name: Allocate the immutable rollback activation release
+        id: activation_identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          ACTIVATION_RELEASE_ID="$(node -e 'process.stdout.write(crypto.randomUUID())')"
+          [[ "$ACTIVATION_RELEASE_ID" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]
+          echo "id=$ACTIVATION_RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Activate the target Configuration Release
+        id: configuration_activate
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          ACTIVATION_RELEASE_ID: ${{ steps.activation_identity.outputs.id }}
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v activation_release_id="$ACTIVATION_RELEASE_ID" \
+            -v target_release_id="$TARGET_CONFIGURATION_RELEASE_ID" <<'SQL'
+          SELECT public.activate_configuration_release(
+            :'activation_release_id'::uuid,
+            :'target_release_id'::uuid,
+            NULL::uuid
+          );
+          SQL
+
+      - name: Promote target services and reopen verified Generation
+        id: service_promote
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          aws lambda update-alias --function-name review-context-reviewer-student --name live --function-version "$(jq -r .contextReviewer release/alias-versions.json)" >/dev/null
+          aws lambda update-alias --function-name review-context-console-student --name live --function-version "$(jq -r .contextConsole release/alias-versions.json)" >/dev/null
           aws lambda update-alias --function-name review-generation-service-student --name live --function-version "$(jq -r .generation release/alias-versions.json)" >/dev/null
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+          if [ "$TARGET_DEPLOYMENT_PROFILE" = "student-low-quota" ]; then
+            aws lambda delete-function-concurrency --function-name review-generation-service-student >/dev/null
+          else
+            aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 1 >/dev/null
+          fi
+
+      - name: Promote verified candidate BFF and UI
+        id: promote
+        shell: bash
+        env:
+          UI_BUCKET: ${{ steps.state.outputs.ui_bucket }}
+          DISTRIBUTION_ID: ${{ steps.state.outputs.distribution_id }}
+          DOMAIN: ${{ steps.state.outputs.domain }}
+        run: |
+          set -euo pipefail
           aws lambda update-alias --function-name review-web-bff-fast-student --name live --function-version "$(jq -r .webFast release/alias-versions.json)" >/dev/null
           aws lambda update-alias --function-name review-web-bff-stream-student --name live --function-version "$(jq -r .webStream release/alias-versions.json)" >/dev/null
           aws lambda update-alias --function-name review-web-bff-reconcile-student --name live --function-version "$(jq -r .webReconcile release/alias-versions.json)" >/dev/null
-
-      - name: Restore the matching UI and invalidate the edge
-        shell: bash
-        run: |
-          set -euo pipefail
-          UI_BUCKET="$(jq -r .ui_bucket_name.value release/deployment-outputs.json)"
-          DISTRIBUTION_ID="$(jq -r .cloudfront_distribution_id.value release/deployment-outputs.json)"
-          aws s3 sync release/ui "s3://$UI_BUCKET" --delete
+          aws s3 cp release/ui/index.html "s3://$UI_BUCKET/index.html" --content-type "text/html; charset=utf-8" --cache-control "no-cache,no-store,must-revalidate"
+          aws s3 cp release/ui/robots.txt "s3://$UI_BUCKET/robots.txt" --content-type "text/plain; charset=utf-8" --cache-control "public,max-age=3600"
+          aws s3 cp release/ui/release.json "s3://$UI_BUCKET/release.json" --content-type "application/json" --cache-control "no-cache,no-store,must-revalidate"
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
-
-      - name: Run a real post-rollback smoke probe
-        shell: bash
-        run: |
-          set -euo pipefail
-          DOMAIN="$(jq -r .cloudfront_domain_name.value release/deployment-outputs.json)"
           curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/health"
           curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/" >/dev/null
+          EXPECTED_RELEASE_SHA="$(jq -r .releaseSha release/ui/release.json)"
+          test "$(curl --fail-with-body --retry 12 --retry-delay 10 "https://$DOMAIN/release.json" | jq -r .releaseSha)" = "$EXPECTED_RELEASE_SHA"
+
+      - name: Restore previous live release after promotion failure
+        if: ${{ failure() && steps.configuration_activate.outcome == 'success' && (steps.service_promote.outcome == 'failure' || steps.promote.outcome == 'failure') }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+          ACTIVATION_RELEASE_ID: ${{ steps.activation_identity.outputs.id }}
+          UI_BUCKET: ${{ steps.state.outputs.ui_bucket }}
+          DISTRIBUTION_ID: ${{ steps.state.outputs.distribution_id }}
+        run: |
+          set -euo pipefail
+          PREVIOUS_ALIASES="$RUNNER_TEMP/previous-alias-versions.json"
+          PREVIOUS_UI="$RUNNER_TEMP/previous-ui"
+          aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 0 >/dev/null
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -v activation_release_id="$ACTIVATION_RELEASE_ID" <<'SQL'
+          SELECT set_config(
+            'app.compensation_release_id',
+            :'activation_release_id',
+            false
+          );
+          DO $compensation$
+          BEGIN
+            PERFORM public.restore_configuration_release(
+              current_setting('app.compensation_release_id')::uuid,
+              NULL::uuid
+            );
+          EXCEPTION WHEN raise_exception THEN
+            IF SQLERRM NOT IN (
+              'CONFIGURATION_RELEASE_NOT_FOUND',
+              'CONFIGURATION_RELEASE_NOT_LIVE'
+            ) THEN
+              RAISE;
+            END IF;
+          END
+          $compensation$;
+          SELECT public.assert_strict_zero_prompt_executable_state();
+          SQL
+          aws lambda update-alias --function-name review-context-reviewer-student --name live --function-version "$(jq -r .contextReviewer "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-context-console-student --name live --function-version "$(jq -r .contextConsole "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-generation-service-student --name live --function-version "$(jq -r .generation "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-fast-student --name live --function-version "$(jq -r .webFast "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-stream-student --name live --function-version "$(jq -r .webStream "$PREVIOUS_ALIASES")" >/dev/null
+          aws lambda update-alias --function-name review-web-bff-reconcile-student --name live --function-version "$(jq -r .webReconcile "$PREVIOUS_ALIASES")" >/dev/null
+          for mutable_file in index.html robots.txt release.json; do
+            if [ -f "$PREVIOUS_UI/$mutable_file" ]; then
+              aws s3 cp "$PREVIOUS_UI/$mutable_file" "s3://$UI_BUCKET/$mutable_file" --cache-control "no-cache,no-store,must-revalidate"
+            fi
+          done
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' >/dev/null
+          if [ "$TARGET_DEPLOYMENT_PROFILE" != "student-low-quota" ]; then
+            psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+              -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+            aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 1 >/dev/null
+          fi
+
+      - name: Restore prior low-quota concurrency after rollback failure
+        if: ${{ failure() && steps.low_quota_freeze.outputs.frozen == 'true' }}
+        shell: bash
+        env:
+          DATABASE_URL: ${{ secrets.NEON_MIGRATION_DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+            -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
+          PREVIOUS="$(jq -r '.reservedConcurrentExecutions // "none"' "$RUNNER_TEMP/generation-concurrency-before-rollback.json")"
+          if [ "$PREVIOUS" = "none" ]; then
+            aws lambda delete-function-concurrency --function-name review-generation-service-student >/dev/null
+          else
+            aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions "$PREVIOUS" >/dev/null
+          fi

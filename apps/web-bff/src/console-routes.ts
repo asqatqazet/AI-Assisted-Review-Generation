@@ -9,11 +9,23 @@ import type { Context, Hono } from "hono";
 import { getCookie } from "hono/cookie";
 
 import type { ConsolePort } from "./ports/console.port.js";
+import type {
+  ConsoleBenchAuthorizationPort,
+  ConsoleBenchExecutionPort,
+  ConsoleExecutionAuthorizationPort,
+  ConsoleExecutionReadPort,
+} from "./ports/console-execution.port.js";
 import type { OperatorAuthPort } from "./ports/operator-auth.port.js";
 
 export interface ConsoleRouteDependencies {
   readonly operatorAuth: OperatorAuthPort | undefined;
   readonly consolePort: ConsolePort | undefined;
+  readonly consoleExecutionAuthorizationPort:
+    | ConsoleExecutionAuthorizationPort
+    | undefined;
+  readonly consoleExecutionReadPort: ConsoleExecutionReadPort | undefined;
+  readonly consoleBenchAuthorizationPort: ConsoleBenchAuthorizationPort | undefined;
+  readonly consoleBenchExecutionPort: ConsoleBenchExecutionPort | undefined;
   readonly errorBody: (
     code: string,
     message: string,
@@ -123,12 +135,19 @@ export function registerConsoleRoutes(
     if (sessionCookie === undefined) {
       return { status: "unauthenticated" };
     }
-    const identity = await dependencies.operatorAuth.readSession({
+    const session = await dependencies.operatorAuth.readSession({
       sessionCookie,
     });
-    return identity === null
-      ? { status: "unauthenticated" }
-      : { status: "authenticated", identity };
+    if (session === null) {
+      return { status: "unauthenticated" };
+    }
+    if (session.refreshedSessionCookie !== null) {
+      c.header(
+        "Set-Cookie",
+        `__Host-operator_session=${session.refreshedSessionCookie}; Max-Age=86400; Path=/; HttpOnly; Secure; SameSite=Lax`,
+      );
+    }
+    return { status: "authenticated", identity: session.identity };
   };
 
   app.get("/api/v1/console/views/:view", async (c) => {
@@ -153,6 +172,101 @@ export function registerConsoleRoutes(
     const query = parseConsoleQuery(c.req.param("view"), params);
     if (query === undefined) {
       return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
+    }
+
+    if (
+      (query.view === "overview" ||
+        query.view === "analytics" ||
+        query.view === "generation-detail") &&
+      dependencies.consoleExecutionAuthorizationPort !== undefined &&
+      dependencies.consoleExecutionReadPort !== undefined
+    ) {
+      try {
+        const authorization =
+          await dependencies.consoleExecutionAuthorizationPort.authorize({
+            identity: session.identity,
+            scope: scopeRequest(params),
+            query,
+          });
+        if (authorization.status === "not-found") {
+          return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
+        }
+        if (authorization.status === "unavailable") {
+          return c.json(
+            errorBody(
+              "CONSOLE_EXECUTION_UNAVAILABLE",
+              "Generation history is temporarily unavailable.",
+              true,
+            ),
+            503,
+          );
+        }
+        const execution = await dependencies.consoleExecutionReadPort.read({
+          receipt: authorization.receipt,
+          authorizationId: authorization.authorizationId,
+        });
+        if (execution.status === "not-found") {
+          return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
+        }
+        if (query.view === "overview" && execution.status === "overview") {
+          return c.json(
+            ConsoleViewDtoSchema.parse({
+              view: "overview",
+              data: { ...execution.data, scope: authorization.projectionScope },
+            }),
+            200,
+          );
+        }
+        if (query.view === "analytics" && execution.status === "analytics") {
+          return c.json(
+            ConsoleViewDtoSchema.parse({
+              view: "analytics",
+              data: {
+                scope: authorization.projectionScope,
+                query: authorization.query.view === "analytics"
+                  ? authorization.query.query
+                  : query.query,
+                rows: execution.rows,
+              },
+            }),
+            200,
+          );
+        }
+        if (
+          query.view === "generation-detail" &&
+          execution.status === "generation-detail"
+        ) {
+          return c.json(
+            ConsoleViewDtoSchema.parse({
+              view: "generation-detail",
+              data: {
+                scope: authorization.projectionScope,
+                generation: execution.generation,
+                lineage: execution.lineage,
+                replayable: execution.replayable,
+              },
+            }),
+            200,
+          );
+        }
+        return c.json(
+          errorBody(
+            "CONSOLE_EXECUTION_UNAVAILABLE",
+            "Generation history returned an invalid projection.",
+            true,
+          ),
+          503,
+        );
+      } catch {
+        return c.json(
+          errorBody(
+            "CONSOLE_EXECUTION_UNAVAILABLE",
+            "Generation history is temporarily unavailable.",
+            true,
+          ),
+          503,
+        );
+      }
     }
 
     const result = await dependencies.consolePort!.request({
@@ -218,10 +332,62 @@ export function registerConsoleRoutes(
       return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
     }
 
+    if (
+      command.data.command === "run-bench" &&
+      dependencies.consoleBenchAuthorizationPort !== undefined &&
+      dependencies.consoleBenchExecutionPort !== undefined
+    ) {
+      try {
+        const authorization =
+          await dependencies.consoleBenchAuthorizationPort.authorize({
+            identity: session.identity,
+            scope: scopeRequest(new URL(c.req.url).searchParams),
+            input: command.data.input,
+          });
+        if (authorization.status === "not-found") {
+          return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
+        }
+        if (authorization.status === "unavailable") {
+          return c.json(
+            errorBody(
+              "CONSOLE_BENCH_UNAVAILABLE",
+              "The Generation bench is temporarily unavailable.",
+              true,
+            ),
+            503,
+          );
+        }
+        const execution = await dependencies.consoleBenchExecutionPort.execute({
+          receipt: authorization.receipt,
+          workload: authorization.workload,
+        });
+        if (execution.status === "not-found") {
+          return c.json(errorBody(NOT_FOUND.code, NOT_FOUND.message, false), 404);
+        }
+        return c.json(
+          ConsoleCommandResultDtoSchema.parse({
+            outcome: "bench-result",
+            result: execution.result,
+          }),
+          200,
+        );
+      } catch {
+        return c.json(
+          errorBody(
+            "CONSOLE_BENCH_UNAVAILABLE",
+            "The Generation bench is temporarily unavailable.",
+            true,
+          ),
+          503,
+        );
+      }
+    }
+
     const result = await dependencies.consolePort!.request({
       identity: session.identity,
       scope: scopeRequest(new URL(c.req.url).searchParams),
       publicOrigin: expectedOrigin,
+      ifMatch: c.req.header("If-Match") ?? null,
       request: { mode: "command", command: command.data },
     });
 

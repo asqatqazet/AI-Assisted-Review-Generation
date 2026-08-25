@@ -359,7 +359,7 @@ module.exports = {
       from: { path: "^packages/llm/src/" },
       to: {
         path: WORKSPACE_SOURCE,
-        pathNot: "^packages/(?:llm|domain)/",
+        pathNot: "^packages/llm/",
       },
     },
     {

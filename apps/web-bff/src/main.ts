@@ -1,13 +1,30 @@
 import { handle } from "hono/aws-lambda";
 
-import { createWebBffRuntime } from "./runtime.js";
+import {
+  configurationReleaseIdForInvocation,
+  createWebBffRuntime,
+} from "./runtime.js";
 
 type BufferedHandler = ReturnType<typeof handle>;
 
-let runtime: Promise<BufferedHandler> | undefined;
+const runtimes = new Map<string, Promise<BufferedHandler>>();
 
-const getRuntime = (): Promise<BufferedHandler> =>
-  (runtime ??= createWebBffRuntime().then((app) => handle(app)));
+const getRuntime = (invokedFunctionArn: string | undefined): Promise<BufferedHandler> => {
+  const configurationReleaseId =
+    configurationReleaseIdForInvocation(invokedFunctionArn);
+  const key = configurationReleaseId ?? "live";
+  const existing = runtimes.get(key);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const created = createWebBffRuntime(
+    configurationReleaseId === undefined
+      ? {}
+      : { candidateInvocation: true, configurationReleaseId },
+  ).then((app) => handle(app));
+  runtimes.set(key, created);
+  return created;
+};
 
 export const handler: BufferedHandler = async (event, context) =>
-  await (await getRuntime())(event, context);
+  await (await getRuntime(context?.invokedFunctionArn))(event, context);

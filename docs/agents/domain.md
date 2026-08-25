@@ -1,9 +1,18 @@
 # Assisted review-writing domain model
 
-Status: proposed canonical model and ubiquitous language  
+Status: accepted canonical model and ubiquitous language
 Sources: `01-SYSTEM-DESIGN.md` §§3–5 and the `FIXTURES` contract in `prototypes/Survey.dc.html`
 
 This document is normative for domain language. Existing fixture names are noted as compatibility names, not allowed to redefine the concepts.
+
+Release boundary: deterministic Prompt compose/request/grounding Evaluation Results, Prompt Candidacy
+Decisions and Prompt Deployments are implemented. Those offline results explicitly record that provider
+behavior was not measured; they cannot qualify OpenAI or Gemini. Experiments and paid-provider
+qualification remain deferred and must not be presented as release functionality. The strict-$0 student
+release exposes **Generate only** and, across every Tenant, only the explicitly reviewed immutable Prompt
+hash. Tenant identity is not a policy bypass. The other Action definitions and arbitrary new Prompt wording
+remain future vocabulary until an explicit future profile supplies independent semantic validators and
+separately reviewed provider-behaviour evidence.
 
 ## 1. Modeling rules
 
@@ -43,8 +52,13 @@ Resolution must return both the value and its supplying scope. `null` must not b
 | **Generation** | One immutable execution record of the generation pipeline: request binding, versions, provider call, candidate result, grounding result, policy result, usage, and cost. | Keep `generation`; never use it to mean the editable review text. |
 | **Draft** | Reviewer-editable review text created from a successful Generation. A Draft may change without rewriting the immutable Generation that produced it. | Keep `draft`; never use it to mean a provider invocation or audit record. |
 | **Review Format** | A versioned platform catalogue entry defining output shape and limits, such as character range, paragraph count, locale support, and target destination type. | Use instead of **style**. The current catalogue is structural; Tenant tone is a separate concern. |
-| **Reformat** | Render grounded Claims in a different Review Format. | Use instead of the action name **Restyle**. The compatibility action key may remain `restyle` until the contract is migrated. |
-| **Prompt Version** | An immutable tenant-owned prompt-content artifact for one Action. Deployment status and evaluation results are separate mutable records. | Do not call an edited prompt the same version. |
+| **Reformat** | Render grounded Claims in a different Review Format. | Use instead of **Restyle**. Production Action contracts use `reformat`; `restyle` is quarantined to the prototype-compatibility schema. |
+| **Configuration Draft** | One mutable, scope-owned set of snapshot-affecting changes bound to a published base revision and its own revision/ETag. Platform Drafts and Tenant/Location Drafts are separate aggregates. | Do not call staged changes “published configuration” and do not mix Platform changes into a Tenant Draft. |
+| **Configuration Publication** | Append-only evidence that one exact Configuration Draft revision was atomically accepted, including actor, changes, resulting revision and affected snapshot ids. | Use **publish** only for this transition; saving/staging a Draft is not publishing. |
+| **Prompt Version** | An immutable tenant-owned prompt-content artifact for one Action. Deployment and evaluation evidence are separate records. | Do not call an edited prompt the same version. |
+| **Prompt Evaluation Result** | Append-only evidence that one exact Prompt Version hash passed a named evaluation report over a positive number of cases. | Do not store a mutable `evaluationScore` on Prompt Version. A later run appends evidence; it does not rewrite an earlier result. |
+| **Prompt Candidacy Decision** | Append-only lifecycle evidence that an evaluated, canonical Prompt Version was deliberately qualified as a Candidate, or later retired. | Evaluation is evidence, not a lifecycle transition. Stop inferring **Candidate** from a score. |
+| **Prompt Deployment** | The Tenant's current mutable pointer from one Action to exactly one evaluated Prompt Version. | Use **deployment** for live selection; do not call the Prompt Version itself “published state.” |
 | **Effective Configuration Snapshot** | An immutable, location-attributed materialization of all values used by a Generation, including per-field scope provenance. | Do not use the Tenant's `contextVersion` as a synonym; it cannot identify Location overrides by itself. |
 | **Generation Disposition** | The reviewer's response to a Generation/Draft candidate: accepted, edited, or discarded. | Use instead of generic **outcome** where this specific concept is meant. |
 | **Posting Destination** | An external listing/page to which the reviewer may manually paste a Draft. | Do not call the destination type and a Location's bound external page the same entity. |
@@ -123,14 +137,19 @@ The catalogue is exhaustive for identity-bearing concepts present or necessarily
 | **Posting Destination Type** (`destinations`) | Platform | Google Maps, Tripadvisor, Facebook, Yelp, and the external-id schema each requires. |
 | **Entry Mode Definition** (`entryModes`) | Platform | Invite, open QR, or both, with route semantics. Tenant/Location values select a definition. |
 | **Operator Role Definition** (`roles`) | Platform | Platform admin, agency operator, or tenant operator capability set. |
+| **Configuration Draft** | Platform, Tenant **or** Location, per instance | Mutable staged changes for exactly one scope and base revision. The Platform singleton aggregate is physically separate from Tenant/Location Drafts so a Tenant Draft cannot acquire Platform authority. |
+| **Configuration Publication** (`platform_configuration_publications`, Tenant/Location `configuration_audit_events`) | Platform, Tenant **or** Location, matching its Draft | Append-only publication evidence for one exact Draft id/revision. One publication can materialize new Effective Configuration Snapshots for multiple affected active Locations without making those snapshots Platform- or Tenant-owned. |
 | **Tenant** | Tenant | Tenant scope root and isolation/billing boundary. Platform provisions it; that does not make its configuration Platform-scoped. |
 | **Fact Category** (`keywordCategories`) | Tenant | Tenant-specific taxonomy entry. A Location Fact Option must reference a category of its own Tenant. |
 | **Fact Option** (`keywords`) | Tenant **or** Location, per instance | A base option is Tenant-owned; an addition is Location-owned. One option can never have both owners. |
 | **Review Format Enablement** (`enabledStyles`) | Tenant | Joins one Tenant to one Platform Review Format key. It is not a copied Format. |
 | **Action Enablement** (`enabledActions`) | Tenant | Joins one Tenant to one Action Definition. |
 | **Prompt Version** (`promptVersions`) | Tenant | Immutable prompt content for one Tenant and Action. Lifecycle/evaluation state must not be part of the immutable content identity. |
-| **Experiment** | Tenant | A Tenant's controlled comparison for one Action. |
-| **Experiment Variant** | Tenant | Child of one Experiment; references a Prompt Version of the same Tenant and Action. |
+| **Prompt Evaluation Result** | Tenant | Append-only evidence bound to one Prompt Version id, canonical hash, checked-out release SHA, tracked suite manifest, case hashes and canonical report bytes. Only the offline evaluator/migration owner writes it; Console may read it. The current report measures deterministic composition/request/grounding behavior and explicitly records `providerBehaviorMeasured=false`; it does not establish that arbitrary Prompt wording produces good provider output. Summary-only legacy rows remain audit history but are not qualifying evidence. |
+| **Prompt Candidacy Decision** | Tenant | Append-only decision bound to one Prompt Version and the qualifying Evaluation Result. A Candidate cannot be changed back into a Draft; retirement is a later decision. |
+| **Prompt Deployment** | Tenant | Single current Prompt Version pointer for one Tenant and Action. Moving the pointer never mutates Prompt content or past Generation provenance. |
+| **Experiment** | Tenant | Deferred: a Tenant's controlled comparison for one Action. It is part of the model, not current release functionality. |
+| **Experiment Variant** | Tenant | Deferred child of one Experiment; references a Prompt Version of the same Tenant and Action. |
 | **Operator Access Grant** | Tenant | Links a Platform Operator to a Tenant and an allowed role. This replaces the inaccurate blanket relationship “Tenant employs Operator.” |
 | **Location** | Location | Location scope root; also a child of exactly one Tenant. |
 | **Posting Destination Binding** | Location | Enables one Platform Posting Destination Type at one Location and carries that Location's external page/place id. |
@@ -147,7 +166,7 @@ These do not participate in configuration inheritance, but each still has an una
 | **Invitation Token** (`visitTokens`) | Location | Credential issued for one Location and, on the invited path, one Visit. It admits at most one Review Session. |
 | **Review Session** (`SURVEY_SESSION`) | Location | Reviewer workflow at one Location, within its Tenant. |
 | **Assertion** | Location, through Review Session | Immutable reviewer-authorized proposition and its source anchor. |
-| **Experiment Assignment** | Location, through Review Session | Stable assignment of one Review Session to a Tenant Experiment Variant. |
+| **Experiment Assignment** | Location, through Review Session | Deferred stable assignment of one Review Session to a Tenant Experiment Variant. |
 | **Effective Configuration Snapshot** | Location, through Review Session/Generation | Derived snapshot spanning all three configuration scopes; not independently editable. |
 | **Generation** | Location, through Review Session | Immutable pipeline execution and audit record. |
 | **Claim** | Location, through Generation | Grounded semantic proposition in generated output. It needs stable identity within a Generation. |
@@ -170,11 +189,12 @@ These have no independent identity or lifecycle and should not be promoted to en
 | Localized customer-facing copy bundle | Platform; Tenant locale only selects from it |
 | Business Profile, Tenant tone, Tenant policy, default Entry Mode, budget policy | Tenant |
 | Location address and Location Override set | Location |
+| Configuration revision/ETag and a Draft's ordered change values | The Configuration Draft/Publication's scope |
 | Claim grounding reference, source span, grounding verdict, token usage, cost calculation | Parent operational entity |
 
 The fixture's `embellishments` array is a test-case catalogue, not a production domain entity.
 
-## 5. Scope ambiguities that must be resolved now
+## 5. Resolved scope ambiguities
 
 ### 5.1 Operator ownership
 
@@ -210,7 +230,12 @@ The current token record also carries `visitedOn`, making the credential stand i
 
 The fixture stores editable `draft` text on a Generation while also treating Generations as reproducible audit records. Reviewer edits would destroy that audit record if the same field were updated.
 
-**Decision:** Generation preserves provider output and its Claim map immutably. Draft preserves reviewer-editable text and revision history if edits are persisted. Generation Disposition measures the chosen Draft against its originating Generation.
+**Decision:** Generation preserves provider output and its Claim map immutably. Provider return is first
+fenced as a validated, durable Attempt checkpoint; terminal persistence recovers from that checkpoint and
+never repeats the provider call. A provider-returned result that fails grounding, policy, or Review Format
+validation remains protected audit evidence but creates no Draft. Draft preserves reviewer-editable body
+text and immutable typed system annotations as separate fields and retains revision history. Generation
+Disposition measures the chosen Draft against its originating Generation.
 
 ### 5.7 “One invitation, one draft” versus draft caps
 
@@ -257,6 +282,11 @@ A Tenant `contextVersion` cannot uniquely identify Location overrides or their p
 | C5 | A Location override is rejected for any field not present in the explicit Location-override allow-list. Provider credentials, Price Rates, Review Format definitions, prompts, experiments, and budgets are not Location-overridable under the current model. |
 | C6 | Changing any effective input to a Generation changes the Effective Configuration Snapshot identity for affected Locations; unrelated Tenant/Location changes do not. |
 | C7 | A Tenant/Location can select only existing Platform definitions, and a Location-owned reference can point only to its own Tenant or to Platform catalogue data. |
+| C8 | Staging or cancelling a Configuration Draft changes no published revision and no Effective Configuration Snapshot. |
+| C9 | A Draft mutation or publication succeeds only when its Draft id/revision and published base ETag all match current state; a stale request has no partial effect. |
+| C10 | One exact Draft revision is published at most once, and its Configuration Publication is append-only. |
+| C11 | Publication applies all changes atomically and materializes a distinct snapshot for every affected active Location. Inactive Tenants/Locations are excluded; one active invalid Location aborts the entire publication. |
+| C12 | A Platform Configuration Draft is never a Tenant/Location Draft. Every Platform publication requires `platform:admin`; any provider-routing or Price Rate change additionally requires `provider:manage`, and the required capabilities are the union for the whole Draft. |
 
 #### Identity, isolation, and lineage
 
@@ -286,17 +316,17 @@ A Tenant `contextVersion` cannot uniquely identify Location overrides or their p
 | G2 | Every Claim has at least one valid grounding reference to an Assertion in the same Review Session or to an explicitly permitted verified context fact such as Location identity or verified visit date. |
 | G3 | A reviewer-text grounding reference identifies an exact source span and the immutable source-text revision; selecting a Fact Option records the exact option/version selected. |
 | G4 | A derived Claim retains transitive grounding to original Assertions; a parent Claim id alone is not sufficient provenance. |
-| G5 | Unsupported model output never appears in the Draft or Claim set. If retained for explanation/audit, it is stored as Unsupported Output with a rejection reason. |
+| G5 | Unsupported model output never appears in the Draft or Claim set. If retained for explanation/audit, the exact raw structured provider output and its classified Unsupported Output are protected execution evidence with a rejection reason; ordinary reviewer, Bench and Console projections cannot read them. |
 | G6 | After grounding or policy removes or rewrites text, Claim coverage, grounding, banned-term policy, and Review Format constraints are validated again before persistence. |
 | G7 | If grounding and Review Format constraints cannot both be satisfied, grounding wins and the Generation is rejected; the pipeline never adds a proposition merely to meet a minimum length or paragraph count. |
-| G8 | A successful Generation's provider output, Claim set, grounding result, versions, inputs, usage, and cost are immutable. Reviewer edits create/update Draft revisions and cannot mutate that record. |
-| G9 | A system disclosure is a policy annotation with system provenance, not a reviewer Claim; adding it cannot alter the reviewer's Claim set. |
+| G8 | Every provider-returned result is fenced once as immutable Attempt evidence before terminal multi-row persistence. A successful or rejected Generation's raw provider output, separate provider receipt, classification, versions, inputs, usage, and cost are immutable; crash recovery finalizes the same checkpoint and never repeats the call. Reviewer edits create Draft revisions and cannot mutate that record. |
+| G9 | A system disclosure is an immutable typed policy annotation with system provenance, not reviewer text or a reviewer Claim; every Draft revision inherits it unchanged, editing operates on body text only, and adding it cannot alter the reviewer's Claim set. |
 
 #### Action availability and semantic postconditions
 
 | ID | Proposition |
 |---|---|
-| A1 | An Action is available only when the Tenant enables it, the target Review Format supports it and the Tenant locale, and its required inputs are present. All three conditions are necessary. |
+| A1 | An Action is available only when the production capability resolver has a validated semantic postcondition for it, the Tenant enables it, the target Review Format supports it and the Tenant locale, and its required inputs are present. Every condition is necessary. |
 | A2 | Generate Claims are a subset of Claims supported by the request's Assertions and permitted verified context; no configured Fact Option becomes an Assertion until the reviewer selects it. |
 | A3 | Paraphrase adds no proposition absent from the reviewer's source text. If the product promises fact preservation, every in-scope source proposition must also remain represented unless policy explicitly rejects it and reports why. |
 | A4 | Reformat and Condense produce no Claim outside the source Generation's Claim set. Condense also produces shorter Draft text and may drop whole Claims. |
@@ -308,11 +338,15 @@ A Tenant `contextVersion` cannot uniquely identify Location overrides or their p
 
 | ID | Proposition |
 |---|---|
-| P1 | Looking up a Generation yields or resolves the exact normalized input, Assertion versions, Effective Configuration Snapshot, Prompt Version, Review Format Version, provider/model parameters, and provider response needed for audit and replay. Replay is not required to be byte-identical. |
+| P1 | A privileged, scope-authorized audit lookup can resolve the exact normalized input, Assertion versions, Effective Configuration Snapshot, Prompt Version, Review Format Version, provider/model parameters, raw structured provider output, separate provider receipt, classification and checkpoint needed for audit. Ordinary projections omit raw output. Replay is not required to be byte-identical and must never reinterpret a checkpoint as authority to call the provider again. |
 | P2 | Once a Prompt Version hash is issued, its action/key/body cannot change; editing content issues a new hash, while evaluation and deployment state changes do not alter the content artifact. |
 | E1 | One Review Session receives at most one assignment per Experiment. |
 | E2 | Once assigned, a Review Session's Variant does not change when weights change or the Experiment stops. |
 | E3 | Every Variant references a non-retired-at-assignment Prompt Version owned by the same Tenant and Action, and historical references remain resolvable after retirement. |
+| E4 | A Draft Prompt Version becomes a Candidate only through an append-only Prompt Candidacy Decision bound to its canonical hash and the latest Prompt Evaluation Result, whose positive case count passes in full. Strict-$0 requires the one explicitly reviewed immutable content tuple for every Tenant; deterministic evaluation evidence and a different Tenant prove neither lifecycle nor wording quality. |
+| E5 | A Prompt Version can enter a Deployment or running Experiment only while a Candidate decision is bound to its latest strict Prompt Evaluation Result, no retirement decision exists, its content hash is canonical and explicitly approved by the active profile, and that latest positive case count passes in full. An upgrade must fail before execution resumes if current executable state violates this rule; it must not erase the historical evidence. |
+| E6 | A running Experiment has at least two distinct Prompt Version variants, every weight is a positive whole percentage below 100, weights total exactly 100, and no other Experiment for the same Tenant and Action is running. |
+| E7 | Experiment Variants are mutable only while their parent Experiment is Draft. Starting or stopping an Experiment makes that exact Variant set immutable. |
 
 #### Billing
 
@@ -325,6 +359,11 @@ A Tenant `contextVersion` cannot uniquely identify Location overrides or their p
 ## 7. Do the seven actions form one pipeline?
 
 They can share one **orchestration pipeline**, but they are not seven equivalent transformations. The common shape is defensible only after each command normalizes its inputs into (a) an allowed Assertion/Claim grounding set and (b) non-semantic presentation constraints.
+
+The strict-$0 student release exposes **Generate only**. Paraphrase remains a
+defined domain command but is not executable until an independent semantic
+validator can prove both no-new-proposition and required-source-proposition
+coverage; an echo or provider-supplied semantic id is not sufficient proof.
 
 | Current action | Grounding binding and postcondition | Fit verdict |
 |---|---|---|
@@ -352,17 +391,17 @@ The corrected common pipeline is:
 
 This is one pipeline skeleton with different binders and postconditions. Regenerate is a re-execution mode, and the current Refine contract must be repaired before it can honestly use that skeleton.
 
-## 8. Contract corrections before schemas become load-bearing
+## 8. Current compatibility debt
 
-The following are domain corrections, not application-code instructions:
+The load-bearing model corrections above are implemented. The remaining naming debt is bounded and must not
+be mistaken for a second ubiquitous language:
 
-1. Add first-class ids/links for Review Session, Visit, Assertion, Claim, Effective Configuration Snapshot, Price Rate, and Draft; Generation fixtures currently cannot prove their declared containment or lineage.
-2. Replace the conceptual names `keyword`, `style`, `SurveySession`, `visitToken`, `removedClaims`, and `outcome` with the canonical terms in §2. If wire compatibility is temporarily required, document the mapping at the boundary.
-3. Separate Prompt Version content from prompt status/evaluation.
-4. Separate Provider/Location/Tenant configuration from health, counters, and usage projections currently embedded in the same fixture records.
-5. Make Location overrides use one representation and one presence rule.
-6. Give Price Rates stable ids and make every Generation reference the exact rate used.
-7. Replace Tenant-only `contextVersion` as generation provenance with an Effective Configuration Snapshot reference.
-8. Represent system disclosure separately from reviewer Draft Claims.
-9. Repair Review Format examples/requirements that invent semantics. In particular, “whether you would go back” is not implied by a rating, and format prose must never supply an unasserted experience.
-10. Repair Refine before treating the seven-item catalogue as a uniform Action set.
+| Boundary | Compatibility names still present | Required mapping |
+|---|---|---|
+| `packages/contracts/src/shared/prototype-compatibility.ts` | `SurveySession`, `keyword`, `style`, `restyle`, `enabledStyles`, `maxDraftsPerSession`, `contextVersion`, `removedClaims`, `outcome` | Fixture/dev-only schema. Map to Review Session, Fact Option, Review Format, Reformat, Review Format Enablement, maximum Review Formats per request, Effective Configuration Snapshot, Unsupported Output and Generation Disposition. It must not authorize production behavior. |
+| Console function/configuration wire | `*-keyword*`, `*-style*`, `style-detail`, `keywordId`, `styleId` | Existing client/server compatibility contract; production semantics are Fact Option and Review Format. Migrate both ends together rather than leaking these names into new domain APIs. |
+| Console analytics/Bench projection | `contextVersion`, `removedClaims`, disposition-shaped `outcome` | Resolve immutable Effective Configuration Snapshot provenance, expose redacted Unsupported Output only under its capability, and use Generation Disposition for accepted/edited/discarded reviewer intent. Generic transport `outcome` values that are not dispositions are not synonyms and need not be renamed. |
+| Legacy entry resolver input | `visitToken` | Boundary alias for Invitation Token only; it is never a Visit or a Review Session credential. |
+
+No new contract may add these compatibility names. The Generate-only capability decision and deferred
+Experiments/transformations are deliberate release boundaries, not naming debt.

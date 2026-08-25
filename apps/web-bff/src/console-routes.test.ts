@@ -22,7 +22,10 @@ const operatorAuth = {
   }),
   complete: async () => ({ sessionCookie: "unused", returnTo: "/console" }),
   readSession: async ({ sessionCookie }: { readonly sessionCookie: string }) =>
-    sessionCookie === "valid-operator-session" ? identity : null,
+    sessionCookie === "valid-operator-session"
+      ? { identity, refreshedSessionCookie: null }
+      : null,
+  logout: async () => ({ logoutUrl: "https://example.invalid/logout" }),
 };
 
 function appWithConsole(
@@ -79,6 +82,66 @@ const overviewView = {
 };
 
 describe("ADM-AUTH-01/02 Console transport", () => {
+  it("couriers a Context-authorized read receipt to the Generation plane", async () => {
+    const reads: unknown[] = [];
+    const app = createWebBffApp({
+      publicOrigin,
+      operatorAuth,
+      consolePort: {
+        request: async () => ({
+          status: "rejected",
+          code: "VIEW_NOT_AVAILABLE",
+          message: "must not use the control-plane fallback",
+        }),
+      },
+      consoleExecutionAuthorizationPort: {
+        authorize: async () => ({
+          status: "authorized",
+          receipt: "context-signed-receipt",
+          authorizationId: "2ffad1ca-22f2-41ad-a9b3-07991a66cf76",
+          projectionScope: overviewView.data.scope,
+          query: {
+            view: "overview",
+            from: overviewView.data.window.from,
+            to: overviewView.data.window.to,
+          },
+        }),
+      },
+      consoleExecutionReadPort: {
+        read: async (input) => {
+          reads.push(input);
+          return {
+            status: "overview",
+            data: {
+              window: overviewView.data.window,
+              metrics: overviewView.data.metrics,
+              byAction: [],
+              byLocation: [],
+              byTenant: [],
+              experiment: null,
+              providerHealth: [],
+              alerts: [],
+            },
+          };
+        },
+      },
+    });
+
+    const response = await app.request(
+      "/api/v1/console/views/overview?tenantId=tenant-a",
+      { headers: signedIn },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(overviewView);
+    expect(reads).toEqual([
+      {
+        receipt: "context-signed-receipt",
+        authorizationId: "2ffad1ca-22f2-41ad-a9b3-07991a66cf76",
+      },
+    ]);
+  });
+
   it("refuses a Console view without an operator session", async () => {
     const { app, seen } = appWithConsole(() => ({
       status: "view",
@@ -227,6 +290,147 @@ describe("ADM-AUTH-01/02 Console transport", () => {
 });
 
 describe("Console commands", () => {
+  it("couriers an authorized Bench workload from Context to Generation", async () => {
+    const authorizations: unknown[] = [];
+    const executions: unknown[] = [];
+    let controlPlaneCommands = 0;
+    const workload = { bindings: { generationId: "bench-generation-a" } } as never;
+    const app = createWebBffApp({
+      publicOrigin,
+      operatorAuth,
+      consolePort: {
+        request: async () => {
+          controlPlaneCommands += 1;
+          return { status: "not-found" };
+        },
+      },
+      consoleBenchAuthorizationPort: {
+        authorize: async (input) => {
+          authorizations.push(input);
+          return {
+            status: "authorized",
+            receipt: "context-signed-bench-receipt",
+            workload,
+          };
+        },
+      },
+      consoleBenchExecutionPort: {
+        execute: async (input) => {
+          executions.push(input);
+          return {
+            status: "completed",
+            result: {
+              generationId: "bench-generation-a",
+              output: "The team was attentive.",
+              claims: [
+                {
+                  id: "claim-a",
+                  text: "The team was attentive.",
+                  supportedBy: ["assertion-a"],
+                },
+              ],
+              removedClaims: [],
+              provider: "fake",
+              model: "fake-v1",
+              latencyMs: 5,
+              estimatedCost: { amountMicros: 0, currency: "EUR" },
+              isBench: true,
+              guard: {
+                verdict: "passed",
+                supportedClaimIds: ["claim-a"],
+                removedClaimCount: 0,
+              },
+            },
+          };
+        },
+      },
+    });
+    const command = {
+      command: "run-bench",
+      input: {
+        action: "generate",
+        styleId: "format-a@1",
+        promptVersionId: "prompt-generate@1",
+        provider: "fake",
+        keywordIds: ["fact-a"],
+        freeText: "",
+        sourceText: "",
+      },
+    } as const;
+    const body = JSON.stringify(command);
+
+    const response = await app.request(
+      "/api/v1/console/commands?tenantId=tenant-a&locationId=location-a",
+      {
+        method: "POST",
+        headers: {
+          ...signedIn,
+          Origin: publicOrigin,
+          ...payloadBound(body),
+        },
+        body,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      outcome: "bench-result",
+      result: { isBench: true, guard: { verdict: "passed" } },
+    });
+    expect(authorizations).toEqual([
+      { identity, scope: { tenantId: "tenant-a", locationId: "location-a" }, input: command.input },
+    ]);
+    expect(executions).toEqual([
+      { receipt: "context-signed-bench-receipt", workload },
+    ]);
+    expect(controlPlaneCommands).toBe(0);
+  });
+
+  it("renders an invalid Bench combination as the same generic not-found before Generation", async () => {
+    let executions = 0;
+    const app = createWebBffApp({
+      publicOrigin,
+      operatorAuth,
+      consolePort: { request: async () => ({ status: "not-found" }) },
+      consoleBenchAuthorizationPort: {
+        authorize: async () => ({ status: "not-found" }),
+      },
+      consoleBenchExecutionPort: {
+        execute: async () => {
+          executions += 1;
+          return { status: "not-found" };
+        },
+      },
+    });
+    const body = JSON.stringify({
+      command: "run-bench",
+      input: {
+        action: "generate",
+        styleId: "format-other-tenant",
+        promptVersionId: "prompt-other-tenant",
+        provider: "fake",
+        keywordIds: [],
+        freeText: "text",
+        sourceText: "",
+      },
+    });
+    const response = await app.request(
+      "/api/v1/console/commands?tenantId=tenant-a&locationId=location-a",
+      {
+        method: "POST",
+        headers: {
+          ...signedIn,
+          Origin: publicOrigin,
+          ...payloadBound(body),
+        },
+        body,
+      },
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toMatchObject({ code: "CONSOLE_NOT_FOUND" });
+    expect(executions).toBe(0);
+  });
+
   it("requires a same-origin submission", async () => {
     const { app, seen } = appWithConsole(() => ({
       status: "command",
@@ -296,6 +500,31 @@ describe("Console commands", () => {
       mode: "command",
       command: { command: "reset-location-override", key: "requireDisclosure" },
     });
+  });
+
+  it("forwards If-Match as the configuration CAS precondition", async () => {
+    const { app, seen } = appWithConsole(() => ({
+      status: "command",
+      result: { outcome: "accepted" },
+    }));
+    const body = JSON.stringify({ command: "publish-configuration" });
+
+    const response = await app.request(
+      "/api/v1/console/commands?tenantId=tenant-a",
+      {
+        method: "POST",
+        headers: {
+          ...signedIn,
+          Origin: publicOrigin,
+          "If-Match": '"configuration:tenant-a:tenant:7"',
+          ...payloadBound(body),
+        },
+        body,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(seen[0]?.ifMatch).toBe('"configuration:tenant-a:tenant:7"');
   });
 
   it("surfaces an operator-fixable rejection distinctly from not-found", async () => {

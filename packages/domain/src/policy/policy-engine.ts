@@ -1,4 +1,5 @@
 import type { CommandKind, EntryMode, Locale } from "../configuration/index.js";
+import type { DraftSystemAnnotation } from "../generation/edit-distance.js";
 
 export interface PolicyInput {
   readonly requireDisclosure: boolean;
@@ -18,11 +19,13 @@ export interface ApplyPolicyInput {
   readonly policy: PolicyInput;
   readonly tenantName: string;
   readonly locale: Locale;
+  readonly disclosurePolicyVersionId?: string | undefined;
 }
 
 export interface ApplyPolicyResult {
   readonly draft: string;
   readonly appended?: string;
+  readonly systemAnnotations: readonly DraftSystemAnnotation[];
   readonly violations: readonly PolicyViolation[];
 }
 
@@ -76,7 +79,34 @@ export function generateDisclosureNotice(tenantName: string, locale: Locale): st
 
 export function applyPolicy(input: ApplyPolicyInput): ApplyPolicyResult {
   const violations: PolicyViolation[] = [];
-  const lowerDraft = input.draft.toLowerCase();
+  const disclosurePolicyVersionId = input.disclosurePolicyVersionId?.trim();
+  if (
+    input.policy.requireDisclosure &&
+    (disclosurePolicyVersionId === undefined ||
+      disclosurePolicyVersionId.length === 0)
+  ) {
+    violations.push({
+      term: "requireDisclosure",
+      message: "Disclosure policy provenance is unavailable.",
+    });
+  }
+  const appended =
+    input.policy.requireDisclosure && disclosurePolicyVersionId !== undefined
+      ? generateDisclosureNotice(input.tenantName, input.locale)
+      : undefined;
+  const systemAnnotations: readonly DraftSystemAnnotation[] =
+    appended === undefined || disclosurePolicyVersionId === undefined
+      ? []
+      : [
+          {
+            kind: "assisted-review-disclosure",
+            text: appended,
+            policyVersionId: disclosurePolicyVersionId,
+          },
+        ];
+  const draft =
+    appended === undefined ? input.draft : `${input.draft}\n\n${appended}`;
+  const lowerDraft = draft.toLowerCase();
 
   for (const term of input.policy.bannedTerms) {
     const trimmed = term.trim();
@@ -88,18 +118,10 @@ export function applyPolicy(input: ApplyPolicyInput): ApplyPolicyResult {
     }
   }
 
-  if (input.policy.requireDisclosure) {
-    const disclosure = generateDisclosureNotice(input.tenantName, input.locale);
-    const fullDraft = `${input.draft}\n\n${disclosure}`;
-    return {
-      draft: fullDraft,
-      appended: disclosure,
-      violations,
-    };
-  }
-
   return {
-    draft: input.draft,
+    draft,
+    ...(appended === undefined ? {} : { appended }),
+    systemAnnotations,
     violations,
   };
 }

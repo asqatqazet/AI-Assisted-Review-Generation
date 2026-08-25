@@ -1,17 +1,25 @@
 import { execFile } from "node:child_process";
 import { createHash, generateKeyPairSync, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import { createContextRuntime } from "../apps/context-service/src/runtime.js";
 import { createGenerationRuntime } from "../apps/generation-service/src/runtime.js";
 import {
   createInvokedContextPort,
+  createInvokedPublicSourceRateLimitPort,
   createInvokedReviewerGenerationContextPort,
 } from "../apps/web-bff/src/adapters/context-function.port.js";
 import { createInvokedReviewerGenerationExecutionPort } from "../apps/web-bff/src/adapters/generation-function.port.js";
 import { createWebBffApp } from "../apps/web-bff/src/app.js";
 import { createHmacCsrfProtector } from "../apps/web-bff/src/security/csrf-protector.js";
+import { deriveConfigSnapshotId } from "../packages/domain/src/configuration/config-snapshot.js";
+import { STUDENT_STRICT_ZERO_PROMPT_APPROVAL } from "../packages/db/src/deployment/prompt-release-content-policy.js";
+import {
+  createStrictPromptEvaluationFixture,
+  sqlLiteral,
+} from "../packages/db/src/test-support/strict-prompt-evaluation-fixture.js";
+import { resetIntegrationDatabase } from "../packages/db/src/test-support/reset-integration-database.js";
 
 const execFileAsync = promisify(execFile);
 const databaseUrl = process.env["DATABASE_URL"];
@@ -41,51 +49,53 @@ async function seedJourney(): Promise<{
   readonly reviewFormatVersionId: string;
   readonly tenantId: string;
 }> {
-  const tenantId = randomUUID();
+  const tenantId = STUDENT_STRICT_ZERO_PROMPT_APPROVAL.tenantId;
   const locationId = randomUUID();
   const categoryId = randomUUID();
   const factOptionId = randomUUID();
   const reviewFormatVersionId = randomUUID();
   const reviewFormatEnablementId = randomUUID();
   const snapshotId = randomUUID();
-  const promptVersionId = randomUUID();
+  const promptVersionId = STUDENT_STRICT_ZERO_PROMPT_APPROVAL.promptVersionId;
+  const evaluationId = randomUUID();
+  const releaseId = randomUUID();
+  const evaluatedAt = "2026-08-24T00:00:00.000Z";
+  const prompt = {
+    key: "review.generate.release",
+    commandKind: "generate" as const,
+    body: "Use only supplied Assertions.",
+    variables: ["locale", "tone"] as const,
+  };
+  const promptContentHash = STUDENT_STRICT_ZERO_PROMPT_APPROVAL.promptVersionHash;
+  const evaluation = createStrictPromptEvaluationFixture({
+    promptId: promptVersionId,
+    tenantId,
+    promptKey: prompt.key,
+    promptHash: promptContentHash,
+    promptBody: prompt.body,
+    promptVariables: prompt.variables,
+    evaluatedAt,
+    suiteName: "walking-skeleton-strict-zero-fixture-v1",
+  });
   const tenantSlug = `tenant-${tenantId}`;
   const locationSlug = `location-${locationId}`;
-  let providerId = await runSql(
-    "SELECT id FROM providers WHERE key = 'fake' LIMIT 1;",
-  );
-  if (providerId.length === 0) {
-    providerId = randomUUID();
-    await runSql(`
-      INSERT INTO providers (id, key, display_name, credential_reference)
-      VALUES ('${providerId}', 'fake', 'Fake Provider', 'fake://local');
-    `);
-  }
-  let providerModelId = await runSql(
-    `SELECT id FROM provider_models WHERE provider_id = '${providerId}' AND model_key = 'fake-v1' LIMIT 1;`,
-  );
-  if (providerModelId.length === 0) {
-    providerModelId = randomUUID();
-    await runSql(`
-      INSERT INTO provider_models (id, provider_id, model_key)
-      VALUES ('${providerModelId}', '${providerId}', 'fake-v1');
-    `);
-  }
-  let priceRateId = await runSql(
-    `SELECT id FROM price_rates WHERE provider_model_id = '${providerModelId}' AND input_per_million_micros = 0 AND output_per_million_micros = 0 LIMIT 1;`,
-  );
-  if (priceRateId.length === 0) {
-    priceRateId = randomUUID();
-    await runSql(`
-      INSERT INTO price_rates (
-        id, provider_model_id, currency, input_per_million_micros,
-        output_per_million_micros, effective_from
-      ) VALUES (
-        '${priceRateId}', '${providerModelId}', 'EUR', 0, 0,
-        clock_timestamp() - interval '1 day'
-      );
-    `);
-  }
+  const providerId = "00000000-0000-4000-8000-000000000201";
+  const providerModelId = "00000000-0000-4000-8000-000000000202";
+  const priceRateId = "00000000-0000-4000-8000-000000000203";
+  await runSql(`
+    INSERT INTO providers (id, key, display_name, credential_reference)
+    VALUES ('${providerId}', 'fake', 'Fake Provider', 'fake://deterministic');
+    INSERT INTO provider_models (
+      id, provider_id, model_key, routing_priority
+    ) VALUES ('${providerModelId}', '${providerId}', 'fake-v1', 1);
+    INSERT INTO price_rates (
+      id, provider_model_id, currency, input_per_million_micros,
+      output_per_million_micros, effective_from
+    ) VALUES (
+      '${priceRateId}', '${providerModelId}', 'EUR', 0, 0,
+      '2026-08-01T00:00:00.000Z'
+    );
+  `);
   const snapshot = {
     snapshotId,
     schemaVersion: 2,
@@ -101,6 +111,8 @@ async function seedJourney(): Promise<{
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 1,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: [],
       enabledReviewFormatVersionIds: [reviewFormatVersionId],
       enabledCommands: ["generate"],
@@ -143,11 +155,8 @@ async function seedJourney(): Promise<{
     promptVersions: [
       {
         id: promptVersionId,
-        hash: "prompt-generate-v1",
-        key: "review.generate",
-        commandKind: "generate",
-        body: "Use only supplied Assertions.",
-        variables: ["locale", "tone"],
+        hash: promptContentHash,
+        ...prompt,
       },
     ],
     priceRates: [
@@ -171,6 +180,7 @@ async function seedJourney(): Promise<{
       primaryModel: "fake-v1",
     },
   };
+  const snapshotContentHash = deriveConfigSnapshotId(snapshot as never);
 
   await runSql(`
     INSERT INTO entry_mode_definitions (key, semantics)
@@ -185,7 +195,10 @@ async function seedJourney(): Promise<{
     INSERT INTO locations (id, tenant_id, slug, name)
     VALUES ('${locationId}', '${tenantId}', '${locationSlug}', 'Central Clinic');
     INSERT INTO fact_option_categories (id, tenant_id, key, label)
-    VALUES ('${categoryId}', '${tenantId}', 'service', '{"en-GB":"Service"}'::jsonb);
+    VALUES (
+      '${categoryId}', '${tenantId}', 'walking-service-${categoryId}',
+      '{"en-GB":"Service"}'::jsonb
+    );
     INSERT INTO fact_option_versions (
       id, tenant_id, category_id, fact_option_key, version, owner_scope,
       label, proposition, polarity, sort_order, is_active
@@ -212,16 +225,49 @@ async function seedJourney(): Promise<{
       true, 1, ARRAY['GENERATE']::generation_action[]
     );
     INSERT INTO prompt_versions (
-      id, tenant_id, prompt_key, action, content_hash, body
+      id, tenant_id, prompt_key, action, content_hash, body, variables,
+      version, status
     ) VALUES (
-      '${promptVersionId}', '${tenantId}', 'generate-v1', 'GENERATE',
-      'prompt-generate-v1', 'Use only supplied Assertions.'
+      '${promptVersionId}', '${tenantId}', '${prompt.key}', 'GENERATE',
+      '${promptContentHash}', '${prompt.body}', ARRAY['locale','tone']::text[],
+      1, 'DRAFT'
+    );
+    INSERT INTO prompt_evaluation_results (
+      id, tenant_id, prompt_version_id, prompt_version_hash, report_hash,
+      evaluated_cases, passed_cases, evaluator_release_sha, evaluated_at,
+      suite_name, suite_manifest_hash, report_document, report_canonical
+    ) VALUES (
+      '${evaluationId}', '${tenantId}', '${promptVersionId}',
+      '${promptContentHash}', '${evaluation.reportHash}',
+      ${evaluation.evaluatedCases}, ${evaluation.passedCases},
+      '${evaluation.evaluatorReleaseSha}', '${evaluatedAt}'::timestamptz,
+      ${sqlLiteral(evaluation.suiteName)}, '${evaluation.suiteManifestHash}',
+      ${sqlLiteral(evaluation.canonical)}::jsonb,
+      ${sqlLiteral(evaluation.canonical)}
+    );
+    INSERT INTO prompt_candidacy_decisions (
+      tenant_id, prompt_version_id, prompt_version_hash, decision,
+      evaluation_result_id, reason
+    ) VALUES (
+      '${tenantId}', '${promptVersionId}', '${promptContentHash}',
+      'CANDIDATE', '${evaluationId}', 'Walking skeleton strict fixture.'
+    );
+    INSERT INTO prompt_deployments (
+      tenant_id, action, prompt_version_id, revision
+    ) VALUES (
+      '${tenantId}', 'GENERATE', '${promptVersionId}', 1
     );
     INSERT INTO effective_configuration_snapshots (
       id, tenant_id, location_id, schema_version, content_hash, payload, provenance
     ) VALUES (
       '${snapshotId}', '${tenantId}', '${locationId}', 2,
-      'sha256:snapshot-${snapshotId}', '${sqlJson(snapshot)}'::jsonb, '{}'::jsonb
+      '${snapshotContentHash}', '${sqlJson(snapshot)}'::jsonb, '{}'::jsonb
+    );
+    SELECT public.register_configuration_release(
+      '${releaseId}'::uuid,
+      ARRAY['${snapshotId}'::uuid],
+      NULL::uuid,
+      true
     );
   `);
 
@@ -247,20 +293,39 @@ function createJourneyApp(
     fakeFailure = false,
   }: { readonly fakeDelayMs?: number; readonly fakeFailure?: boolean } = {},
 ) {
+  const databaseUrlForRole = (role: string): string => {
+    const roleUrl = new URL(activeDatabaseUrl);
+    roleUrl.username = role;
+    roleUrl.password = "";
+    return roleUrl.toString();
+  };
   const contextKeys = generateKeyPairSync("ed25519");
+  const consoleAuthorityKeys = generateKeyPairSync("ed25519");
   const generationKeys = generateKeyPairSync("ed25519");
   const context = createContextRuntime({
-    databaseUrl: activeDatabaseUrl,
+    runtimeDatabaseUrl: databaseUrlForRole("context_runtime_svc"),
+    consoleControlDatabaseUrl: databaseUrlForRole("console_control_svc"),
     contextPrivateKeyPem: contextKeys.privateKey
       .export({ type: "pkcs8", format: "pem" })
       .toString(),
+    consoleAuthorityPrivateKeyPem: consoleAuthorityKeys.privateKey
+      .export({ type: "pkcs8", format: "pem" })
+      .toString(),
+    consoleDatabaseAuthoritySecret: "ab".repeat(32),
     generationPublicKeyPem: generationKeys.publicKey
       .export({ type: "spki", format: "pem" })
       .toString(),
+    publicSourceRateHmacSecret:
+      "walking-skeleton-public-source-rate-secret",
+    providerMode: "fake-only",
   });
   const generation = createGenerationRuntime({
-    databaseUrl: activeDatabaseUrl,
+    databaseUrl: databaseUrlForRole("generation_svc"),
+    providerMode: "fake-only",
     contextPublicKeyPem: contextKeys.publicKey
+      .export({ type: "spki", format: "pem" })
+      .toString(),
+    consoleAuthorityPublicKeyPem: consoleAuthorityKeys.publicKey
       .export({ type: "spki", format: "pem" })
       .toString(),
     generationPrivateKeyPem: generationKeys.privateKey
@@ -272,6 +337,9 @@ function createJourneyApp(
   const contextInvoker = { invoke: context };
   return createWebBffApp({
     contextPort: createInvokedContextPort(contextInvoker),
+    sourceRateLimitPort:
+      createInvokedPublicSourceRateLimitPort(contextInvoker),
+    resolveTrustedViewerSource: () => "127.0.0.1",
     reviewerGenerationContextPort:
       createInvokedReviewerGenerationContextPort(contextInvoker),
     reviewerGenerationExecutionPort:
@@ -347,6 +415,13 @@ async function enterReview(
 }
 
 describeDatabase("R1 browser-to-PostgreSQL walking skeleton", () => {
+  beforeEach(async () => {
+    if (databaseUrl === undefined) {
+      throw new Error("DATABASE_URL is required for database acceptance tests");
+    }
+    await resetIntegrationDatabase({ databaseUrl, psql });
+  });
+
   it("persists a settled grounded Draft through all three deployables", async () => {
     if (databaseUrl === undefined) {
       throw new Error("DATABASE_URL is required for database acceptance tests");
@@ -503,7 +578,17 @@ describeDatabase("R1 browser-to-PostgreSQL walking skeleton", () => {
         { type: "accepted" },
         { type: "progress", phase: "generating", elapsedSeconds: 0 },
       ]);
-      expect(heartbeats.length).toBeGreaterThanOrEqual(5);
+      expect(heartbeats.length).toBeGreaterThanOrEqual(3);
+      expect(
+        heartbeats.map((event) => event["elapsedSeconds"]),
+      ).toEqual(
+        heartbeats
+          .map((event) => event["elapsedSeconds"])
+          .toSorted((left, right) => Number(left) - Number(right)),
+      );
+      expect(Number(heartbeats.at(-1)?.["elapsedSeconds"])).toBeGreaterThanOrEqual(
+        30,
+      );
       expect(
         events
           .slice(0, terminalIndex)

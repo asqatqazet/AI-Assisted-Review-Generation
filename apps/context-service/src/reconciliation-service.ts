@@ -17,9 +17,11 @@ type Store = Pick<
 export function createReconciliationService({
   store,
   authority,
+  cleanupPublicSourceRateLimits,
 }: {
   readonly store: Store;
   readonly authority: ContextGenerationStatusAuthority;
+  readonly cleanupPublicSourceRateLimits: () => Promise<number>;
 }): {
   listReconciliationCandidates(
     input: ListReconciliationCandidatesInvocationDto["input"],
@@ -30,6 +32,7 @@ export function createReconciliationService({
 } {
   return {
     async listReconciliationCandidates(input) {
+      await cleanupPublicSourceRateLimits();
       const candidates = await store.listReconciliationCandidates(input);
       return {
         candidates: candidates.map((candidate) => ({

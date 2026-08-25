@@ -14,7 +14,8 @@
     "verify": "nx run workspace:verify",
     "db:reset": "nx run db:reset",
     "test": "nx run workspace:unit",
-    "eval:golden": "tsx evals/runner.ts"
+    "eval:golden": "tsx evals/runner.ts",
+    "eval:prompt": "tsx scripts/ingest-prompt-evaluation.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

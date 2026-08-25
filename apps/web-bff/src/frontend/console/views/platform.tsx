@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ConsolePlatformConfigurationStateDto } from "@review/contracts/console";
 
 import type { ConsoleClient } from "../console-client.js";
 import { useConsoleCommand, useConsoleView } from "../console-queries.js";
@@ -13,6 +14,49 @@ import styles from "../operator-console.module.css";
 import type { ConsoleScopeController } from "../use-console-scope.js";
 
 const platformScope = { tenantId: null, locationId: null } as const;
+
+function PlatformDraftActions({
+  configuration,
+  pending,
+  onCancel,
+  onPublish,
+}: {
+  readonly configuration: ConsolePlatformConfigurationStateDto;
+  readonly pending: boolean;
+  readonly onCancel: () => void;
+  readonly onPublish: () => void;
+}): React.JSX.Element {
+  return (
+    <section aria-label="Platform Configuration Draft" className={styles.form}>
+      <h2 className={styles.sectionLabel}>Platform Configuration Draft</h2>
+      <p className={styles.emptyCopy}>
+        {configuration.draft === null
+          ? "No Platform changes are staged."
+          : `${configuration.draft.changes.length} change(s) staged. Publication updates every Location snapshot atomically.`}
+      </p>
+      {configuration.draft === null ? null : (
+        <p className={styles.buttonRow}>
+          <button
+            type="button"
+            className={styles.buttonPrimary}
+            disabled={pending}
+            onClick={onPublish}
+          >
+            Publish Platform Draft
+          </button>
+          <button
+            type="button"
+            className={styles.button}
+            disabled={pending}
+            onClick={onCancel}
+          >
+            Cancel Platform Draft
+          </button>
+        </p>
+      )}
+    </section>
+  );
+}
 
 export function PlatformTenantsView({
   client,
@@ -280,7 +324,11 @@ export function PlatformProvidersView({
     view: "platform-providers",
     scope: platformScope,
   });
-  const command = useConsoleCommand({ client, scope: platformScope });
+  const command = useConsoleCommand({
+    client,
+    scope: platformScope,
+    ifMatch: providers.data?.configuration.etag,
+  });
   const [price, setPrice] = useState({
     model: "",
     inputPerMillion: "2.50",
@@ -364,18 +412,25 @@ export function PlatformProvidersView({
                   <button
                     type="button"
                     className={styles.button}
-                    disabled={command.isPending}
+                    disabled={command.isPending || row.routingPriority === 1}
                     onClick={() =>
                       command.mutate({
-                        command: "set-provider-routing",
-                        providerKey: row.providerKey,
-                        modelKey: row.modelKey,
-                        routingPriority: row.routingPriority === 1 ? null : 1,
-                        fallbackPriority: row.routingPriority === 1 ? 1 : null,
+                        command: "stage-platform-configuration-changes",
+                        changes: [
+                          {
+                            operation: "set-provider-routing",
+                            providerKey: row.providerKey,
+                            modelKey: row.modelKey,
+                            routingPriority: 1,
+                            fallbackPriority: null,
+                          },
+                        ],
                       })
                     }
                   >
-                    {row.routingPriority === 1 ? "Make fallback" : "Make primary"}
+                    {row.routingPriority === 1
+                      ? "Current primary"
+                      : "Stage as primary"}
                   </button>
                 ),
               },
@@ -430,21 +485,28 @@ export function PlatformProvidersView({
               event.preventDefault();
               const [providerKey = "", modelKey = ""] = selectedModel.split(":");
               command.mutate({
-                command: "publish-price-rate",
-                providerKey,
-                modelKey,
-                inputMicrosPerMillion: Math.round(
-                  Number(price.inputPerMillion) * 1_000_000,
-                ),
-                outputMicrosPerMillion: Math.round(
-                  Number(price.outputPerMillion) * 1_000_000,
-                ),
-                currency: price.currency,
-                validFrom: new Date(`${price.validFrom}T00:00:00.000Z`).toISOString(),
+                command: "stage-platform-configuration-changes",
+                changes: [
+                  {
+                    operation: "publish-price-rate",
+                    providerKey,
+                    modelKey,
+                    inputMicrosPerMillion: Math.round(
+                      Number(price.inputPerMillion) * 1_000_000,
+                    ),
+                    outputMicrosPerMillion: Math.round(
+                      Number(price.outputPerMillion) * 1_000_000,
+                    ),
+                    currency: price.currency,
+                    validFrom: new Date(
+                      `${price.validFrom}T00:00:00.000Z`,
+                    ).toISOString(),
+                  },
+                ],
               });
             }}
           >
-            <h2 className={styles.sectionLabel}>Publish a price version</h2>
+            <h2 className={styles.sectionLabel}>Stage a price version</h2>
             <p className={styles.emptyCopy}>
               The current version is closed at this start date and kept, so a
               Generation from before it still costs at the old price.
@@ -518,6 +580,9 @@ export function PlatformProvidersView({
                 <input
                   required
                   type="date"
+                  min={new Date(Date.now() + 86_400_000)
+                    .toISOString()
+                    .slice(0, 10)}
                   value={price.validFrom}
                   onChange={(event) =>
                     setPrice((current) => ({
@@ -532,10 +597,22 @@ export function PlatformProvidersView({
                 type="submit"
                 disabled={command.isPending || models.length === 0}
               >
-                Publish price version
+                Stage price version
               </button>
             </div>
           </form>
+          <PlatformDraftActions
+            configuration={providers.data.configuration}
+            pending={command.isPending}
+            onPublish={() =>
+              command.mutate({ command: "publish-platform-configuration" })
+            }
+            onCancel={() =>
+              command.mutate({
+                command: "cancel-platform-configuration-draft",
+              })
+            }
+          />
         </>
       )}
     </>
@@ -654,7 +731,11 @@ export function PlatformSettingsView({
     view: "platform-settings",
     scope: platformScope,
   });
-  const command = useConsoleCommand({ client, scope: platformScope });
+  const command = useConsoleCommand({
+    client,
+    scope: platformScope,
+    ifMatch: settings.data?.configuration.etag,
+  });
   const [retention, setRetention] = useState<number | null>(null);
 
   return (
@@ -671,14 +752,19 @@ export function PlatformSettingsView({
           onSubmit={(event) => {
             event.preventDefault();
             command.mutate({
-              command: "save-platform-settings",
-              defaultPolicyTemplate: settings.data.defaultPolicyTemplate,
-              globalRateLimits: settings.data.globalRateLimits,
-              logRetentionDays: retention ?? settings.data.logRetentionDays,
-              featureFlags: settings.data.featureFlags.map((flag) => ({
-                key: flag.key,
-                enabled: flag.enabled,
-              })),
+              command: "stage-platform-configuration-changes",
+              changes: [
+                {
+                  operation: "save-platform-settings",
+                  defaultPolicyTemplate: settings.data.defaultPolicyTemplate,
+                  globalRateLimits: settings.data.globalRateLimits,
+                  logRetentionDays: retention ?? settings.data.logRetentionDays,
+                  featureFlags: settings.data.featureFlags.map((flag) => ({
+                    key: flag.key,
+                    enabled: flag.enabled,
+                  })),
+                },
+              ],
             });
           }}
         >
@@ -739,10 +825,22 @@ export function PlatformSettingsView({
               type="submit"
               disabled={command.isPending}
             >
-              Save platform settings
+              Stage platform settings
             </button>
           </p>
           <RejectionNotice error={command.error} />
+          <PlatformDraftActions
+            configuration={settings.data.configuration}
+            pending={command.isPending}
+            onPublish={() =>
+              command.mutate({ command: "publish-platform-configuration" })
+            }
+            onCancel={() =>
+              command.mutate({
+                command: "cancel-platform-configuration-draft",
+              })
+            }
+          />
         </form>
       )}
     </>

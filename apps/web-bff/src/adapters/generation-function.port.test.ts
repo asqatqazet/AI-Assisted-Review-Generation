@@ -1,7 +1,12 @@
 import { GenerationWorkloadDtoSchema } from "@review/contracts/generation";
 import { describe, expect, it } from "vitest";
 
-import { createInvokedReviewerGenerationExecutionPort } from "./generation-function.port.js";
+import { createInvokedReconciliationContextPort } from "./context-function.port.js";
+import {
+  createInvokedConsoleBenchExecutionPort,
+  createInvokedReconciliationGenerationPort,
+  createInvokedReviewerGenerationExecutionPort,
+} from "./generation-function.port.js";
 
 const workload = GenerationWorkloadDtoSchema.parse({
   bindings: {
@@ -37,6 +42,8 @@ const workload = GenerationWorkloadDtoSchema.parse({
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 1,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 4000,
       bannedTerms: [],
       enabledReviewFormatVersionIds: ["format-a@1"],
       enabledCommands: ["generate"],
@@ -90,7 +97,80 @@ const workload = GenerationWorkloadDtoSchema.parse({
   ],
 });
 
+describe("invoked reconciliation Context port", () => {
+  it("settles a recovered terminal receipt against its immutable workload", async () => {
+    let received: unknown;
+    const port = createInvokedReconciliationContextPort({
+      invoke: async (request) => {
+        received = request;
+        return {
+          operation: "settle-generation",
+          result: { status: "settled" },
+        };
+      },
+    });
+
+    await expect(
+      port.settle({
+        terminalReceipt: "signed-recovered-terminal",
+        workload,
+      }),
+    ).resolves.toEqual({ status: "settled" });
+    expect(received).toEqual({
+      operation: "settle-generation",
+      input: {
+        terminalReceipt: "signed-recovered-terminal",
+        workload,
+      },
+    });
+  });
+});
+
 describe("invoked reviewer Generation execution port", () => {
+  it("recovers a terminal checkpoint through the strict status contract", async () => {
+    let received: unknown;
+    const port = createInvokedReconciliationGenerationPort({
+      invoke: async (request) => {
+        received = request;
+        return {
+          operation: "status",
+          state: "terminal",
+          terminalReceipt: "signed-recovered-terminal",
+        };
+      },
+    });
+
+    await expect(
+      port.status({ permitJti: "permit-a", workload }),
+    ).resolves.toEqual({
+      operation: "status",
+      state: "terminal",
+      terminalReceipt: "signed-recovered-terminal",
+    });
+    expect(received).toEqual({
+      operation: "status",
+      permitJti: "permit-a",
+      workload,
+    });
+  });
+
+  it("uses the dedicated non-streaming Bench operation", async () => {
+    let received: unknown;
+    const port = createInvokedConsoleBenchExecutionPort({
+      invoke: async (request) => {
+        received = request;
+        return { operation: "console-bench", result: { status: "not-found" } };
+      },
+    });
+    await expect(
+      port.execute({ receipt: "signed-bench", workload }),
+    ).resolves.toEqual({ status: "not-found" });
+    expect(received).toEqual({
+      operation: "console-bench",
+      input: { receipt: "signed-bench", workload },
+    });
+  });
+
   it("uses the strict private prepare contract", async () => {
     let received: unknown;
     const port = createInvokedReviewerGenerationExecutionPort({
@@ -147,6 +227,7 @@ describe("invoked reviewer Generation execution port", () => {
               generationId: "generation-a",
               revision: 1,
               text: "The team was attentive.",
+              systemAnnotations: [],
             },
           });
         }
@@ -166,6 +247,7 @@ describe("invoked reviewer Generation execution port", () => {
           generationId: "generation-a",
           revision: 1,
           text: "The team was attentive.",
+          systemAnnotations: [],
         },
       },
     ]);

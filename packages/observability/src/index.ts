@@ -14,26 +14,77 @@ export interface GenerationMetric {
 }
 
 const REDACTED_KEYS = new Set([
+  "activation",
+  "apikey",
+  "assertion",
+  "assertions",
+  "authorization",
+  "body",
+  "browsercapability",
+  "candidate",
+  "candidatetext",
+  "claim",
+  "claims",
+  "cookie",
+  "credential",
+  "credentialreference",
+  "csrftoken",
+  "customerassertion",
   "draft",
   "freetext",
+  "invitationtoken",
+  "permit",
   "prompt",
+  "proposition",
+  "providerresponse",
+  "quotedtext",
   "rawdraft",
+  "requestpayload",
+  "responsebody",
+  "setcookie",
+  "snapshot",
+  "sourcetext",
   "submittedtext",
+  "terminalreceipt",
+  "unsupportedoutput",
   "userinput",
   "customertext",
 ]);
+
+const normalizedKey = (key: string): string =>
+  key.toLowerCase().replaceAll(/[^a-z0-9]/g, "");
+
+const mustRedact = (key: string): boolean => {
+  const normalized = normalizedKey(key);
+  return (
+    REDACTED_KEYS.has(normalized) ||
+    normalized.endsWith("secret") ||
+    normalized.endsWith("permit") ||
+    normalized.endsWith("receipt") ||
+    normalized.endsWith("capability") ||
+    normalized === "token" ||
+    normalized.endsWith("tokenhash")
+  );
+};
+
+const redactValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map((item) => redactValue(item));
+  }
+  if (value !== null && typeof value === "object") {
+    return redactDraftText(value as Record<string, unknown>);
+  }
+  return value;
+};
 
 export function redactDraftText<T extends Record<string, unknown>>(obj: T): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(obj)) {
-    const lowerKey = key.toLowerCase();
-    if (REDACTED_KEYS.has(lowerKey)) {
+    if (mustRedact(key)) {
       result[key] = "[REDACTED]";
-    } else if (value && typeof value === "object" && !Array.isArray(value)) {
-      result[key] = redactDraftText(value as Record<string, unknown>);
     } else {
-      result[key] = value;
+      result[key] = redactValue(value);
     }
   }
 

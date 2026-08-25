@@ -63,6 +63,7 @@ declare module "*.module.css" {
     readonly progressMeta: string;
     readonly progressTitle: string;
     readonly progressTrack: string;
+    readonly release: string;
     readonly ratingButton: string;
     readonly ratingGroup: string;
     readonly ratingSection: string;
@@ -79,8 +80,10 @@ declare module "*.module.css" {
     readonly editedState: string;
     readonly finalReviewText: string;
     readonly provenance: string;
+    readonly provenanceList: string;
     readonly reviewForm: string;
     readonly reviewTextarea: string;
+    readonly verificationInput: string;
     readonly sectionTitle: string;
     readonly secondaryButton: string;
     readonly selectionCount: string;
@@ -130,6 +133,8 @@ declare module "*.module.css" {
     readonly detailList: string;
     readonly statusPass: string;
     readonly statusFail: string;
+    readonly systemAnnotation: string;
+    readonly systemAnnotations: string;
     readonly settingControl: string;
     readonly settingTextarea: string;
     readonly settingToggle: string;

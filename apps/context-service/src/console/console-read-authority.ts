@@ -1,10 +1,5 @@
 import { createPrivateKey, sign as signBytes, type KeyObject } from "node:crypto";
 
-import type {
-  ConsoleReadQueryDto,
-  ConsoleReadScopeDto,
-} from "@review/contracts/console";
-
 /**
  * Signs the scope Context authorized so the execution plane can trust it
  * without holding Access Grants. Deliberately separate from the paid-work
@@ -13,8 +8,9 @@ import type {
  */
 export interface ConsoleReadAuthority {
   signRead(input: {
-    readonly scope: ConsoleReadScopeDto;
-    readonly query: ConsoleReadQueryDto;
+    readonly authorizationId: string;
+    readonly view: "overview" | "analytics" | "generation-detail";
+    readonly readMode: "redacted" | "audit";
     readonly expiresAt: string;
   }): string;
 }
@@ -25,20 +21,19 @@ const encode = (value: string | Buffer): string =>
 export const CONSOLE_READ_AUDIENCE = "console-read";
 
 export function createConsoleReadAuthority({
-  contextPrivateKeyPem,
+  consoleAuthorityPrivateKeyPem,
 }: {
-  readonly contextPrivateKeyPem: string;
+  readonly consoleAuthorityPrivateKeyPem: string;
 }): ConsoleReadAuthority {
-  const privateKey: KeyObject = createPrivateKey(contextPrivateKeyPem);
+  const privateKey: KeyObject = createPrivateKey(consoleAuthorityPrivateKeyPem);
   return {
-    signRead({ scope, query, expiresAt }) {
+    signRead({ authorizationId, view, readMode, expiresAt }) {
       const payload = encode(
         JSON.stringify({
           audience: CONSOLE_READ_AUDIENCE,
-          scope,
-          // The query is bound in, so a receipt for one venue's overview
-          // cannot be replayed to read another view or another range.
-          query,
+          authorizationId,
+          view,
+          readMode,
           expiresAt,
         }),
       );

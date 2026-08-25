@@ -11,11 +11,37 @@ describe("US-03.2 database-time execution fence", () => {
     __dirname,
     "../prisma/migrations/20260817000004_execution_fence/migration.sql",
   );
+  const recoveryMigrationPath = path.resolve(
+    __dirname,
+    "../prisma/migrations/20260824000030_provider_result_checkpoint/migration.sql",
+  );
 
   it("represents an Attempt claimed before provider completion", () => {
     expect(schema).toMatch(
       /enum ProviderAttemptStatus\s*\{[\s\S]*RUNNING[\s\S]*SUCCEEDED[\s\S]*FAILED[\s\S]*TIMED_OUT[\s\S]*CANCELLED[\s\S]*\}/,
     );
+  });
+
+  it("separates a durable Provider result checkpoint from its Provider receipt", () => {
+    const sql = fs.readFileSync(recoveryMigrationPath, "utf8");
+
+    expect(schema).toMatch(
+      /enum ProviderAttemptStatus\s*\{[\s\S]*RUNNING[\s\S]*CHECKPOINTED[\s\S]*SUCCEEDED/,
+    );
+    expect(schema).toMatch(
+      /model ProviderAttempt\s*\{[\s\S]*providerOutput\s+Json\?[\s\S]*providerResponse\s+Json\?[\s\S]*resultCheckpoint\s+Json\?[\s\S]*resultCheckpointedAt/,
+    );
+    expect(schema).toMatch(
+      /model Generation\s*\{[\s\S]*providerOutput\s+Json\?/,
+    );
+    expect(sql).toContain("ADD VALUE 'CHECKPOINTED'");
+    expect(sql).toContain("ADD COLUMN provider_output jsonb");
+    expect(sql).toContain("ADD COLUMN result_checkpoint jsonb");
+    expect(sql).toContain("ALTER COLUMN provider_output TYPE jsonb");
+    expect(sql).toMatch(
+      /console_execution_generation_detail_audit[\s\S]*?auth_record\.may_read_raw[\s\S]*?'\{generation,providerOutput\}'/u,
+    );
+    expect(sql).toContain("SET search_path = pg_catalog, public, pg_temp");
   });
 
   it("uses database time to prepare a finite, idempotent no-provider lease", () => {

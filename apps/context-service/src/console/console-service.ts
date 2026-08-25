@@ -1,9 +1,14 @@
 import type {
   ConsoleBootstrapDto,
   ConsoleCommandDto,
+  ConsoleConfigurationDraftChangeDto,
+  ConsolePlatformConfigurationDraftChangeDto,
   ConsolePromptComparisonDto,
   ConsolePromptVersionDto,
   ConsoleQueryDto,
+  AuthorizeConsoleReadInvocationDto,
+  AuthorizeConsoleReadInvocationResultDto,
+  ConsoleReadQueryDto,
   ConsoleRequestInvocationDto,
   ConsoleRequestInvocationResultDto,
 } from "@review/contracts/console";
@@ -11,10 +16,11 @@ import type {
   OperatorAccessProjectionDto,
   OperatorIdentityDto,
 } from "@review/contracts/context";
+import { EffectiveConfigurationSnapshotDtoSchema } from "@review/contracts/shared";
+import { deriveConfigSnapshotId } from "@review/domain/configuration";
 import {
   applyLocationOverride,
   clearLocationOverride,
-  decideExperimentMutation,
   deriveConsoleCapabilities,
   deriveConsoleRole,
   nextPublishedVersion,
@@ -24,6 +30,9 @@ import {
 import { derivePromptVersionHash } from "@review/domain/experiment";
 
 import { validateStyleManifest } from "./manifest-rules.js";
+import { projectPublishedConsoleBenchForm } from "./console-bench-form.js";
+import type { ConsoleExecutionAuthorizationStore } from "./console-execution-authorization.port.js";
+import type { ConsoleReadAuthority } from "./console-read-authority.js";
 import {
   projectActions,
   projectContext,
@@ -56,6 +65,68 @@ type AuthorizedAccess = Extract<
 >;
 
 const NOT_FOUND: Result = { status: "not-found" };
+const READ_NOT_FOUND: AuthorizeConsoleReadInvocationResultDto["result"] = {
+  status: "not-found",
+};
+
+function changeBelongsToConfigurationScope(
+  change: ConsoleConfigurationDraftChangeDto,
+  locationId: string | null,
+): boolean {
+  if ("key" in change && !("operation" in change)) {
+    return locationId === null;
+  }
+  switch (change.operation) {
+    case "set-location-override":
+    case "reset-location-override":
+      return locationId !== null;
+    case "create-fact-option":
+      return (change.ownerScope === "location") === (locationId !== null);
+    case "update-fact-option":
+    case "reorder-fact-options":
+    case "delete-fact-option":
+      return true;
+    case "set-review-format-enablement":
+    case "reorder-review-formats":
+    case "set-action-enablement":
+    case "deploy-prompt-version":
+      return locationId === null;
+  }
+}
+
+function accessHasTenantCapability(
+  access: AuthorizedAccess,
+  tenantId: string,
+  capability: string,
+): boolean {
+  return (
+    access.tenantGrants.some(
+      (grant) =>
+        grant.tenantId === tenantId && grant.capabilities.includes(capability),
+    ) ||
+    access.platformGrants.some((grant) => grant.capabilities.includes(capability))
+  );
+}
+
+function accessHasPlatformCapability(
+  access: AuthorizedAccess,
+  capability: string,
+): boolean {
+  return access.platformGrants.some((grant) =>
+    grant.capabilities.includes(capability),
+  );
+}
+
+function canApplyPlatformChanges(
+  access: AuthorizedAccess,
+  changes: readonly ConsolePlatformConfigurationDraftChangeDto[],
+): boolean {
+  return (
+    accessHasPlatformCapability(access, "platform:admin") &&
+    (changes.every((change) => change.operation === "save-platform-settings") ||
+      accessHasPlatformCapability(access, "provider:manage"))
+  );
+}
 
 export interface ConsoleServiceOptions {
   readonly store: ConsoleControlPlaneStoreFactory;
@@ -70,12 +141,22 @@ export interface ConsoleServiceOptions {
   ) => Promise<OperatorAccessProjectionDto>;
   readonly now?: (() => Date) | undefined;
   readonly overviewWindowDays?: number | undefined;
+  /** The assessment deployment must not advertise a paid path it cannot fund. */
+  readonly providerMode?: "configured" | "fake-only" | undefined;
+  readonly readAuthority?: ConsoleReadAuthority | undefined;
+  readonly executionAuthorizationStore?:
+    | ConsoleExecutionAuthorizationStore
+    | undefined;
+  readonly readReceiptTtlMs?: number | undefined;
 }
 
 export interface ConsoleService {
   request(
     input: ConsoleRequestInvocationDto["input"],
   ): Promise<Result>;
+  authorizeRead(
+    input: AuthorizeConsoleReadInvocationDto["input"],
+  ): Promise<AuthorizeConsoleReadInvocationResultDto["result"]>;
 }
 
 export function createConsoleService({
@@ -84,8 +165,70 @@ export function createConsoleService({
   resolveAccess,
   now = () => new Date(),
   overviewWindowDays = 30,
+  providerMode = "configured",
+  readAuthority,
+  executionAuthorizationStore,
+  readReceiptTtlMs = 30_000,
 }: ConsoleServiceOptions): ConsoleService {
   return {
+    async authorizeRead(input) {
+      if (
+        readAuthority === undefined ||
+        executionAuthorizationStore === undefined
+      ) {
+        return { status: "unavailable" };
+      }
+      const access = await resolveAccess(input.identity);
+      if (access.status !== "authorized") {
+        return READ_NOT_FOUND;
+      }
+      const scopedStore = store.forOperator(access.operator.id);
+      const resolved = await resolveConsoleScope({
+        access,
+        request: input.scope,
+        policy: QUERY_POLICIES[input.query.view],
+        store: scopedStore,
+      });
+      if (resolved.status === "denied") {
+        return READ_NOT_FOUND;
+      }
+      const issuedAt = now();
+      const query: ConsoleReadQueryDto =
+        input.query.view === "overview"
+          ? {
+              view: "overview",
+              from: new Date(
+                issuedAt.getTime() - overviewWindowDays * 24 * 60 * 60 * 1000,
+              ).toISOString(),
+              to: issuedAt.toISOString(),
+            }
+          : input.query;
+      const scope = resolved.selector;
+      const requestedExpiresAt = new Date(
+        issuedAt.getTime() + readReceiptTtlMs,
+      ).toISOString();
+      const minted = await executionAuthorizationStore.mint({
+        operatorId: access.operator.id,
+        scope,
+        query,
+        expiresAt: requestedExpiresAt,
+      });
+      if (minted === null) {
+        return READ_NOT_FOUND;
+      }
+      return {
+        status: "authorized",
+        authorizationId: minted.authorizationId,
+        receipt: readAuthority.signRead({
+          authorizationId: minted.authorizationId,
+          view: query.view,
+          readMode: minted.readMode,
+          expiresAt: minted.expiresAt,
+        }),
+        projectionScope: resolved.scope,
+        query,
+      };
+    },
     async request(input) {
       const access = await resolveAccess(input.identity);
       if (access.status !== "authorized") {
@@ -118,9 +261,11 @@ export function createConsoleService({
             executionStore,
             now,
             overviewWindowDays,
+            providerMode,
           })
         : await runCommand({
             command: input.request.command,
+            ifMatch: input.ifMatch ?? null,
             access,
             scope,
             store: scopedStore,
@@ -185,6 +330,7 @@ async function runQuery({
   executionStore,
   now,
   overviewWindowDays,
+  providerMode,
 }: {
   readonly query: ConsoleQueryDto;
   readonly access: AuthorizedAccess;
@@ -194,6 +340,7 @@ async function runQuery({
   readonly executionStore: ConsoleExecutionStore | undefined;
   readonly now: () => Date;
   readonly overviewWindowDays: number;
+  readonly providerMode: "configured" | "fake-only";
 }): Promise<Result> {
   const capabilities = deriveConsoleCapabilities(access);
   const editable = capabilities.canManageConfiguration;
@@ -252,15 +399,34 @@ async function runQuery({
       if (tenant === null) {
         return NOT_FOUND;
       }
+      const state = await store.readConfigurationState({
+        tenantId: tenant.id,
+        locationId: null,
+      });
+      if (state === null) {
+        return NOT_FOUND;
+      }
       return view({
         view: "tenant-settings",
-        data: projectTenantSettings({ scope: scope.scope, tenant, editable }),
+        data: projectTenantSettings({
+          scope: scope.scope,
+          tenant,
+          editable,
+          configuration: configurationProjection(tenant.id, null, state),
+        }),
       });
     }
 
     case "location-settings": {
       const resolved = await requireLocation(store, scope);
       if (resolved === null) {
+        return NOT_FOUND;
+      }
+      const state = await store.readConfigurationState({
+        tenantId: resolved.tenant.id,
+        locationId: resolved.location.id,
+      });
+      if (state === null) {
         return NOT_FOUND;
       }
       return view({
@@ -270,6 +436,11 @@ async function runQuery({
           tenant: resolved.tenant,
           location: resolved.location,
           editable,
+          configuration: configurationProjection(
+            resolved.tenant.id,
+            resolved.location.id,
+            state,
+          ),
         }),
       });
     }
@@ -538,12 +709,47 @@ async function runQuery({
       if (tenant === null) {
         return NOT_FOUND;
       }
-      const [actions, styles, prompts, keywords] = await Promise.all([
-        store.listActions(tenant.id),
-        store.listStyles(tenant.id),
-        store.listPrompts(tenant.id, null),
-        store.listKeywords(tenant.id, scope.locationId),
-      ]);
+      const locationId = scope.locationId;
+      const options =
+        locationId === null
+          ? {
+              actions: [],
+              styles: [],
+              promptVersions: [],
+              providers: [],
+              keywords: [],
+            }
+          : await (async () => {
+              const published =
+                await store.readPublishedConfigurationSnapshot({
+                  tenantId: tenant.id,
+                  locationId,
+                });
+              if (published === null) {
+                return null;
+              }
+              const parsed = EffectiveConfigurationSnapshotDtoSchema.safeParse(
+                published.payload,
+              );
+              if (
+                !parsed.success ||
+                deriveConfigSnapshotId(parsed.data) !== published.contentHash
+              ) {
+                return null;
+              }
+              return projectPublishedConsoleBenchForm({
+                snapshot: parsed.data,
+                tenantId: tenant.id,
+                locationId,
+                now: now(),
+              });
+            })();
+      if (options === null) {
+        return rejected(
+          "VIEW_NOT_AVAILABLE",
+          "Publish one complete zero-cost Location configuration before running the Generation bench.",
+        );
+      }
       let prefill = null;
       let missing: readonly string[] = [];
       if (query.replayGenerationId !== null) {
@@ -567,22 +773,7 @@ async function runQuery({
         view: "bench-form",
         data: {
           scope: scope.scope,
-          actions: actions.map((action) => ({
-            key: action.key,
-            label: action.label,
-            requiredInputs: [...action.requiredInputs],
-          })),
-          styles: styles.map((style) => ({
-            id: style.id,
-            name: style.name,
-            supportedActions: [...style.supportedActions],
-          })),
-          promptVersions: prompts.map(promptRow),
-          providers: [...(await benchProviders(store))],
-          keywords: keywords.map((keyword) => ({
-            id: keyword.id,
-            label: keyword.label,
-          })),
+          ...options,
           prefill,
           missingReplayDependencies: [...missing],
         },
@@ -643,10 +834,30 @@ async function runQuery({
       });
 
     case "platform-providers":
+      {
+        const [providers, configurationState] = await Promise.all([
+          store.readPlatformProviders(),
+          store.readPlatformConfigurationState(),
+        ]);
+        const visibleModels =
+          providerMode === "fake-only"
+            ? providers.models.filter((model) => model.providerKey === "fake")
+            : providers.models;
+        const visibleProviderKeys = new Set(
+          visibleModels.map((model) => model.providerKey),
+        );
       return view({
         view: "platform-providers",
-        data: { scope: "platform", ...(await store.readPlatformProviders()) },
+        data: {
+          scope: "platform",
+          configuration: platformConfigurationProjection(configurationState),
+          models: visibleModels,
+          priceVersions: providers.priceVersions.filter((price) =>
+            visibleProviderKeys.has(price.providerKey),
+          ),
+        },
       });
+      }
 
     case "platform-styles":
       return view({
@@ -655,34 +866,21 @@ async function runQuery({
       });
 
     case "platform-settings":
-      return view({
-        view: "platform-settings",
-        data: { scope: "platform", ...(await store.readPlatformSettings()) },
-      });
+      {
+        const [settings, configurationState] = await Promise.all([
+          store.readPlatformSettings(),
+          store.readPlatformConfigurationState(),
+        ]);
+        return view({
+          view: "platform-settings",
+          data: {
+            scope: "platform",
+            configuration: platformConfigurationProjection(configurationState),
+            ...settings,
+          },
+        });
+      }
   }
-}
-
-async function benchProviders(
-  store: ConsoleControlPlaneStore,
-): Promise<
-  readonly {
-    readonly key: string;
-    readonly displayName: string;
-    readonly isTestProvider: boolean;
-  }[]
-> {
-  const providers = await store.readPlatformProviders();
-  const unique = new Map<string, { key: string; displayName: string }>();
-  for (const model of providers.models) {
-    unique.set(model.providerKey, {
-      key: model.providerKey,
-      displayName: model.providerName,
-    });
-  }
-  return [...unique.values()].map((provider) => ({
-    ...provider,
-    isTestProvider: provider.key === "fake",
-  }));
 }
 
 function asView(view: Extract<Result, { status: "view" }>["view"]): Result {
@@ -753,8 +951,103 @@ const ACCEPTED: Result = {
   result: { outcome: "accepted" },
 };
 
+function configurationEtag(
+  tenantId: string,
+  locationId: string | null,
+  revision: string,
+  draft: { readonly id: string; readonly revision: string } | null,
+): string {
+  const draftVersion =
+    draft === null ? "draft:none" : `draft:${draft.id}:${draft.revision}`;
+  return `"configuration:${tenantId}:${locationId ?? "tenant"}:${revision}:${draftVersion}"`;
+}
+
+function configurationProjection(
+  tenantId: string,
+  locationId: string | null,
+  state: {
+    readonly revision: string;
+    readonly draft: {
+      readonly id: string;
+      readonly revision: string;
+      readonly baseRevision: string;
+      readonly changes: readonly ConsoleConfigurationDraftChangeDto[];
+    } | null;
+  },
+) {
+  return {
+    etag: configurationEtag(tenantId, locationId, state.revision, state.draft),
+    draft:
+      state.draft === null
+        ? null
+        : {
+            baseEtag: configurationEtag(
+              tenantId,
+              locationId,
+              state.draft.baseRevision,
+              null,
+            ),
+            changes: [...state.draft.changes],
+          },
+  };
+}
+
+function platformConfigurationEtag(
+  revision: string,
+  draft: { readonly id: string; readonly revision: string } | null,
+): string {
+  const draftVersion =
+    draft === null ? "draft:none" : `draft:${draft.id}:${draft.revision}`;
+  return `"platform-configuration:${revision}:${draftVersion}"`;
+}
+
+function platformConfigurationProjection(state: {
+  readonly revision: string;
+  readonly draft: {
+    readonly id: string;
+    readonly revision: string;
+    readonly baseRevision: string;
+    readonly changes: readonly ConsolePlatformConfigurationDraftChangeDto[];
+  } | null;
+}) {
+  return {
+    etag: platformConfigurationEtag(state.revision, state.draft),
+    draft:
+      state.draft === null
+        ? null
+        : {
+            baseEtag: platformConfigurationEtag(
+              state.draft.baseRevision,
+              null,
+            ),
+            changes: [...state.draft.changes],
+          },
+  };
+}
+
+function parsePlatformConfigurationEtag(etag: string): {
+  readonly revision: string;
+  readonly draft: { readonly id: string; readonly revision: string } | null;
+} | null {
+  const noDraft = /^"platform-configuration:(\d+):draft:none"$/u.exec(etag);
+  if (noDraft !== null) {
+    return { revision: noDraft[1]!, draft: null };
+  }
+  const draft =
+    /^"platform-configuration:(\d+):draft:([A-Za-z0-9_-]+):(\d+)"$/u.exec(
+      etag,
+    );
+  return draft === null
+    ? null
+    : {
+        revision: draft[1]!,
+        draft: { id: draft[2]!, revision: draft[3]! },
+      };
+}
+
 async function runCommand({
   command,
+  ifMatch,
   access,
   scope,
   store,
@@ -762,6 +1055,7 @@ async function runCommand({
   now,
 }: {
   readonly command: ConsoleCommandDto;
+  readonly ifMatch: string | null;
   readonly access: AuthorizedAccess;
   readonly scope: ResolvedOk;
   readonly store: ConsoleControlPlaneStore;
@@ -809,15 +1103,289 @@ async function runCommand({
       return ACCEPTED;
     }
 
-    case "save-tenant-settings": {
+    case "save-tenant-settings":
+    case "stage-configuration-changes": {
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      await store.saveTenantSettings({
+      const changes = command.changes;
+      if (
+        changes.some(
+          (change) =>
+            !changeBelongsToConfigurationScope(change, scope.locationId),
+        )
+      ) {
+        return rejected(
+          "INVALID_VALUE",
+          "A Draft change must belong to the Tenant or Location scope being edited.",
+        );
+      }
+      if (
+        changes.some(
+          (change) =>
+            "operation" in change &&
+            change.operation === "deploy-prompt-version",
+        ) &&
+        !accessHasTenantCapability(access, scope.tenantId, "ai:operate")
+      ) {
+        return NOT_FOUND;
+      }
+      const promptDeployments = changes.flatMap((change) =>
+        "operation" in change &&
+        change.operation === "deploy-prompt-version"
+          ? [
+              {
+                action: change.action,
+                promptVersionId: change.promptVersionId,
+              },
+            ]
+          : [],
+      );
+      for (const deployment of promptDeployments) {
+        const prompt = await store.readPrompt(
+          scope.tenantId,
+          deployment.promptVersionId,
+        );
+        if (prompt === null || prompt.action !== deployment.action) {
+          return rejected(
+            "INVALID_VALUE",
+            "The staged Prompt Version must belong to the selected Action.",
+          );
+        }
+      }
+      const state = await store.readConfigurationState({
         tenantId: scope.tenantId,
-        values: command.values,
+        locationId: scope.locationId,
       });
-      return ACCEPTED;
+      if (
+        state === null ||
+        ifMatch === null ||
+        ifMatch !==
+          configurationEtag(
+            scope.tenantId,
+            scope.locationId,
+            state.revision,
+            state.draft,
+          )
+      ) {
+        return rejected(
+          "CONFIG_CONFLICT",
+          "This configuration changed after you opened it. Reload before saving.",
+        );
+      }
+      const saved = await store.saveConfigurationDraft({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        expectedRevision: state.revision,
+        expectedDraft:
+          state.draft === null
+            ? null
+            : { id: state.draft.id, revision: state.draft.revision },
+        changes,
+        actorId: access.operator.id,
+      });
+      return saved.status === "conflict"
+        ? rejected(
+            "CONFIG_CONFLICT",
+            "This configuration changed after you opened it. Reload before saving.",
+          )
+        : ACCEPTED;
+    }
+
+    case "stage-platform-configuration-changes": {
+      if (!canApplyPlatformChanges(access, command.changes)) {
+        return NOT_FOUND;
+      }
+      const state = await store.readPlatformConfigurationState();
+      if (
+        ifMatch === null ||
+        ifMatch !== platformConfigurationEtag(state.revision, state.draft)
+      ) {
+        return rejected(
+          "CONFIG_CONFLICT",
+          "This Platform configuration changed after you opened it. Reload before saving.",
+        );
+      }
+      const saved = await store.savePlatformConfigurationDraft({
+        expectedRevision: state.revision,
+        expectedDraft:
+          state.draft === null
+            ? null
+            : { id: state.draft.id, revision: state.draft.revision },
+        changes: command.changes,
+        actorId: access.operator.id,
+      });
+      return saved.status === "conflict"
+        ? rejected(
+            "CONFIG_CONFLICT",
+            "This Platform configuration changed after you opened it. Reload before saving.",
+          )
+        : ACCEPTED;
+    }
+
+    case "cancel-platform-configuration-draft": {
+      const state = await store.readPlatformConfigurationState();
+      if (!canApplyPlatformChanges(access, state.draft?.changes ?? [])) {
+        return NOT_FOUND;
+      }
+      if (
+        state.draft === null ||
+        ifMatch === null ||
+        ifMatch !== platformConfigurationEtag(state.revision, state.draft)
+      ) {
+        return rejected(
+          "CONFIG_CONFLICT",
+          "This Platform configuration changed after you opened it. Reload before continuing.",
+        );
+      }
+      const cancelled = await store.cancelPlatformConfigurationDraft({
+        expectedRevision: state.revision,
+        expectedDraft: {
+          id: state.draft.id,
+          revision: state.draft.revision,
+        },
+      });
+      return cancelled.status === "conflict"
+        ? rejected(
+            "CONFIG_CONFLICT",
+            "This Platform configuration changed after you opened it. Reload before continuing.",
+          )
+        : ACCEPTED;
+    }
+
+    case "publish-platform-configuration": {
+      if (ifMatch === null) {
+        return rejected(
+          "CONFIG_CONFLICT",
+          "This Platform configuration changed after you opened it. Reload before continuing.",
+        );
+      }
+      const expected = parsePlatformConfigurationEtag(ifMatch);
+      if (expected === null || expected.draft === null) {
+        return rejected(
+          "CONFIG_CONFLICT",
+          "This Platform configuration changed after you opened it. Reload before continuing.",
+        );
+      }
+      const state = await store.readPlatformConfigurationState();
+      const currentEtag = platformConfigurationEtag(state.revision, state.draft);
+      if (
+        currentEtag === ifMatch &&
+        !canApplyPlatformChanges(access, state.draft?.changes ?? [])
+      ) {
+        return NOT_FOUND;
+      }
+      const published = await store.publishPlatformConfiguration({
+        expectedRevision: expected.revision,
+        expectedDraft: expected.draft,
+        actorId: access.operator.id,
+      });
+      switch (published.status) {
+        case "published":
+          return ACCEPTED;
+        case "conflict":
+          return rejected(
+            "CONFIG_CONFLICT",
+            "This Platform configuration changed after you opened it. Reload before continuing.",
+          );
+        case "no-draft":
+          return rejected("INVALID_VALUE", "There is no Platform Draft to publish.");
+        case "incomplete":
+          return rejected(
+            "INVALID_VALUE",
+            `This Platform configuration cannot be published yet. Missing: ${published.missing.join(", ")}.`,
+          );
+      }
+      return rejected(
+        "INVALID_VALUE",
+        "This Platform configuration could not be published.",
+      );
+    }
+
+    case "cancel-configuration-draft":
+    case "publish-configuration": {
+      if (scope.tenantId === null) {
+        return NOT_FOUND;
+      }
+      const state = await store.readConfigurationState({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+      });
+      if (
+        state === null ||
+        ifMatch === null ||
+        ifMatch !==
+          configurationEtag(
+            scope.tenantId,
+            scope.locationId,
+            state.revision,
+            state.draft,
+          )
+      ) {
+        return rejected(
+          "CONFIG_CONFLICT",
+          "This configuration changed after you opened it. Reload before continuing.",
+        );
+      }
+      if (
+        command.command === "publish-configuration" &&
+        state.draft?.changes.some(
+          (change) =>
+            "operation" in change &&
+            change.operation === "deploy-prompt-version",
+        ) === true &&
+        !accessHasTenantCapability(access, scope.tenantId, "ai:operate")
+      ) {
+        return NOT_FOUND;
+      }
+      if (command.command === "cancel-configuration-draft") {
+        const cancelled = await store.cancelConfigurationDraft({
+          tenantId: scope.tenantId,
+          locationId: scope.locationId,
+          expectedRevision: state.revision,
+          expectedDraft:
+            state.draft === null
+              ? null
+              : { id: state.draft.id, revision: state.draft.revision },
+        });
+        return cancelled.status === "conflict"
+          ? rejected(
+              "CONFIG_CONFLICT",
+              "This configuration changed after you opened it. Reload before continuing.",
+            )
+          : ACCEPTED;
+      }
+      const published = await store.publishConfiguration({
+        tenantId: scope.tenantId,
+        locationId: scope.locationId,
+        expectedRevision: state.revision,
+        expectedDraft:
+          state.draft === null
+            ? null
+            : { id: state.draft.id, revision: state.draft.revision },
+        actorId: access.operator.id,
+      });
+      switch (published.status) {
+        case "published":
+          return ACCEPTED;
+        case "conflict":
+          return rejected(
+            "CONFIG_CONFLICT",
+            "This configuration changed after you opened it. Reload before continuing.",
+          );
+        case "no-draft":
+          return rejected("INVALID_VALUE", "There is no Draft to publish.");
+        case "incomplete":
+          return rejected(
+            "INVALID_VALUE",
+            `This configuration cannot be published yet. Missing: ${published.missing.join(", ")}.`,
+          );
+        default:
+          return rejected(
+            "INVALID_VALUE",
+            "This configuration could not be published.",
+          );
+      }
     }
 
     case "set-location-override":
@@ -830,8 +1398,8 @@ async function runCommand({
         command.command === "set-location-override"
           ? applyLocationOverride({
               overrides: resolved.location.overrides,
-              key: command.key,
-              value: command.value,
+              key: command.change.key,
+              value: command.change.value,
             })
           : clearLocationOverride({
               overrides: resolved.location.overrides,
@@ -843,12 +1411,10 @@ async function runCommand({
           "This setting is owned by the account and cannot differ per venue.",
         );
       }
-      await store.writeLocationOverrides({
-        tenantId: resolved.tenant.id,
-        locationId: resolved.location.id,
-        overrides: mutation.overrides,
-      });
-      return ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Location overrides must be staged with stage-configuration-changes and published from the Location Draft.",
+      );
     }
 
     case "save-destination": {
@@ -879,16 +1445,10 @@ async function runCommand({
       if (resolved === null) {
         return NOT_FOUND;
       }
-      const published = await store.republishConfiguration({
-        tenantId: resolved.tenant.id,
-        locationId: resolved.location.id,
-      });
-      return published.status === "incomplete"
-        ? rejected(
-            "INVALID_VALUE",
-            `This venue cannot be published yet. Missing: ${published.missing.join(", ")}.`,
-          )
-        : ACCEPTED;
+      return rejected(
+        "INVALID_VALUE",
+        "Direct republish is retired; save a Draft and publish it with its base revision.",
+      );
     }
 
     case "publish-context-version": {
@@ -914,53 +1474,40 @@ async function runCommand({
       if (command.ownerScope === "location" && scope.locationId === null) {
         return NOT_FOUND;
       }
-      const created = await store.createKeyword({
-        tenantId: tenant.id,
-        locationId:
-          command.ownerScope === "location" ? scope.locationId : null,
-        label: command.label,
-        categoryKey: command.categoryKey,
-        polarity: command.polarity,
-      });
-      return created.status === "unknown-category"
-        ? rejected("INVALID_VALUE", "That category does not exist.")
-        : ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Fact Options must be staged with stage-configuration-changes and published from the scoped Draft.",
+      );
     }
 
     case "update-keyword": {
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      const updated = await store.updateKeyword({
-        tenantId: scope.tenantId,
-        keywordId: command.keywordId,
-        label: command.label,
-        polarity: command.polarity,
-        active: command.active,
-      });
-      return updated.status === "not-found" ? NOT_FOUND : ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Fact Options must be staged with stage-configuration-changes and published from the scoped Draft.",
+      );
     }
 
     case "reorder-keywords": {
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      await store.reorderKeywords({
-        tenantId: scope.tenantId,
-        orderedKeywordIds: command.orderedKeywordIds,
-      });
-      return ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Fact Option order must be staged with stage-configuration-changes and published from the scoped Draft.",
+      );
     }
 
     case "delete-keyword": {
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      const deleted = await store.deleteKeyword({
-        tenantId: scope.tenantId,
-        keywordId: command.keywordId,
-      });
-      return deleted.status === "not-found" ? NOT_FOUND : ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Fact Options must be staged with stage-configuration-changes and published from the scoped Draft.",
+      );
     }
 
     case "set-style-enablement": {
@@ -987,24 +1534,20 @@ async function runCommand({
           `This style does not support: ${unsupported.join(", ")}.`,
         );
       }
-      await store.setStyleEnablement({
-        tenantId: tenant.id,
-        styleId: command.styleId,
-        enabled: command.enabled,
-        enabledActions: command.enabledActions,
-      });
-      return ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Review Format enablement must be staged with stage-configuration-changes and published from the Tenant Draft.",
+      );
     }
 
     case "reorder-styles": {
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      await store.reorderStyles({
-        tenantId: scope.tenantId,
-        orderedStyleIds: command.orderedStyleIds,
-      });
-      return ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Review Format order must be staged with stage-configuration-changes and published from the Tenant Draft.",
+      );
     }
 
     case "validate-style": {
@@ -1049,12 +1592,10 @@ async function runCommand({
           "At least one entry Action must stay enabled or the Survey cannot start.",
         );
       }
-      await store.setActionEnablement({
-        tenantId: scope.tenantId,
-        action: command.action,
-        enabled: command.enabled,
-      });
-      return ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Action enablement must be staged with stage-configuration-changes and published from the Tenant Draft.",
+      );
     }
 
     case "create-prompt-version": {
@@ -1062,8 +1603,9 @@ async function runCommand({
         return NOT_FOUND;
       }
       const existing = await store.listPrompts(scope.tenantId, command.action);
+      const promptKey = `${scope.tenantId}:${command.action}`;
       const hash = derivePromptVersionHash({
-        key: `${scope.tenantId}:${command.action}`,
+        key: promptKey,
         commandKind: promptCommandKind(command.action),
         body: command.body,
         variables: [...command.variables],
@@ -1071,6 +1613,7 @@ async function runCommand({
       await store.createPromptVersion({
         tenantId: scope.tenantId,
         action: command.action,
+        key: promptKey,
         version: nextPublishedVersion(existing),
         hash,
         body: command.body,
@@ -1078,6 +1621,24 @@ async function runCommand({
         createdBy: access.operator.id,
       });
       return ACCEPTED;
+    }
+
+    case "promote-prompt-version": {
+      if (scope.tenantId === null) {
+        return NOT_FOUND;
+      }
+      const qualified = await store.promotePromptVersion({
+        tenantId: scope.tenantId,
+        promptVersionId: command.promptVersionId,
+      });
+      return qualified.status === "candidate"
+        ? ACCEPTED
+        : qualified.status === "unknown-prompt"
+          ? NOT_FOUND
+          : rejected(
+              "INVALID_VALUE",
+              "The Prompt Version must pass its latest complete evaluation before it can become a Candidate.",
+            );
     }
 
     case "create-experiment": {
@@ -1098,7 +1659,12 @@ async function runCommand({
       });
       return created.status === "unknown-prompt"
         ? NOT_FOUND
-        : ACCEPTED;
+        : created.status === "invalid-variants"
+          ? rejected(
+              "INVALID_VALUE",
+              "Experiment variants must be distinct, evaluated Prompt Versions for the selected Action.",
+            )
+          : ACCEPTED;
     }
 
     case "start-experiment":
@@ -1106,31 +1672,36 @@ async function runCommand({
       if (scope.tenantId === null) {
         return NOT_FOUND;
       }
-      const experiment = await store.readExperiment(
-        scope.tenantId,
-        command.experimentId,
-      );
-      if (experiment === null) {
-        return NOT_FOUND;
-      }
-      const decision = decideExperimentMutation({
-        status: experiment.status,
-        mutation: command.command === "start-experiment" ? "start" : "stop",
-      });
-      if (!decision.allowed) {
-        return rejected(
-          decision.code,
-          decision.code === "EXPERIMENT_RUNNING"
-            ? "A running experiment may only be stopped. Stop it and create a new one to change its configuration."
-            : "Only a draft experiment can be started, and only a running one can be stopped.",
-        );
-      }
-      await store.setExperimentStatus({
+      const changed = await store.setExperimentStatus({
         tenantId: scope.tenantId,
         experimentId: command.experimentId,
         status: command.command === "start-experiment" ? "running" : "stopped",
       });
-      return ACCEPTED;
+      switch (changed.status) {
+        case "changed":
+          return ACCEPTED;
+        case "unknown-experiment":
+          return NOT_FOUND;
+        case "action-already-running":
+          return rejected(
+            "EXPERIMENT_RUNNING",
+            "Another experiment is already running for this Action.",
+          );
+        case "quality-gate-rejected":
+          return rejected(
+            "INVALID_VALUE",
+            "Every variant needs a canonical Prompt hash and a latest 100% grounding evaluation before the experiment can start.",
+          );
+        case "invalid-transition":
+          return rejected(
+            "EXPERIMENT_NOT_DRAFT",
+            "Only a draft experiment can be started, and only a running one can be stopped.",
+          );
+      }
+      return rejected(
+        "INVALID_VALUE",
+        "The Experiment transition could not be completed.",
+      );
     }
 
     case "run-bench": {
@@ -1195,30 +1766,17 @@ async function runCommand({
     }
 
     case "set-provider-routing": {
-      const saved = await store.setProviderRouting({
-        providerKey: command.providerKey,
-        modelKey: command.modelKey,
-        routingPriority: command.routingPriority,
-        fallbackPriority: command.fallbackPriority,
-      });
-      return saved.status === "unknown-model" ? NOT_FOUND : ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Provider routing must be staged and published from the Platform Draft.",
+      );
     }
 
     case "publish-price-rate": {
-      const published = await store.publishPriceRate({
-        providerKey: command.providerKey,
-        modelKey: command.modelKey,
-        inputMicrosPerMillion: command.inputMicrosPerMillion,
-        outputMicrosPerMillion: command.outputMicrosPerMillion,
-        currency: command.currency,
-        validFrom: command.validFrom,
-      });
-      return published.status === "not-later-than-current"
-        ? rejected(
-            "INVALID_VALUE",
-            "A new price version must start after the current version.",
-          )
-        : ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Price Rates must be staged and published from the Platform Draft.",
+      );
     }
 
     case "import-platform-style": {
@@ -1241,13 +1799,10 @@ async function runCommand({
     }
 
     case "save-platform-settings": {
-      await store.savePlatformSettings({
-        defaultPolicyTemplate: command.defaultPolicyTemplate,
-        globalRateLimits: command.globalRateLimits,
-        logRetentionDays: command.logRetentionDays,
-        featureFlags: command.featureFlags,
-      });
-      return ACCEPTED;
+      return rejected(
+        "CONFIG_DRAFT_REQUIRED",
+        "Platform settings must be staged and published from the Platform Draft.",
+      );
     }
   }
 }

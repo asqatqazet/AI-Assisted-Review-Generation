@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import * as generationContracts from "./index.js";
 import {
+  CancelExpiredLeaseResultDtoSchema,
   ExecuteGenerationInvocationDtoSchema,
   GenerationFunctionInvocationDtoSchema,
+  GenerationStatusResultDtoSchema,
   GenerationWorkloadDtoSchema,
   PrepareGenerationInvocationDtoSchema,
 } from "./generation-request.js";
@@ -25,6 +27,8 @@ const snapshot = {
     requireDisclosure: true,
     requireVerifiedExperience: true,
     maxReviewFormatsPerRequest: 1,
+    minimumFactSelections: 1,
+    maximumCustomerAssertionChars: 500,
     bannedTerms: ["guaranteed"],
     enabledReviewFormatVersionIds: [],
     enabledCommands: ["generate"],
@@ -245,9 +249,10 @@ describe("ADR-005 paid-work Generation contract", () => {
     expect(
       GenerationFunctionInvocationDtoSchema.parse({
         operation: "status",
-        scope,
+        permitJti: scope.permitJti,
+        workload,
       }),
-    ).toEqual({ operation: "status", scope });
+    ).toEqual({ operation: "status", permitJti: scope.permitJti, workload });
     expect(
       GenerationFunctionInvocationDtoSchema.parse({
         operation: "cancel-expired-lease",
@@ -255,6 +260,31 @@ describe("ADR-005 paid-work Generation contract", () => {
         scope,
       }),
     ).toEqual({ operation: "cancel-expired-lease", leaseId: "lease-a", scope });
+    expect(
+      GenerationStatusResultDtoSchema.parse({
+        operation: "status",
+        state: "indeterminate",
+        signedStatusReceipt: "signed-status",
+      }),
+    ).toMatchObject({ state: "indeterminate" });
+    expect(
+      GenerationStatusResultDtoSchema.parse({
+        operation: "status",
+        state: "terminal",
+        terminalReceipt: "signed-terminal",
+      }),
+    ).toEqual({
+      operation: "status",
+      state: "terminal",
+      terminalReceipt: "signed-terminal",
+    });
+    expect(
+      CancelExpiredLeaseResultDtoSchema.parse({
+        operation: "cancel-expired-lease",
+        state: "indeterminate",
+        signedStatusReceipt: "signed-status",
+      }),
+    ).toMatchObject({ state: "indeterminate" });
   });
 
   it("removes the superseded one-shot request from the public package", () => {

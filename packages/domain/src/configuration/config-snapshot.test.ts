@@ -99,6 +99,8 @@ const makeInput = (): BuildConfigSnapshotInput => ({
       requireDisclosure: false,
       requireVerifiedExperience: false,
       maxReviewFormatsPerRequest: 1,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
       bannedTerms: [],
       enabledReviewFormatVersionIds: [],
       enabledCommands: ["generate"],
@@ -210,7 +212,7 @@ describe("buildConfigSnapshot", () => {
       },
     });
     expect(snapshot.snapshotId).toMatch(/^sha256:[a-f0-9]{64}$/);
-    expect(Object.keys(snapshot.provenance)).toHaveLength(14);
+    expect(Object.keys(snapshot.provenance)).toHaveLength(16);
     expect(snapshot.provenance.requireVerifiedExperience).toEqual({
       scope: "location",
       sourceId: "location-a",
@@ -621,6 +623,28 @@ describe("buildConfigSnapshot", () => {
     );
   });
 
+  it("rejects a snapshot with no executable Action x Prompt x post-locale Format intersection", () => {
+    const input = makeInput();
+    input.tenant = {
+      ...input.tenant,
+      settings: {
+        ...input.tenant.settings,
+        enabledReviewFormatVersionIds: [germanFormat.id],
+        enabledCommands: ["generate"],
+      },
+    };
+    input.promptVersions = input.promptVersions.filter(
+      (prompt) => prompt.commandKind === "generate",
+    );
+    input.reviewFormats = [germanFormat];
+
+    expect(() => buildConfigSnapshot(input)).toThrowError(
+      expect.objectContaining<Partial<ConfigSnapshotError>>({
+        code: "no-executable-action",
+      }),
+    );
+  });
+
   it("rejects Provider Routing without a Price Rate for its primary Provider Model", () => {
     const input = makeInput();
     input.priceRates = [openAiRate];
@@ -716,7 +740,7 @@ describe("buildConfigSnapshot", () => {
     input.locationName = "Hafenstraße";
 
     expect(buildConfigSnapshot(input).snapshotId).toBe(
-      "sha256:61e9149c807754b506f2b81c260627f666be7811876f4e12fa96164006704324",
+      "sha256:4f585ae77fbba67ba5c851b35cbe649b318ddcf85f146a02689f856bee8d3ef0",
     );
   });
 });

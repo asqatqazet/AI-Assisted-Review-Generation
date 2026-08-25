@@ -24,6 +24,7 @@ export interface FakeConsoleClient extends ConsoleClient {
   readonly commands: {
     readonly command: ConsoleCommandDto;
     readonly scope: ConsoleScopeRequestDto;
+    readonly ifMatch?: string | undefined;
   }[];
 }
 
@@ -131,13 +132,16 @@ export function createFakeConsoleClient({
   }>;
   readonly access?: AuthorizedOperatorAccess | undefined;
   readonly onCommand?:
-    | ((command: ConsoleCommandDto) => ConsoleCommandResultDto)
+    | ((
+        command: ConsoleCommandDto,
+      ) => ConsoleCommandResultDto | Promise<ConsoleCommandResultDto>)
     | undefined;
 } = {}): FakeConsoleClient {
   const requests: RecordedConsoleRequest[] = [];
   const commands: {
     command: ConsoleCommandDto;
     scope: ConsoleScopeRequestDto;
+    ifMatch?: string | undefined;
   }[] = [];
 
   return {
@@ -152,10 +156,14 @@ export function createFakeConsoleClient({
       }
       return data as never;
     },
-    runCommand: async ({ command, scope }) => {
-      commands.push({ command, scope });
-      return onCommand?.(command) ?? { outcome: "accepted" };
+    runCommand: async ({ command, scope, ifMatch }) => {
+      commands.push({
+        command,
+        scope,
+        ...(ifMatch === undefined ? {} : { ifMatch }),
+      });
+      return (await onCommand?.(command)) ?? { outcome: "accepted" };
     },
-    logout: async () => undefined,
+    logout: async () => "https://review.auth.example/logout",
   };
 }

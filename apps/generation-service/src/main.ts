@@ -25,9 +25,9 @@ const requiredParameter = async (name: string): Promise<string> => {
 };
 
 /**
- * A live provider key is optional. When the parameter is absent the runtime
- * keeps the deterministic provider, so a deployment never starts making paid
- * calls just because the plumbing exists.
+ * A live provider key is optional at deployment. Absence disables that paid
+ * adapter; it never changes the Provider route resolved in the snapshot and
+ * therefore cannot trigger fallback or a surprise paid call.
  */
 const optionalParameter = async (name: string): Promise<string | undefined> => {
   const parameterName = process.env[name];
@@ -45,18 +45,43 @@ const optionalParameter = async (name: string): Promise<string | undefined> => {
   }
 };
 
+const requiredProviderMode = (): "fake-only" | "paid-enabled" => {
+  const providerMode = required("REVIEW_PROVIDER_MODE");
+  if (providerMode !== "fake-only" && providerMode !== "paid-enabled") {
+    throw new Error("REVIEW_PROVIDER_MODE must be fake-only or paid-enabled");
+  }
+  return providerMode;
+};
+
 const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
+  const providerMode = requiredProviderMode();
   runtime ??= Promise.all([
     requiredParameter("GENERATION_DATABASE_URL_PARAMETER"),
     requiredParameter("CONTEXT_WORK_PUBLIC_KEY_PARAMETER"),
+    requiredParameter("CONSOLE_AUTHORITY_PUBLIC_KEY_PEM_PARAMETER"),
     requiredParameter("GENERATION_WORK_PRIVATE_KEY_PARAMETER"),
-    optionalParameter("GEMINI_API_KEY_PARAMETER"),
-  ]).then(([databaseUrl, contextPublicKeyPem, generationPrivateKeyPem, geminiApiKey]) =>
+    providerMode === "paid-enabled"
+      ? optionalParameter("GEMINI_API_KEY_PARAMETER")
+      : Promise.resolve(undefined),
+    providerMode === "paid-enabled"
+      ? optionalParameter("OPENAI_API_KEY_PARAMETER")
+      : Promise.resolve(undefined),
+  ]).then(([
+    databaseUrl,
+    contextPublicKeyPem,
+    consoleAuthorityPublicKeyPem,
+    generationPrivateKeyPem,
+    geminiApiKey,
+    openaiApiKey,
+  ]) =>
     createGenerationRuntime({
       databaseUrl,
+      providerMode,
       contextPublicKeyPem,
+      consoleAuthorityPublicKeyPem,
       generationPrivateKeyPem,
       geminiApiKey,
+      openaiApiKey,
       fakeDelayMs: Number.parseInt(
         process.env["REVIEW_FAKE_DELAY_MS"] ?? "0",
         10,

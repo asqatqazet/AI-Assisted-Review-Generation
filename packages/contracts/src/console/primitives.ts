@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import { IdentifierDtoSchema } from "../shared/primitives.js";
 
+export const ConfigurationEtagDtoSchema = z
+  .string()
+  .max(200)
+  .regex(/^"[^"\r\n]{1,198}"$/);
+
 /**
  * Console projections are money-bearing. The wire always carries an explicit
  * currency so no screen has to assume the Tenant's configured currency.

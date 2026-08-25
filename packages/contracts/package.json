@@ -11,6 +11,7 @@
     "./context": "./src/context/index.ts",
     "./generation": "./src/generation/index.ts",
     "./console": "./src/console/index.ts",
+    "./console-bench": "./src/console/console-bench.ts",
     "./console-read": "./src/console/console-read.ts"
   }
 }

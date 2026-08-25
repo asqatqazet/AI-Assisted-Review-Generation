@@ -4,6 +4,8 @@ import type {
   ConsoleAnalyticsRowDto,
   ConsoleBenchInputDto,
   ConsoleBenchResultDto,
+  ConsoleConfigurationDraftChangeDto,
+  ConsolePlatformConfigurationDraftChangeDto,
   ConsoleGenerationDetailDto,
   ConsoleKeywordDto,
   ConsoleOverviewDto,
@@ -20,6 +22,8 @@ export interface ConsoleTenantRecord {
   readonly slug: string;
   readonly name: string;
   readonly locale: "en-GB" | "de-DE";
+  readonly platformDefaults: Readonly<Record<string, ConsoleSettingValueDto>>;
+  readonly tenantValues: Readonly<Record<string, ConsoleSettingValueDto>>;
   readonly settings: Readonly<Record<string, ConsoleSettingValueDto>>;
   readonly keywordCategories: readonly {
     readonly key: string;
@@ -85,7 +89,12 @@ export interface ConsolePromptRecord {
   readonly action: ConsoleActionKeyDto;
   readonly version: number;
   readonly hash: string;
-  readonly status: "draft" | "candidate" | "in-experiment" | "retired";
+  readonly status:
+    | "draft"
+    | "candidate"
+    | "in-experiment"
+    | "published"
+    | "retired";
   readonly createdAt: string;
   readonly createdBy: string | null;
   readonly evaluationScore: number | null;
@@ -162,6 +171,12 @@ export interface ConsoleControlPlaneStore {
     tenantId: string,
     locationId: string,
   ): Promise<ConsoleLocationRecord | null>;
+  /** Latest immutable snapshot currently published for this exact venue. */
+  readPublishedConfigurationSnapshot(input: {
+    readonly tenantId: string;
+    readonly locationId: string;
+    readonly configurationReleaseId?: string | undefined;
+  }): Promise<{ readonly contentHash: string; readonly payload: unknown } | null>;
   createLocation(input: {
     readonly tenantId: string;
     readonly name: string;
@@ -185,6 +200,97 @@ export interface ConsoleControlPlaneStore {
     readonly locationId: string;
     readonly overrides: Readonly<Record<string, unknown>>;
   }): Promise<void>;
+  readConfigurationState(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+  }): Promise<{
+    readonly revision: string;
+    readonly draft: {
+      readonly id: string;
+      readonly revision: string;
+      readonly baseRevision: string;
+      readonly changes: readonly ConsoleConfigurationDraftChangeDto[];
+    } | null;
+  } | null>;
+  saveConfigurationDraft(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+    readonly expectedRevision: string;
+    readonly expectedDraft: {
+      readonly id: string;
+      readonly revision: string;
+    } | null;
+    readonly changes: readonly ConsoleConfigurationDraftChangeDto[];
+    readonly actorId: string;
+  }): Promise<{ readonly status: "saved" } | { readonly status: "conflict" }>;
+  cancelConfigurationDraft(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+    readonly expectedRevision: string;
+    readonly expectedDraft: {
+      readonly id: string;
+      readonly revision: string;
+    } | null;
+  }): Promise<{ readonly status: "cancelled" } | { readonly status: "conflict" }>;
+  publishConfiguration(input: {
+    readonly tenantId: string;
+    readonly locationId: string | null;
+    readonly expectedRevision: string;
+    readonly expectedDraft: {
+      readonly id: string;
+      readonly revision: string;
+    } | null;
+    readonly actorId: string;
+    readonly configurationReleaseId?: string | undefined;
+  }): Promise<
+    | {
+        readonly status: "published";
+        readonly snapshotIds: readonly string[];
+        readonly configurationReleaseId: string;
+      }
+    | { readonly status: "conflict" }
+    | { readonly status: "no-draft" }
+    | { readonly status: "incomplete"; readonly missing: readonly string[] }
+  >;
+
+  readPlatformConfigurationState(): Promise<{
+    readonly revision: string;
+    readonly draft: {
+      readonly id: string;
+      readonly revision: string;
+      readonly baseRevision: string;
+      readonly changes: readonly ConsolePlatformConfigurationDraftChangeDto[];
+    } | null;
+  }>;
+  savePlatformConfigurationDraft(input: {
+    readonly expectedRevision: string;
+    readonly expectedDraft: {
+      readonly id: string;
+      readonly revision: string;
+    } | null;
+    readonly changes: readonly ConsolePlatformConfigurationDraftChangeDto[];
+    readonly actorId: string;
+  }): Promise<{ readonly status: "saved" } | { readonly status: "conflict" }>;
+  cancelPlatformConfigurationDraft(input: {
+    readonly expectedRevision: string;
+    readonly expectedDraft: {
+      readonly id: string;
+      readonly revision: string;
+    } | null;
+  }): Promise<{ readonly status: "cancelled" } | { readonly status: "conflict" }>;
+  publishPlatformConfiguration(input: {
+    readonly expectedRevision: string;
+    readonly expectedDraft: {
+      readonly id: string;
+      readonly revision: string;
+    } | null;
+    readonly actorId: string;
+  }): Promise<
+    | { readonly status: "published"; readonly snapshotIds: readonly string[] }
+    | { readonly status: "conflict" }
+    | { readonly status: "no-draft" }
+    | { readonly status: "incomplete"; readonly missing: readonly string[] }
+  >;
 
   readDistribution(
     tenantId: string,
@@ -203,14 +309,6 @@ export interface ConsoleControlPlaneStore {
     readonly targetUrl: string;
     readonly enabled: boolean;
   }): Promise<{ readonly status: "saved" } | { readonly status: "unknown-destination" }>;
-
-  republishConfiguration(input: {
-    readonly tenantId: string;
-    readonly locationId: string;
-  }): Promise<
-    | { readonly status: "published"; readonly snapshotId: string }
-    | { readonly status: "incomplete"; readonly missing: readonly string[] }
-  >;
 
   listContextVersions(
     tenantId: string,
@@ -285,12 +383,21 @@ export interface ConsoleControlPlaneStore {
   createPromptVersion(input: {
     readonly tenantId: string;
     readonly action: ConsoleActionKeyDto;
+    readonly key: string;
     readonly version: number;
     readonly hash: string;
     readonly body: string;
     readonly variables: readonly string[];
     readonly createdBy: string;
   }): Promise<void>;
+  promotePromptVersion(input: {
+    readonly tenantId: string;
+    readonly promptVersionId: string;
+  }): Promise<
+    | { readonly status: "candidate" }
+    | { readonly status: "unknown-prompt" }
+    | { readonly status: "quality-gate-rejected" }
+  >;
 
   listExperiments(
     tenantId: string,
@@ -307,13 +414,21 @@ export interface ConsoleControlPlaneStore {
       readonly weightPct: number;
     }[];
   }): Promise<
-    { readonly status: "created" } | { readonly status: "unknown-prompt" }
+    | { readonly status: "created" }
+    | { readonly status: "unknown-prompt" }
+    | { readonly status: "invalid-variants" }
   >;
   setExperimentStatus(input: {
     readonly tenantId: string;
     readonly experimentId: string;
     readonly status: "running" | "stopped";
-  }): Promise<void>;
+  }): Promise<
+    | { readonly status: "changed" }
+    | { readonly status: "unknown-experiment" }
+    | { readonly status: "invalid-transition" }
+    | { readonly status: "action-already-running" }
+    | { readonly status: "quality-gate-rejected" }
+  >;
 
   listPlatformTenants(): Promise<PlatformTenantsDto["tenants"]>;
   createTenant(input: {
@@ -327,13 +442,19 @@ export interface ConsoleControlPlaneStore {
     readonly tenantId: string;
     readonly status: "active" | "suspended" | "deactivated";
   }): Promise<{ readonly status: "saved" } | { readonly status: "not-found" }>;
-  readPlatformProviders(): Promise<Omit<PlatformProvidersDto, "scope">>;
+  readPlatformProviders(): Promise<
+    Omit<PlatformProvidersDto, "scope" | "configuration">
+  >;
   setProviderRouting(input: {
     readonly providerKey: string;
     readonly modelKey: string;
     readonly routingPriority: number | null;
     readonly fallbackPriority: number | null;
-  }): Promise<{ readonly status: "saved" } | { readonly status: "unknown-model" }>;
+  }): Promise<
+    | { readonly status: "saved" }
+    | { readonly status: "unknown-model" }
+    | { readonly status: "invalid-routing" }
+  >;
   publishPriceRate(input: {
     readonly providerKey: string;
     readonly modelKey: string;
@@ -348,7 +469,9 @@ export interface ConsoleControlPlaneStore {
   importPlatformStyle(input: {
     readonly manifest: string;
   }): Promise<{ readonly status: "imported" } | { readonly status: "invalid" }>;
-  readPlatformSettings(): Promise<Omit<PlatformSettingsDto, "scope">>;
+  readPlatformSettings(): Promise<
+    Omit<PlatformSettingsDto, "scope" | "configuration">
+  >;
   savePlatformSettings(input: {
     readonly defaultPolicyTemplate: string;
     readonly globalRateLimits: PlatformSettingsDto["globalRateLimits"];

@@ -1,13 +1,20 @@
-import type {
-  ConsoleLocationDto,
-  ConsoleReviewDestinationDto,
-  ConsoleSettingValueDto,
-  InheritedSettingDto,
+import {
+  ConsoleLocationOverrideChangeDtoSchema,
+  ConsoleTenantSettingChangeDtoSchema,
+  type ConsoleLocationDto,
+  type ConsoleReviewDestinationDto,
+  type ConsoleSettingValueDto,
+  type InheritedSettingDto,
 } from "@review/contracts/console";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { ConsoleClient } from "../console-client.js";
+import {
+  ConfigurationDraftPanel,
+  tenantConfigurationScope,
+  useConfigurationDraftController,
+} from "../configuration-draft-panel.js";
 import { useConsoleCommand, useConsoleView } from "../console-queries.js";
 import {
   DataTable,
@@ -508,12 +515,21 @@ export function TenantSettingsView({
   readonly client: ConsoleClient;
   readonly scopeController: ConsoleScopeController;
 }): React.JSX.Element {
+  const configurationScope = tenantConfigurationScope(scopeController.scope);
   const settings = useConsoleView({
     client,
     view: "tenant-settings",
-    scope: scopeController.scope,
+    scope: configurationScope,
   });
-  const command = useConsoleCommand({ client, scope: scopeController.scope });
+  const categoryCommand = useConsoleCommand({
+    client,
+    scope: configurationScope,
+  });
+  const draftController = useConfigurationDraftController({
+    client,
+    scope: configurationScope,
+    configuration: settings.data?.configuration,
+  });
   const [edits, setEdits] = useState<Record<string, ConsoleSettingValueDto>>({});
   const [category, setCategory] = useState({ key: "", label: "" });
 
@@ -530,8 +546,12 @@ export function TenantSettingsView({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            command.mutate({ command: "save-tenant-settings", values: edits });
-            setEdits({});
+            draftController.stage(
+              Object.entries(edits).map(([key, value]) =>
+                ConsoleTenantSettingChangeDtoSchema.parse({ key, value }),
+              ),
+              { onSuccess: () => setEdits({}) },
+            );
           }}
         >
           {groupSettings(settings.data.settings).map(([group, rows]) => (
@@ -573,9 +593,11 @@ export function TenantSettingsView({
               <button
                 className={styles.buttonPrimary}
                 type="submit"
-                disabled={command.isPending || Object.keys(edits).length === 0}
+                disabled={
+                  draftController.isPending || Object.keys(edits).length === 0
+                }
               >
-                Save account settings
+                Stage account settings
               </button>
               {Object.keys(edits).length === 0 ? (
                 <span className={styles.settingSource}>No unsaved changes.</span>
@@ -590,7 +612,12 @@ export function TenantSettingsView({
               )}
             </p>
           ) : null}
-          <RejectionNotice error={command.error} />
+          <ConfigurationDraftPanel
+            configuration={settings.data.configuration}
+            controller={draftController}
+            editable={settings.data.editable}
+            scopeKind="tenant"
+          />
 
           <h2 className={styles.sectionLabel}>Fact option categories</h2>
           <p className={styles.emptyCopy}>
@@ -644,12 +671,12 @@ export function TenantSettingsView({
                 type="button"
                 className={styles.button}
                 disabled={
-                  command.isPending ||
+                  categoryCommand.isPending ||
                   category.key.trim() === "" ||
                   category.label.trim() === ""
                 }
                 onClick={() => {
-                  command.mutate({
+                  categoryCommand.mutate({
                     command: "create-keyword-category",
                     key: category.key,
                     label: category.label,
@@ -657,10 +684,11 @@ export function TenantSettingsView({
                   setCategory({ key: "", label: "" });
                 }}
               >
-                Add category
+              Add category
               </button>
             </div>
           ) : null}
+          <RejectionNotice error={categoryCommand.error} />
 
         </form>
       )}
@@ -740,7 +768,11 @@ export function LocationSettingsView({
     scope: scopeController.scope,
     enabled: scopeController.scope.locationId !== null,
   });
-  const command = useConsoleCommand({ client, scope: scopeController.scope });
+  const draftController = useConfigurationDraftController({
+    client,
+    scope: scopeController.scope,
+    configuration: settings.data?.configuration,
+  });
 
   if (scopeController.scope.locationId === null) {
     return (
@@ -763,29 +795,42 @@ export function LocationSettingsView({
         }
       />
       <QueryState query={settings} label="location settings" />
-      <RejectionNotice error={command.error} />
 
       {settings.data?.settings.map((setting) => (
         <SettingOverrideRow
           key={setting.key}
           setting={setting}
           editable={settings.data.editable}
-          pending={command.isPending}
+          pending={draftController.isPending}
           onOverride={(value) =>
-            command.mutate({
-              command: "set-location-override",
-              key: setting.key,
-              value,
-            })
+            draftController.stage([
+              {
+                operation: "set-location-override",
+                change: ConsoleLocationOverrideChangeDtoSchema.parse({
+                  key: setting.key,
+                  value,
+                }),
+              },
+            ])
           }
           onReset={() =>
-            command.mutate({
-              command: "reset-location-override",
-              key: setting.key,
-            })
+            draftController.stage([
+              {
+                operation: "reset-location-override",
+                key: setting.key,
+              },
+            ])
           }
         />
       ))}
+      {settings.data === undefined ? null : (
+        <ConfigurationDraftPanel
+          configuration={settings.data.configuration}
+          controller={draftController}
+          editable={settings.data.editable}
+          scopeKind="location"
+        />
+      )}
     </>
   );
 }
@@ -929,21 +974,10 @@ export function DistributionView({
       <QueryState query={distribution} label="distribution" />
 
       <p className={styles.emptyCopy}>
-        Reviewers are served the configuration published for this venue, not the
-        settings as they stand right now. Publish after changing account
-        settings, fact options, Review Formats or Platform routing.
+        Reviewers are served the immutable configuration published from the
+        Tenant or Location Draft. Stage, inspect and publish configuration from
+        the corresponding settings screen.
       </p>
-      <p className={styles.buttonRow}>
-        <button
-          type="button"
-          className={styles.button}
-          disabled={command.isPending}
-          onClick={() => command.mutate({ command: "republish-configuration" })}
-        >
-          Publish configuration to this venue
-        </button>
-      </p>
-      <RejectionNotice error={command.error} />
 
       {distribution.data === undefined ? null : (
         <>

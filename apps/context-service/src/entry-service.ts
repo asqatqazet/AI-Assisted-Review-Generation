@@ -5,12 +5,14 @@ import type {
   PrepareEntryInvocationResultDto,
   ReadEntryChallengeInvocationDto,
   ReadEntryChallengeInvocationResultDto,
+  VerifyEntryInvocationDto,
+  VerifyEntryInvocationResultDto,
 } from "@review/contracts/context";
 import type { PostgresEntryAdmissionStore } from "@review/db/admission";
 
 type EntryStore = Pick<
   PostgresEntryAdmissionStore,
-  "prepare" | "read" | "advance"
+  "prepare" | "read" | "advance" | "verify"
 >;
 
 export interface EntryServiceOptions {
@@ -30,6 +32,9 @@ export interface EntryService {
   advanceEntry(
     input: AdvanceEntryInvocationDto["input"],
   ): Promise<AdvanceEntryInvocationResultDto["result"]>;
+  verifyEntry(
+    input: VerifyEntryInvocationDto["input"],
+  ): Promise<VerifyEntryInvocationResultDto["result"]>;
 }
 
 export function createEntryService({
@@ -40,15 +45,32 @@ export function createEntryService({
 }: EntryServiceOptions): EntryService {
   return {
     async prepareEntry(input) {
-      if (input.invitationToken !== undefined) {
-        return { status: "unavailable" };
-      }
       const entryChallengeHandle = newHandle();
+      const [
+        routeHandleHash,
+        browserCapabilityHash,
+        invitationTokenHash,
+        tableRefHash,
+      ] = await Promise.all([
+        hashCapability(entryChallengeHandle),
+        hashCapability(input.browserCapability),
+        input.invitationToken === undefined
+          ? Promise.resolve(undefined)
+          : hashCapability(input.invitationToken),
+        input.tableRef === undefined
+          ? Promise.resolve(undefined)
+          : hashCapability(input.tableRef),
+      ]);
       const prepared = await store.prepare({
         tenantSlug: input.tenantSlug,
         locationSlug: input.locationSlug,
-        routeHandleHash: await hashCapability(entryChallengeHandle),
-        browserCapabilityHash: await hashCapability(input.browserCapability),
+        ...(invitationTokenHash === undefined ? {} : { invitationTokenHash }),
+        routeHandleHash,
+        browserCapabilityHash,
+        ...(tableRefHash === undefined ? {} : { tableRefHash }),
+        ...(input.configurationReleaseId === undefined
+          ? {}
+          : { configurationReleaseId: input.configurationReleaseId }),
         expiresAt: new Date(now().getTime() + 5 * 60_000).toISOString(),
       });
       return prepared.status === "prepared"
@@ -65,6 +87,11 @@ export function createEntryService({
         ? stored
         : {
             status: "ready",
+            stage: stored.stage,
+            provisionalSelection:
+              stored.provisionalSelection === null
+                ? null
+                : { ...stored.provisionalSelection },
             context: {
               ...stored.context,
               factOptions: [...stored.context.factOptions],
@@ -82,6 +109,7 @@ export function createEntryService({
 
     async advanceEntry(input) {
       const reviewSessionHandle = newHandle();
+      const currentTime = now().getTime();
       const admitted = await store.advance({
         routeHandleHash: await hashCapability(input.entryChallengeHandle),
         browserCapabilityHash: await hashCapability(input.browserCapability),
@@ -89,12 +117,56 @@ export function createEntryService({
         rating: input.rating,
         action: input.action === "generate" ? "GENERATE" : "PARAPHRASE",
         reviewSessionExpiresAt: new Date(
-          now().getTime() + 60 * 60_000,
+          currentTime + 30 * 24 * 60 * 60_000,
+        ).toISOString(),
+        browserBindingExpiresAt: new Date(
+          currentTime + 24 * 60 * 60_000,
         ).toISOString(),
       });
-      return admitted.status === "admitted"
-        ? { status: "admitted", reviewSessionHandle }
-        : { status: "unavailable" };
+      switch (admitted.status) {
+        case "admitted":
+          return { status: "admitted", reviewSessionHandle };
+        case "verification-required":
+          return { status: "verification-required" };
+        case "unavailable":
+          return { status: "unavailable" };
+      }
+    },
+
+    async verifyEntry(input) {
+      const reviewSessionHandle = newHandle();
+      const currentTime = now().getTime();
+      const [
+        routeHandleHash,
+        browserCapabilityHash,
+        reviewSessionRouteHandleHash,
+        verificationEvidenceHash,
+      ] = await Promise.all([
+        hashCapability(input.entryChallengeHandle),
+        hashCapability(input.browserCapability),
+        hashCapability(reviewSessionHandle),
+        hashCapability(input.verificationEvidence),
+      ]);
+      const verified = await store.verify({
+        routeHandleHash,
+        browserCapabilityHash,
+        reviewSessionRouteHandleHash,
+        verificationEvidenceHash,
+        reviewSessionExpiresAt: new Date(
+          currentTime + 30 * 24 * 60 * 60_000,
+        ).toISOString(),
+        browserBindingExpiresAt: new Date(
+          currentTime + 24 * 60 * 60_000,
+        ).toISOString(),
+      });
+      switch (verified.status) {
+        case "admitted":
+          return { status: "admitted", reviewSessionHandle };
+        case "verification-unavailable":
+          return { status: "verification-unavailable" };
+        case "unavailable":
+          return { status: "unavailable" };
+      }
     },
   };
 }

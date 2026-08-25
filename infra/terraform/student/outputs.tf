@@ -13,19 +13,59 @@ output "cloudfront_distribution_id" {
   description = "Distribution invalidated after UI deploy and rollback"
 }
 
+output "cutoff_lambda_function_names" {
+  value       = sort(values(local.function_names))
+  description = "Exact Lambda function set throttled by the scheduled student cutoff"
+}
+
+output "reconcile_event_rule_name" {
+  value       = aws_cloudwatch_event_rule.reconcile.name
+  description = "Scheduled reconciliation rule disabled by the student cutoff"
+}
+
 output "ui_bucket_name" {
   value       = aws_s3_bucket.ui.bucket
   description = "Private bucket receiving the verified Vite build"
 }
 
-output "context_service_alias_arn" {
-  value       = aws_lambda_alias.context_service_live.arn
-  description = "Private qualified Context alias"
+output "context_reviewer_alias_arn" {
+  value       = aws_lambda_alias.context_reviewer_live.arn
+  description = "Private qualified reviewer Context alias"
+}
+
+output "context_console_alias_arn" {
+  value       = aws_lambda_alias.context_console_live.arn
+  description = "Private qualified Console Context alias"
+}
+
+output "context_reviewer_candidate_version_arn" {
+  value       = aws_lambda_function.context_reviewer.qualified_arn
+  description = "Exact reviewer Context version pinned into the candidate BFF"
+}
+
+output "context_console_candidate_version_arn" {
+  value       = aws_lambda_function.context_console.qualified_arn
+  description = "Exact Console Context version pinned into the candidate BFF"
 }
 
 output "generation_service_alias_arn" {
   value       = aws_lambda_alias.generation_service_live.arn
   description = "Private qualified Generation alias"
+}
+
+output "generation_candidate_version_arn" {
+  value       = aws_lambda_function.generation_service.qualified_arn
+  description = "Exact Generation version pinned into the candidate BFF"
+}
+
+output "configuration_candidate_release_id" {
+  value       = var.configuration_candidate_release_id
+  description = "Immutable configuration release selected by the candidate BFF"
+}
+
+output "generation_canary_function_name" {
+  value       = aws_lambda_function.generation_canary.function_name
+  description = "Unaliased FakeProvider-only function used while live Generation is frozen"
 }
 
 output "web_bff_fast_alias_arn" {
@@ -70,4 +110,13 @@ output "operator_subject" {
 
 output "operator_email" {
   value = var.operator_email
+}
+
+output "tenant_operator_subject" {
+  value       = try(aws_cognito_user.tenant_operator[0].sub, "")
+  description = "Optional Tenant-only Operator Cognito subject; no password is exposed"
+}
+
+output "tenant_operator_email" {
+  value = var.tenant_operator_email
 }
