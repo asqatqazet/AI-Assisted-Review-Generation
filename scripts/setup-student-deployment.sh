@@ -391,13 +391,18 @@ open_url "https://console.neon.tech/"
 step "Create one Free project in Frankfurt and keep its synthetic assessment data only."
 step "Open Connect, disable connection pooling, select the owner role, and copy the direct TLS URL."
 ask_secret NEON_MIGRATION_DATABASE_URL "Paste the direct migration-owner URL:"
-if ! DATABASE_URL_TO_CHECK="$NEON_MIGRATION_DATABASE_URL" node -e '
-  const url = new URL(process.env.DATABASE_URL_TO_CHECK);
-  if (!url.protocol.startsWith("postgres") || !url.hostname.endsWith("neon.tech") || url.hostname.includes("-pooler")) process.exit(1);
-'; then
+until DATABASE_URL_TO_CHECK="$NEON_MIGRATION_DATABASE_URL" node scripts/validate-neon-database-url.mjs; do
   warn "Expected a direct Neon PostgreSQL URL, not a pooled URL."
-  exit 1
-fi
+  warn "The rejected value was not printed or stored. Paste the URL again."
+  NEON_MIGRATION_DATABASE_URL=""
+  printf '  %s%s%s ' "$BOLD" "Paste the direct migration-owner URL:" "$RESET"
+  if ! read -rs NEON_MIGRATION_DATABASE_URL; then
+    printf '\n'
+    warn "No database URL was read. Re-run the wizard when the rotated URL is ready."
+    exit 1
+  fi
+  printf '\n'
+done
 if ! confirm "Apply the committed migrations to this new Neon database?"; then
   warn "Runtime roles do not exist until the migrations are applied."
   exit 1
