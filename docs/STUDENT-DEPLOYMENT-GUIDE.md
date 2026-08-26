@@ -65,6 +65,18 @@ gh auth login
 
 向导不会把 cloud secret 写入 `.env`，也不会自动触发部署。
 
+如果首次运行已经完成 Stage 1–3，但 Neon 在
+`20260823000019_operator_capability_rls` 留下 `P3009` failed migration，不要重跑完整向导。先更新
+`main`，轮换任何曾暴露的 Neon owner 密码，然后运行专用恢复向导：
+
+```bash
+git pull --ff-only
+./scripts/resume-student-deployment-from-neon.sh
+```
+
+恢复向导只执行原 Stage 4–7。它只会把上述唯一已知 migration 标记为 rolled back；如果 Prisma 报告
+其他失败 migration，会 fail closed 并保持数据库状态不变。
+
 ## 3. AWS OIDC 的准确配置
 
 在 IAM → Identity providers 添加：
