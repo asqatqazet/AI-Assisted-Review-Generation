@@ -303,9 +303,11 @@ describe("student AWS topology invariants", () => {
     expect(rollback).toContain("scripts/smoke-candidate-reviewer-flow.sh");
     expect(rollback).toContain("public.activate_configuration_release");
     expect(rollback).toContain("public.restore_configuration_release");
-    expect(migration19).toMatch(
-      /ALTER ROLE context_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT/u,
+    expect(migration19).toContain("ALTER ROLE context_svc LOGIN NOINHERIT;");
+    expect(migration19).not.toMatch(
+      /ALTER ROLE context_svc[^;]*(?:SUPERUSER|BYPASSRLS)/u,
     );
+    expect(migration19).toContain("SERVICE_ROLE_SECURITY_ATTRIBUTES_INVALID");
     expect(migration19).not.toContain("ALTER ROLE context_svc NOLOGIN");
     expect(migration25).toContain("session_user = 'context_svc'");
     expect(migration25).toContain(

@@ -20,13 +20,43 @@ BEGIN
   END IF;
 END $$;
 
-ALTER ROLE context_runtime_svc NOINHERIT;
-ALTER ROLE console_control_svc NOINHERIT;
+-- Managed PostgreSQL owners such as Neon's `neondb_owner` can create and
+-- administer ordinary roles but cannot change the SUPERUSER or BYPASSRLS
+-- attributes, even when changing them to the safer value. New roles already
+-- default to NOSUPERUSER/NOBYPASSRLS, so verify those attributes and only
+-- mutate the attributes a restricted CREATEROLE owner is allowed to manage.
+DO $service_role_security$
+DECLARE
+  role record;
+BEGIN
+  FOR role IN
+    SELECT rolname, rolsuper, rolbypassrls
+    FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      'context_svc',
+      'context_runtime_svc',
+      'console_control_svc'
+    )
+  LOOP
+    IF role.rolsuper OR role.rolbypassrls THEN
+      RAISE EXCEPTION USING
+        MESSAGE = 'SERVICE_ROLE_SECURITY_ATTRIBUTES_INVALID',
+        DETAIL = format(
+          'Role %I must already be NOSUPERUSER and NOBYPASSRLS; the migration owner will not attempt a privileged attribute change.',
+          role.rolname
+        );
+    END IF;
+  END LOOP;
+END
+$service_role_security$;
+
+ALTER ROLE context_runtime_svc LOGIN NOINHERIT;
+ALTER ROLE console_control_svc LOGIN NOINHERIT;
 -- Expand phase: the already-published combined Context Lambda still resolves
 -- its sealed context_svc URL if an alias rollback is required. Keep only that
 -- historical login/grant surface until a later contract migration; all new
 -- reviewer and Console versions use the split roles above.
-ALTER ROLE context_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+ALTER ROLE context_svc LOGIN NOINHERIT;
 
 GRANT USAGE ON SCHEMA public TO context_runtime_svc, console_control_svc;
 

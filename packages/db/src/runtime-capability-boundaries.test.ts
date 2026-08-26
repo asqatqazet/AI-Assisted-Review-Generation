@@ -25,10 +25,13 @@ describe("Context runtime database capabilities", () => {
       "console_control_svc",
       "generation_svc",
     ]) {
-      expect(migration).toContain(
-        `ALTER ROLE ${role} LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;`,
+      expect(migration).toContain(`ALTER ROLE ${role} LOGIN NOINHERIT;`);
+      expect(migration).not.toMatch(
+        new RegExp(`ALTER ROLE ${role}[^;]*(?:SUPERUSER|BYPASSRLS)`),
       );
     }
+    expect(migration).toContain("rolsuper OR role.rolbypassrls");
+    expect(migration).toContain("SERVICE_ROLE_SECURITY_ATTRIBUTES_INVALID");
   });
 
   it("resolves, touches and revokes browser bindings only by both exact hashes", () => {

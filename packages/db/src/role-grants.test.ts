@@ -61,9 +61,12 @@ describe("TS-06 Role Grants Test", () => {
 
     expect(sql).toMatch(/CREATE ROLE context_runtime_svc WITH LOGIN NOINHERIT/u);
     expect(sql).toMatch(/CREATE ROLE console_control_svc WITH LOGIN NOINHERIT/u);
-    expect(sql).toContain(
-      "ALTER ROLE context_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;",
+    expect(sql).toContain("ALTER ROLE context_svc LOGIN NOINHERIT;");
+    expect(sql).not.toMatch(
+      /ALTER ROLE context_svc[^;]*(?:SUPERUSER|BYPASSRLS)/u,
     );
+    expect(sql).toContain("rolsuper OR role.rolbypassrls");
+    expect(sql).toContain("SERVICE_ROLE_SECURITY_ATTRIBUTES_INVALID");
     expect(sql).toContain(
       "the historical shared login remains only for the bounded rollback bridge",
     );

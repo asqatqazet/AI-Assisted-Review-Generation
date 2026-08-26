@@ -3,9 +3,37 @@
 -- would let one buggy code path enumerate every Tenant. Only fixed, bounded
 -- SECURITY DEFINER operations remain callable by context_runtime_svc.
 
-ALTER ROLE context_runtime_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
-ALTER ROLE console_control_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
-ALTER ROLE generation_svc LOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT;
+-- A managed-database CREATEROLE owner cannot toggle SUPERUSER/BYPASSRLS,
+-- including toggling them off. Fail closed if an existing service role is
+-- unsafe, then alter only the ordinary login/inheritance attributes.
+DO $service_role_security$
+DECLARE
+  role record;
+BEGIN
+  FOR role IN
+    SELECT rolname, rolsuper, rolbypassrls
+    FROM pg_catalog.pg_roles
+    WHERE rolname IN (
+      'context_runtime_svc',
+      'console_control_svc',
+      'generation_svc'
+    )
+  LOOP
+    IF role.rolsuper OR role.rolbypassrls THEN
+      RAISE EXCEPTION USING
+        MESSAGE = 'SERVICE_ROLE_SECURITY_ATTRIBUTES_INVALID',
+        DETAIL = format(
+          'Role %I must already be NOSUPERUSER and NOBYPASSRLS; the migration owner will not attempt a privileged attribute change.',
+          role.rolname
+        );
+    END IF;
+  END LOOP;
+END
+$service_role_security$;
+
+ALTER ROLE context_runtime_svc LOGIN NOINHERIT;
+ALTER ROLE console_control_svc LOGIN NOINHERIT;
+ALTER ROLE generation_svc LOGIN NOINHERIT;
 
 ALTER TABLE review_session_browser_bindings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE review_session_browser_bindings FORCE ROW LEVEL SECURITY;
