@@ -11,7 +11,13 @@ try {
       !firstHostnameLabel.endsWith("-pooler") &&
       url.username.length > 0 &&
       url.password.length > 0 &&
-      url.searchParams.get("sslmode") === "require";
+      url.searchParams.getAll("sslmode").length === 1 &&
+      url.searchParams.get("sslmode") === "require" &&
+      url.searchParams.getAll("channel_binding").length <= 1 &&
+      [null, "require"].includes(url.searchParams.get("channel_binding")) &&
+      [...url.searchParams.keys()].every((key) =>
+        ["sslmode", "channel_binding"].includes(key),
+      );
   }
 } catch {
   valid = false;

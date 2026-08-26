@@ -77,6 +77,18 @@ git pull --ff-only
 恢复向导只执行原 Stage 4–7。它只会把上述唯一已知 migration 标记为 rolled back；如果 Prisma 报告
 其他失败 migration，会 fail closed 并保持数据库状态不变。
 
+如果 deploy 随后在 `psql` 报告 `extra key/value separator "=" in URI query parameter`，说明四个 GitHub
+Neon connection secrets 中至少一个包含重复粘贴或畸形 query。不要重跑完整 setup，也不要在聊天或日志中粘贴 URL。
+更新 `main` 后运行专用的两阶段连接修复向导：
+
+```bash
+git pull --ff-only
+./scripts/repair-neon-connection-secrets.sh
+```
+
+它要求先在 Neon 轮换已暴露的 owner 密码，随后用 `psql` 验证规范化 direct URL；确认后只轮换三个 runtime role
+密码并替换 `student` environment 的四个 Neon secrets。它不会重跑 migration、AWS/OIDC 或应用签名密钥生成。
+
 ## 3. AWS OIDC 的准确配置
 
 在 IAM → Identity providers 添加：

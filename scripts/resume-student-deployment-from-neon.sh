@@ -224,10 +224,120 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=4
 REPO_SLUG="asqatqazet/AI-Assisted-Review-Generation"
 GITHUB_ENVIRONMENT="student"
 FAILED_MIGRATION="20260823000019_operator_capability_rls"
+
+if [[ "${1:-}" == "--repair-connection-secrets" ]]; then
+  [[ "$#" -eq 1 ]] || {
+    warn "The connection repair wizard accepts no additional arguments."
+    exit 1
+  }
+  TOTAL_STAGES=2
+  banner "Repair Neon connection secrets"
+
+  stage "Validate the rotated owner connection"
+  for command_name in gh node psql; do
+    command -v "$command_name" >/dev/null 2>&1 || {
+      warn "$command_name is required before continuing"
+      exit 1
+    }
+  done
+  gh auth status >/dev/null 2>&1 || {
+    warn "Run gh auth login before continuing."
+    exit 1
+  }
+  CURRENT_REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
+  [[ "$CURRENT_REPO" == "$REPO_SLUG" ]] || {
+    warn "Expected $REPO_SLUG, got $CURRENT_REPO"
+    exit 1
+  }
+  open_url "https://console.neon.tech/"
+  step "Reset the neondb_owner password because the earlier connection string was exposed."
+  step "Open Connect, disable pooling, select neondb_owner, and copy the direct TLS URL once."
+  if ! confirm "Has the owner password been rotated?"; then
+    warn "Connection repair stops until the exposed owner credential is rotated."
+    exit 1
+  fi
+  ask_secret NEON_MIGRATION_DATABASE_URL "Paste the rotated direct migration-owner URL once:"
+  until DATABASE_URL_TO_CHECK="$NEON_MIGRATION_DATABASE_URL" node scripts/validate-neon-database-url.mjs; do
+    warn "Expected one direct Neon URL with sslmode=require and an optional exact channel_binding=require."
+    warn "The rejected value was not printed or stored. Copy it again from Neon Connect."
+    NEON_MIGRATION_DATABASE_URL=""
+    printf '  %s%s%s ' "$BOLD" "Paste the rotated direct migration-owner URL once:" "$RESET"
+    if ! read -rs NEON_MIGRATION_DATABASE_URL; then
+      printf '\n'
+      warn "No database URL was read. Re-run this repair wizard when it is ready."
+      exit 1
+    fi
+    printf '\n'
+  done
+  NEON_MIGRATION_DATABASE_URL="$(
+    DATABASE_URL_TO_NORMALIZE="$NEON_MIGRATION_DATABASE_URL" \
+      node scripts/normalize-neon-database-url.mjs
+  )"
+  psql "$NEON_MIGRATION_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+    -c 'SELECT current_user;' >/dev/null
+  say "The normalized direct URL is accepted by libpq and Neon."
+
+  stage "Replace the four GitHub connection secrets"
+  say "This rotates only the three service-role passwords and replaces the four Neon connection secrets."
+  if ! confirm "Rotate those role passwords and update the student environment now?"; then
+    warn "No role password or GitHub secret was changed."
+    exit 1
+  fi
+  random_hex() {
+    node -e 'process.stdout.write(require("node:crypto").randomBytes(Number(process.argv[1])).toString("hex"))' "$1"
+  }
+  CONTEXT_RUNTIME_DB_PASSWORD=$(random_hex 24)
+  CONSOLE_CONTROL_DB_PASSWORD=$(random_hex 24)
+  GENERATION_DB_PASSWORD=$(random_hex 24)
+  psql "$NEON_MIGRATION_DATABASE_URL" -X -v ON_ERROR_STOP=1 \
+    -v context_password="$CONTEXT_RUNTIME_DB_PASSWORD" \
+    -v console_password="$CONSOLE_CONTROL_DB_PASSWORD" \
+    -v generation_password="$GENERATION_DB_PASSWORD" <<'SQL' >/dev/null
+ALTER ROLE context_runtime_svc PASSWORD :'context_password';
+ALTER ROLE console_control_svc PASSWORD :'console_password';
+ALTER ROLE generation_svc PASSWORD :'generation_password';
+SQL
+
+  pooled_url() {
+    DATABASE_URL_BASE="$NEON_MIGRATION_DATABASE_URL" RUNTIME_USER="$1" RUNTIME_PASSWORD="$2" node -e '
+      const url = new URL(process.env.DATABASE_URL_BASE);
+      const labels = url.hostname.split(".");
+      if (!labels[0].endsWith("-pooler")) labels[0] += "-pooler";
+      url.hostname = labels.join(".");
+      url.username = process.env.RUNTIME_USER;
+      url.password = process.env.RUNTIME_PASSWORD;
+      url.search = "";
+      url.searchParams.set("sslmode", "require");
+      url.searchParams.set("channel_binding", "require");
+      process.stdout.write(url.toString());
+    '
+  }
+
+  NEON_CONTEXT_RUNTIME_DATABASE_URL=$(pooled_url context_runtime_svc "$CONTEXT_RUNTIME_DB_PASSWORD")
+  NEON_CONSOLE_CONTROL_DATABASE_URL=$(pooled_url console_control_svc "$CONSOLE_CONTROL_DB_PASSWORD")
+  NEON_GENERATION_DATABASE_URL=$(pooled_url generation_svc "$GENERATION_DB_PASSWORD")
+  test "$(psql "$NEON_CONTEXT_RUNTIME_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_user;')" = "context_runtime_svc"
+  test "$(psql "$NEON_CONSOLE_CONTROL_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_user;')" = "console_control_svc"
+  test "$(psql "$NEON_GENERATION_DATABASE_URL" -X -A -t -v ON_ERROR_STOP=1 -c 'SELECT current_user;')" = "generation_svc"
+
+  set_secret NEON_MIGRATION_DATABASE_URL "$NEON_MIGRATION_DATABASE_URL"
+  set_secret NEON_CONTEXT_RUNTIME_DATABASE_URL "$NEON_CONTEXT_RUNTIME_DATABASE_URL"
+  set_secret NEON_CONSOLE_CONTROL_DATABASE_URL "$NEON_CONSOLE_CONTROL_DATABASE_URL"
+  set_secret NEON_GENERATION_DATABASE_URL "$NEON_GENERATION_DATABASE_URL"
+  say "All four libpq-safe connection secrets now point at the same Neon database."
+  finish
+  exit 0
+fi
+
+[[ "$#" -eq 0 ]] || {
+  warn "Unknown argument: $1"
+  exit 1
+}
+
+TOTAL_STAGES=4
 
 banner "Resume student deployment from Neon"
 
@@ -268,6 +378,10 @@ until DATABASE_URL_TO_CHECK="$NEON_MIGRATION_DATABASE_URL" node scripts/validate
   fi
   printf '\n'
 done
+NEON_MIGRATION_DATABASE_URL="$(
+  DATABASE_URL_TO_NORMALIZE="$NEON_MIGRATION_DATABASE_URL" \
+    node scripts/normalize-neon-database-url.mjs
+)"
 
 MIGRATION_OUTPUT=$(mktemp)
 cleanup_migration_output() { rm -f "$MIGRATION_OUTPUT"; }

@@ -14,6 +14,10 @@ const wizard = readFileSync(
   new URL("../../scripts/resume-student-deployment-from-neon.sh", import.meta.url),
   "utf8",
 );
+const repairWizard = readFileSync(
+  new URL("../../scripts/repair-neon-connection-secrets.sh", import.meta.url),
+  "utf8",
+);
 
 describe("student deployment Neon recovery wizard", () => {
   it("resumes only the original stages 4 through 7", () => {
@@ -28,6 +32,14 @@ describe("student deployment Neon recovery wizard", () => {
       /ask_secret NEON_MIGRATION_DATABASE_URL[\s\S]*?until DATABASE_URL_TO_CHECK="\$NEON_MIGRATION_DATABASE_URL" node scripts\/validate-neon-database-url\.mjs/u,
     );
     expect(wizard).not.toContain("echo $NEON_MIGRATION_DATABASE_URL");
+    expect(wizard).toContain("scripts/normalize-neon-database-url.mjs");
+  });
+
+  it("offers a dedicated connection-secret repair path without replaying setup", () => {
+    expect(repairWizard).toContain("--repair-connection-secrets");
+    expect(wizard).toContain('banner "Repair Neon connection secrets"');
+    expect(wizard).toContain('stage "Validate the rotated owner connection"');
+    expect(wizard).toContain('stage "Replace the four GitHub connection secrets"');
   });
 
   it("recovers only the known failed migration before retrying deploy", () => {

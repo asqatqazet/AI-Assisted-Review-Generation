@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const root = path.join(__dirname, "../..");
 const validator = path.join(root, "scripts/validate-neon-database-url.mjs");
+const normalizer = path.join(root, "scripts/normalize-neon-database-url.mjs");
 
 const validate = (value: string) =>
   spawnSync(process.execPath, [validator], {
@@ -39,6 +40,34 @@ describe("Neon migration-owner URL validation", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
+  });
+
+  it("rejects a channel-binding value containing a second pasted URL", () => {
+    const result = validate(
+      "postgresql://neondb_owner:redacted@ep-example.c-5.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require=postgresql://duplicate.invalid/neondb?sslmode=require",
+    );
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("");
+  });
+
+  it("normalizes the accepted URL to the two libpq-safe TLS parameters", () => {
+    const result = spawnSync(process.execPath, [normalizer], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DATABASE_URL_TO_NORMALIZE:
+          "postgresql://neondb_owner:redacted@ep-example.c-5.eu-central-1.aws.neon.tech/neondb?channel_binding=require&sslmode=require",
+      },
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(
+      "postgresql://neondb_owner:redacted@ep-example.c-5.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+    );
     expect(result.stderr).toBe("");
   });
 

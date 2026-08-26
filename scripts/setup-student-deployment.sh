@@ -403,6 +403,10 @@ until DATABASE_URL_TO_CHECK="$NEON_MIGRATION_DATABASE_URL" node scripts/validate
   fi
   printf '\n'
 done
+NEON_MIGRATION_DATABASE_URL="$(
+  DATABASE_URL_TO_NORMALIZE="$NEON_MIGRATION_DATABASE_URL" \
+    node scripts/normalize-neon-database-url.mjs
+)"
 if ! confirm "Apply the committed migrations to this new Neon database?"; then
   warn "Runtime roles do not exist until the migrations are applied."
   exit 1
