@@ -28,6 +28,13 @@ on:
         required: true
         type: boolean
         default: false
+      acknowledge_database_cutover:
+        description: >-
+          One-time replacement of an existing deployment's database; the old
+          database release is not a valid rollback target
+        required: true
+        type: boolean
+        default: false
       acknowledge_provider_cost:
         description: >-
           I accept that venues routed to a live provider bill the credential I
@@ -93,6 +100,13 @@ jobs:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           role-session-name: review-generation-student-deploy
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve the live BFF rollback dependency
+        id: legacy_dependency
+        shell: bash
+        env:
+          ACKNOWLEDGE_DATABASE_CUTOVER: ${{ inputs.acknowledge_database_cutover }}
+        run: scripts/detect-legacy-context-rollback-dependency.sh
 
       - name: Allocate the immutable candidate configuration release
         id: release_identity
@@ -174,11 +188,12 @@ jobs:
             --arg configurationCandidateReleaseId "${{ steps.release_identity.outputs.id }}" \
             --arg deploymentProfile "$REVIEW_DEPLOYMENT_PROFILE" \
             --arg teardownDate "$REVIEW_TEARDOWN_DATE" \
+            --arg dbCompatibilityPhase "${{ steps.legacy_dependency.outputs.cutover == 'true' && 'cutover' || 'expand' }}" \
             --arg webBff "$(shasum -a 256 "$RELEASE_DIR/web-bff.zip" | cut -d ' ' -f 1)" \
             --arg context "$(shasum -a 256 "$RELEASE_DIR/context-service.zip" | cut -d ' ' -f 1)" \
             --arg generation "$(shasum -a 256 "$RELEASE_DIR/generation-service.zip" | cut -d ' ' -f 1)" \
             --arg ui "$UI_SHA" \
-            '{releaseId:$releaseId,configurationCandidateReleaseId:$configurationCandidateReleaseId,deploymentProfile:$deploymentProfile,teardownDate:$teardownDate,dbCompatibility:{phase:"expand",legacyContextFunction:"review-context-service-student",legacyContextVersion:null,contractMigration:null},sha256:{webBff:$webBff,context:$context,generation:$generation,ui:$ui}}' \
+            '{releaseId:$releaseId,configurationCandidateReleaseId:$configurationCandidateReleaseId,deploymentProfile:$deploymentProfile,teardownDate:$teardownDate,dbCompatibility:{phase:$dbCompatibilityPhase,legacyContextFunction:"review-context-service-student",legacyContextVersion:null,contractMigration:null},sha256:{webBff:$webBff,context:$context,generation:$generation,ui:$ui}}' \
             > "$RELEASE_DIR/release-manifest.json"
 
       - name: Refuse an unsafe AWS account or concurrency allocation
@@ -219,6 +234,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ "${{ steps.legacy_dependency.outputs.required }}" != "true" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           FUNCTION_NAME=review-context-service-student
           ERROR_FILE="$RUNNER_TEMP/legacy-context-get-alias.error"
           if LEGACY_VERSION="$(aws lambda get-alias \
@@ -879,6 +898,14 @@ jobs:
               -c 'SELECT public.assert_strict_zero_prompt_executable_state();'
             aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 1 >/dev/null
           fi
+
+      - name: Restore Generation after a pre-migration failure
+        if: ${{ failure() && inputs.deployment_profile == 'student-low-quota' && steps.low_quota_freeze.outcome == 'success' && steps.product_migration.outcome == 'skipped' }}
+        shell: bash
+        env:
+          GENERATION_CONCURRENCY_SNAPSHOT: ${{ github.workspace }}/release/generation-concurrency-before-low.json
+          GENERATION_FUNCTION_NAME: review-generation-service-student
+        run: scripts/restore-generation-concurrency.sh
 
       - name: Restore only a previously safe Generation concurrency
         if: ${{ failure() && inputs.deployment_profile == 'student-low-quota' && steps.low_quota_freeze.outcome == 'success' && steps.product_migration.outcome == 'success' }}

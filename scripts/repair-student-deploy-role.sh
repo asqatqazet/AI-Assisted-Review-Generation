@@ -508,6 +508,7 @@ RUN_URL=$(gh workflow run deploy-student.yml \
   -f "operator_email=$REVIEW_OPERATOR_EMAIL" \
   -f "tenant_operator_email=$REVIEW_TENANT_OPERATOR_EMAIL" \
   -f "bootstrap_initial_operator=$REVIEW_BOOTSTRAP_INITIAL_OPERATOR" \
+  -f "acknowledge_database_cutover=false" \
   -f "acknowledge_provider_cost=false")
 RUN_ID="${RUN_URL##*/}"
 say "Deployment dispatched: $RUN_URL"

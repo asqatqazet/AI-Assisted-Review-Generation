@@ -380,6 +380,7 @@ gh secret list --env "$GITHUB_ENVIRONMENT" | grep -E '^(NEON_MIGRATION_DATABASE_
 open_url "https://github.com/$REPO_SLUG/actions/workflows/deploy-student.yml"
 step "Choose Run workflow on main."
 step "Enter a teardown date before the AWS Free-plan expiry."
+step "Enable acknowledge_database_cutover for this one replacement-database run only."
 step "Keep student-low-quota, leave the provider-cost acknowledgement false, and require every step to pass."
 warn "Do not enable a paid model or put real customer/reviewer data into this assessment deployment."
 

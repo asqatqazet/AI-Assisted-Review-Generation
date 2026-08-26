@@ -231,9 +231,12 @@ gh run list --workflow verify.yml --branch main --limit 3
 5. `tenant_operator_email` 填写另一个、与管理员不同的 Tenant-only 验收账号邮箱；
 6. `bootstrap_initial_operator` 默认保持 `false`；只有数据库中全局 `Operators = 0` 且历史
    `Platform Grants = 0` 时才设置 `true`；
-7. `student-low-quota` 不需要 provider cost 确认；仅选择 `reserved-concurrency` 时设置
+7. `acknowledge_database_cutover` 默认保持 `false`。只有像本次一样明确换用全新 Neon project、且旧 live
+   Generation 已不能完成 synthetic probe 时才设置 `true`；该次 release manifest 会标记 `cutover`，不能作为旧
+   数据库 release 的 rollback 目标。后续例行部署必须恢复为 `false`；
+8. `student-low-quota` 不需要 provider cost 确认；仅选择 `reserved-concurrency` 时设置
    `acknowledge_provider_cost = true`；
-8. 开始运行。
+9. 开始运行。
 
 首次部署成功后的每次例行部署必须保持 `bootstrap_initial_operator = false`。workflow 在 Operator 写入前读取全局
 状态：任意历史 Operator 或 Platform Grant 存在时都会拒绝 bootstrap；因此 disabled/revoked Operator 不能借部署

@@ -472,6 +472,7 @@ describe("student deployment security", () => {
     expect(repair).toContain(
       '-f "bootstrap_initial_operator=$REVIEW_BOOTSTRAP_INITIAL_OPERATOR"',
     );
+    expect(repair).toContain('-f "acknowledge_database_cutover=false"');
     expect(repair).toContain('-f "acknowledge_provider_cost=false"');
     expect(repair).not.toContain('-f "bootstrap_initial_operator=true"');
     expect(repair).not.toContain('-f "acknowledge_provider_cost=true"');
