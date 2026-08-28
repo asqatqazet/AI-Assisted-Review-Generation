@@ -712,6 +712,7 @@ describe("student deployment security", () => {
     expect(smoke).toContain("candidateBffReviewerGenerationCompleted:true");
     expect(smoke).toContain("CANDIDATE_REVIEWER_SMOKE_FAILED:${SMOKE_STAGE}");
     expect(smoke).toContain('SMOKE_STAGE="generation-stream"');
+    expect(smoke).toContain('"x-forwarded-for":"127.0.0.1"');
     expect(smoke).not.toContain("set -x");
     expect(smoke).toContain("configuration_release_snapshots");
     expect(smoke).toContain("OBSERVED_CONFIGURATION_RELEASE_ID");

@@ -72,7 +72,7 @@ http_event() {
       routeKey:($method + " " + $path),
       rawPath:$path,
       rawQueryString:"",
-      headers:({host:"candidate.internal"} + $extraHeaders),
+      headers:({host:"candidate.internal","x-forwarded-for":"127.0.0.1"} + $extraHeaders),
       cookies:$cookies,
       requestContext:{
         accountId:"candidate",
