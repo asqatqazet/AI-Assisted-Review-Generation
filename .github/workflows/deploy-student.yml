@@ -210,18 +210,29 @@ jobs:
           FUNCTION_NAME=review-web-bff-reconcile-student
           ERROR_FILE="$RUNNER_TEMP/reconcile-live-get-function.error"
           if aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>"$ERROR_FILE"; then
-            OUTPUT_FILE="$RUNNER_TEMP/reconcile-live-before-freeze.json"
-            METADATA="$(aws lambda invoke \
-              --function-name "$FUNCTION_NAME" \
-              --qualifier live \
-              --cli-binary-format raw-in-base64-out \
-              --payload '{}' \
-              "$OUTPUT_FILE")"
-            if [ "$(jq -r '.FunctionError // empty' <<< "$METADATA")" != "" ]; then
+            RECONCILED=false
+            for ATTEMPT in 1 2 3 4 5; do
+              OUTPUT_FILE="$RUNNER_TEMP/reconcile-live-before-freeze-${ATTEMPT}.json"
+              METADATA="$(aws lambda invoke \
+                --function-name "$FUNCTION_NAME" \
+                --qualifier live \
+                --cli-binary-format raw-in-base64-out \
+                --payload '{}' \
+                "$OUTPUT_FILE")"
+              if [ "$(jq -r '.FunctionError // empty' <<< "$METADATA")" = "" ]; then
+                jq -e '.StatusCode == 200' <<< "$METADATA" >/dev/null
+                RECONCILED=true
+                break
+              fi
+              ERROR_TYPE="$(jq -r '.errorType // empty' "$OUTPUT_FILE")"
+              if [ "$ERROR_TYPE" = "TooManyRequestsException" ] && [ "$ATTEMPT" -lt 5 ]; then
+                sleep "$((ATTEMPT * 5))"
+                continue
+              fi
               jq -c '{errorType,errorMessage}' "$OUTPUT_FILE" >&2 || true
               exit 1
-            fi
-            jq -e '.StatusCode == 200' <<< "$METADATA" >/dev/null
+            done
+            test "$RECONCILED" = true
           elif grep -Eq 'ResourceNotFoundException|ResourceNotFound' "$ERROR_FILE"; then
             : # A fresh stack has no stale rollback-probe work.
           else

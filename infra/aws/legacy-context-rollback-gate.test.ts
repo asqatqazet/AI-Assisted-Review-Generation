@@ -121,6 +121,9 @@ describe("legacy Context rollback dependency gate", () => {
     expect(workflow).toMatch(
       /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?\.StatusCode == 200/u,
     );
+    expect(workflow).toMatch(
+      /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?for ATTEMPT in 1 2 3 4 5[\s\S]*?TooManyRequestsException[\s\S]*?sleep/u,
+    );
     expect(workflow).not.toMatch(
       /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?\.inspected \| type == "number"/u,
     );
