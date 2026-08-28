@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 : "${RUNNER_TEMP:?RUNNER_TEMP is required}"
 : "${RELEASE_DIR:?RELEASE_DIR is required}"
@@ -13,6 +13,9 @@ readonly CANDIDATE_ORIGIN="https://candidate.internal"
 readonly EVIDENCE_DIR="${RELEASE_DIR}/evidence"
 readonly IDEMPOTENCY_KEY="candidate-bff-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 mkdir -p "$EVIDENCE_DIR"
+
+SMOKE_STAGE="initialization"
+trap 'printf "%s\n" "CANDIDATE_REVIEWER_SMOKE_FAILED:${SMOKE_STAGE}" >&2' ERR
 
 invoke_buffered() {
   local function_name="$1"
@@ -104,6 +107,7 @@ candidate_cookies() {
 }
 
 # The staged UI and the BFF candidate must describe the same immutable release.
+SMOKE_STAGE="staged-ui"
 test "$(aws s3 cp "s3://${UI_BUCKET}/__candidate/${CANDIDATE_ID}/release.json" - | jq -er .releaseSha)" = "$EXPECTED_RELEASE_SHA"
 aws s3 cp "s3://${UI_BUCKET}/__candidate/${CANDIDATE_ID}/index.html" \
   "$RUNNER_TEMP/candidate-index.html" >/dev/null
@@ -111,6 +115,7 @@ test -s "$RUNNER_TEMP/candidate-index.html"
 
 # All three BFF handlers are one release and must carry the same exact service
 # version pins plus the staged configuration release id.
+SMOKE_STAGE="service-pins"
 EXPECTED_PINS=""
 for function_name in \
   review-web-bff-fast-student \
@@ -139,6 +144,7 @@ done
 
 COOKIES='[]'
 EMPTY_HEADERS='{}'
+SMOKE_STAGE="entry-redirect"
 ENTRY_PATH="/s/speicher-neun/hafencity"
 ENTRY_EVENT="$(http_event GET "$ENTRY_PATH" "" "$COOKIES" "$EMPTY_HEADERS")"
 invoke_buffered "review-web-bff-fast-student" "$ENTRY_EVENT" "$RUNNER_TEMP/candidate-bff-entry.json"
@@ -150,6 +156,7 @@ ENTRY_HANDLE="${ENTRY_LOCATION##*/}"
 test -n "$ENTRY_HANDLE"
 
 ENTRY_API_PATH="/api/v1/entry-challenges/${ENTRY_HANDLE}"
+SMOKE_STAGE="entry-state"
 ENTRY_API_EVENT="$(http_event GET "$ENTRY_API_PATH" "" "$COOKIES" "$EMPTY_HEADERS")"
 invoke_buffered "review-web-bff-fast-student" "$ENTRY_API_EVENT" \
   "$RUNNER_TEMP/candidate-bff-entry-state-response.json"
@@ -160,6 +167,7 @@ CSRF_TOKEN="$(jq -er .csrfToken "$RUNNER_TEMP/candidate-bff-entry-state.json")"
 
 START_BODY="$(jq -cn --arg csrfToken "$CSRF_TOKEN" \
   '{rating:5,action:"generate",csrfToken:$csrfToken}')"
+SMOKE_STAGE="entry-start"
 START_HASH="$(printf '%s' "$START_BODY" | sha256sum | cut -d ' ' -f 1)"
 START_HEADERS="$(jq -cn --arg origin "$CANDIDATE_ORIGIN" --arg hash "$START_HASH" \
   '{origin:$origin,"content-type":"application/json","x-amz-content-sha256":$hash}')"
@@ -177,6 +185,7 @@ REVIEW_HANDLE="${REVIEW_LOCATION##*/}"
 test -n "$REVIEW_HANDLE"
 
 REVIEW_PATH="/api/v1/review-sessions/${REVIEW_HANDLE}"
+SMOKE_STAGE="review-state"
 REVIEW_EVENT="$(http_event GET "$REVIEW_PATH" "" "$COOKIES" "$EMPTY_HEADERS")"
 invoke_buffered "review-web-bff-fast-student" "$REVIEW_EVENT" \
   "$RUNNER_TEMP/candidate-bff-review-response.json"
@@ -190,6 +199,7 @@ GENERATION_BODY="$(jq -cn \
   --arg factOptionId "$FACT_OPTION_ID" \
   --arg reviewFormatId "$REVIEW_FORMAT_ID" \
   '{factOptionIds:[$factOptionId],reviewFormatId:$reviewFormatId}')"
+SMOKE_STAGE="generation-stream"
 GENERATION_HASH="$(printf '%s' "$GENERATION_BODY" | sha256sum | cut -d ' ' -f 1)"
 GENERATION_HEADERS="$(jq -cn \
   --arg origin "$CANDIDATE_ORIGIN" \
@@ -205,6 +215,7 @@ grep -F '"status":"completed"' "$RUNNER_TEMP/candidate-bff-generation.sse" >/dev
 
 # Public responses intentionally omit internal provenance. Verify the exact
 # session and completed Generation through the deployment-owner connection.
+SMOKE_STAGE="provenance"
 REVIEW_HANDLE_HASH="sha256:$(printf '%s' "$REVIEW_HANDLE" | sha256sum | cut -d ' ' -f 1)"
 OBSERVED_PROVENANCE="$(
   psql "$DATABASE_URL" -X -q -A -t -v ON_ERROR_STOP=1 \
@@ -246,6 +257,7 @@ test "$OBSERVED_CONFIGURATION_RELEASE_ID" = "$CONFIGURATION_CANDIDATE_RELEASE_ID
 [[ "$OBSERVED_CONFIGURATION_SNAPSHOT_ID" =~ ^[0-9a-f-]{36}$ ]]
 [[ "$OBSERVED_PROMPT_VERSION_ID" =~ ^[0-9a-f-]{36}$ ]]
 
+SMOKE_STAGE="evidence"
 jq -n \
   --arg configurationReleaseId "$OBSERVED_CONFIGURATION_RELEASE_ID" \
   --arg configurationSnapshotId "$OBSERVED_CONFIGURATION_SNAPSHOT_ID" \
@@ -254,4 +266,5 @@ jq -n \
   '{candidateBffReviewerGenerationCompleted:true,provider:"fake",costMicros:0,configurationReleaseId:$configurationReleaseId,configurationSnapshotId:$configurationSnapshotId,promptVersionId:$promptVersionId,serviceVersionArns:$serviceVersionArns}' \
   > "$EVIDENCE_DIR/candidate-reviewer-generation.json"
 
+trap - ERR
 printf '%s\n' "Candidate UI/BFF reviewer Generation smoke passed."

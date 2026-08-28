@@ -710,6 +710,9 @@ describe("student deployment security", () => {
     expect(smoke).toContain("review-web-bff-stream-student");
     expect(smoke).toContain("__candidate/${CANDIDATE_ID}/release.json");
     expect(smoke).toContain("candidateBffReviewerGenerationCompleted:true");
+    expect(smoke).toContain("CANDIDATE_REVIEWER_SMOKE_FAILED:${SMOKE_STAGE}");
+    expect(smoke).toContain('SMOKE_STAGE="generation-stream"');
+    expect(smoke).not.toContain("set -x");
     expect(smoke).toContain("configuration_release_snapshots");
     expect(smoke).toContain("OBSERVED_CONFIGURATION_RELEASE_ID");
     expect(smoke).toContain("OBSERVED_CONFIGURATION_SNAPSHOT_ID");
