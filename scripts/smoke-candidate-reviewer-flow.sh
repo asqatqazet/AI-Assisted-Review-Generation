@@ -206,8 +206,20 @@ GENERATION_PATH="${REVIEW_PATH}/generations"
 GENERATION_EVENT="$(http_event POST "$GENERATION_PATH" "$GENERATION_BODY" "$COOKIES" "$GENERATION_HEADERS")"
 invoke_stream "review-web-bff-stream-student" "$GENERATION_EVENT" \
   "$RUNNER_TEMP/candidate-bff-generation.sse"
-grep -F '"type":"terminal"' "$RUNNER_TEMP/candidate-bff-generation.sse" >/dev/null
-grep -F '"status":"completed"' "$RUNNER_TEMP/candidate-bff-generation.sse" >/dev/null
+SMOKE_STAGE="generation-terminal"
+if ! grep -aF '"type":"terminal"' "$RUNNER_TEMP/candidate-bff-generation.sse" >/dev/null; then
+  printf '%s\n' "CANDIDATE_REVIEWER_TERMINAL:missing:none" >&2
+  false
+fi
+SMOKE_STAGE="generation-completed"
+if ! grep -aF '"status":"completed"' "$RUNNER_TEMP/candidate-bff-generation.sse" >/dev/null; then
+  TERMINAL_STATUS="$(grep -aoE '"status":"[a-z-]+"' \
+    "$RUNNER_TEMP/candidate-bff-generation.sse" | tail -n 1 | cut -d '"' -f 4 || true)"
+  TERMINAL_CODE="$(grep -aoE '"code":"[A-Z0-9_]+"' \
+    "$RUNNER_TEMP/candidate-bff-generation.sse" | tail -n 1 | cut -d '"' -f 4 || true)"
+  printf '%s\n' "CANDIDATE_REVIEWER_TERMINAL:${TERMINAL_STATUS:-unknown}:${TERMINAL_CODE:-none}" >&2
+  false
+fi
 
 # Public responses intentionally omit internal provenance. Verify the exact
 # session and completed Generation through the deployment-owner connection.
