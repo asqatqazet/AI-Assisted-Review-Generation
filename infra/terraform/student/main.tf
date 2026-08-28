@@ -1068,11 +1068,6 @@ resource "aws_cognito_user_pool_client" "operator_console" {
   prevent_user_existence_errors        = "ENABLED"
   enable_token_revocation              = true
 
-  refresh_token_rotation {
-    feature                    = "ENABLED"
-    retry_grace_period_seconds = 10
-  }
-
   id_token_validity      = 60
   access_token_validity  = 60
   refresh_token_validity = 1

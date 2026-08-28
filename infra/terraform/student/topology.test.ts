@@ -788,9 +788,9 @@ describe("student AWS topology invariants", () => {
       /allowed_oauth_flows_user_pool_client\s*=\s*true/,
     );
     expect(terraform).toMatch(/generate_secret\s*=\s*false/);
-    expect(terraform).toMatch(
-      /refresh_token_rotation\s*\{[\s\S]*?feature\s*=\s*"ENABLED"[\s\S]*?retry_grace_period_seconds\s*=\s*10[\s\S]*?\}/,
-    );
+    expect(terraform).not.toContain("refresh_token_rotation");
+    expect(terraform).toMatch(/enable_token_revocation\s*=\s*true/);
+    expect(terraform).toMatch(/refresh_token_validity\s*=\s*1/);
     expect(terraform).toMatch(/path_pattern\s*=\s*"\/auth\/\*"/);
     expect(terraform).toContain("OPERATOR_SESSION_SECRET_PARAMETER");
     expect(terraform).toContain("OPERATOR_OIDC_CONFIG_PARAMETER");
