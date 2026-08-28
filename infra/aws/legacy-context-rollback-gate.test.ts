@@ -138,6 +138,15 @@ describe("legacy Context rollback dependency gate", () => {
     expect(probe).toContain('.result.requirements.minimumFactSelections');
     expect(probe).toContain('.result.factOptions[0:$minimum] | map(.id)');
     expect(probe).toContain('--argjson factOptionIds "$FACT_OPTION_IDS"');
+    expect(probe).toContain(
+      '.result.workload.bindings.snapshotId == .result.workload.snapshot.snapshotId',
+    );
+    expect(probe).toContain(
+      '.result.workload == $before[0].result.workload',
+    );
+    expect(probe).not.toContain(
+      '.result.workload.bindings.promptVersionId',
+    );
     expect(probe).toContain("LEGACY_CONTEXT_PROBE_ASSERTION_FAILED");
   });
 });

@@ -104,15 +104,22 @@ invoke_legacy "$GENERATION_EVENT" \
 assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json" generation '
   .operation == "prepare-reviewer-generation" and
   .result.status == "prepared" and
-  (.result.workload.bindings.promptVersionId | type == "string") and
-  (.result.workload.bindings.promptVersionId | length) > 0 and
-  (.result.workload.snapshot.promptVersions as $prompts |
-    .result.workload.bindings.promptVersionId as $bound |
-    any($prompts[];
-      .id == $bound and
-      .commandKind == "generate" and
-      (.body | type == "string") and
-      (.body | length) > 0))
+  (.result.workload.bindings.snapshotId | type == "string") and
+  (.result.workload.bindings.snapshotId | length) > 0 and
+  .result.workload.bindings.snapshotId == .result.workload.snapshot.snapshotId and
+  .result.workload.command.kind == "generate" and
+  (.result.workload.assertions | length) > 0
 '
+
+if [ "$PROBE_PHASE" = "after-migration" ]; then
+  BEFORE_GENERATION="$RUNNER_TEMP/legacy-before-migration-generation.json"
+  test -s "$BEFORE_GENERATION"
+  if ! jq -e --slurpfile before "$BEFORE_GENERATION" \
+    '.result.workload == $before[0].result.workload' \
+    "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json" >/dev/null; then
+    printf '%s\n' "LEGACY_CONTEXT_WORKLOAD_CHANGED_AFTER_EXPANSION" >&2
+    exit 1
+  fi
+fi
 
 printf '%s\n' "Legacy immutable Context Prompt/Generation probe passed: ${PROBE_PHASE}."
