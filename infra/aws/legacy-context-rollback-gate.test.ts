@@ -124,6 +124,12 @@ describe("legacy Context rollback dependency gate", () => {
     expect(workflow).toMatch(
       /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?for ATTEMPT in 1 2 3 4 5[\s\S]*?TooManyRequestsException[\s\S]*?sleep/u,
     );
+    expect(workflow).toMatch(
+      /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?review-web-bff-stream-student[\s\S]*?trap restore_reconciliation_capacity EXIT[\s\S]*?reserved-concurrent-executions 0[\s\S]*?review-generation-service-student[\s\S]*?reserved-concurrent-executions 1/u,
+    );
+    expect(workflow).toMatch(
+      /restore_reconciliation_capacity[\s\S]*?restore_function_concurrency "\$GENERATION_FUNCTION_NAME"[\s\S]*?restore_function_concurrency "\$STREAM_FUNCTION_NAME"/u,
+    );
     expect(workflow).not.toMatch(
       /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?\.inspected \| type == "number"/u,
     );
