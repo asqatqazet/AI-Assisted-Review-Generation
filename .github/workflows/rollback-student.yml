@@ -192,10 +192,6 @@ jobs:
           jq -e '.operation == "resolve-operator-access" and .result.status == "unauthorized"' "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
           aws lambda invoke --function-name review-web-bff-fast-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$HEALTH_EVENT" "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
           jq -e '.statusCode == 200' "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
-          if [ "$TARGET_DEPLOYMENT_PROFILE" != "student-low-quota" ]; then
-            aws lambda invoke --function-name review-generation-service-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$HEALTH_EVENT" "$RUNNER_TEMP/generation-candidate.json" >/dev/null
-            jq -e '.statusCode == 200' "$RUNNER_TEMP/generation-candidate.json" >/dev/null
-          fi
           STREAM_METADATA="$(aws lambda invoke --function-name review-web-bff-stream-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload "$HEALTH_EVENT" "$RUNNER_TEMP/web-stream-candidate.json")"
           test "$(jq -r '.FunctionError // empty' <<< "$STREAM_METADATA")" = ""
           RECONCILE_METADATA="$(aws lambda invoke --function-name review-web-bff-reconcile-student --qualifier candidate --cli-binary-format raw-in-base64-out --payload '{}' "$RUNNER_TEMP/web-reconcile-candidate.json")"

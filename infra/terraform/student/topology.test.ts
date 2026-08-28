@@ -977,6 +977,25 @@ describe("student AWS topology invariants", () => {
     expect(candidateSmoke).toContain("FunctionError");
   });
 
+  it("never sends API Gateway health events to the private Generation contract", () => {
+    const deploy = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/deploy-student.yml"),
+      "utf8",
+    );
+    const rollback = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/rollback-student.yml"),
+      "utf8",
+    );
+
+    for (const workflow of [deploy, rollback]) {
+      expect(workflow).not.toMatch(
+        /--function-name review-generation-(?:canary|service)-student[\s\S]{0,500}?--payload "\$HEALTH_EVENT"/u,
+      );
+    }
+    expect(deploy).toContain("Complete a reviewer Generation through the candidate UI and BFF");
+    expect(deploy).toContain("scripts/smoke-candidate-reviewer-flow.sh");
+  });
+
   it("lets only BFF roles invoke qualified service aliases and EventBridge invoke reconciliation", () => {
     const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
 

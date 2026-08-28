@@ -783,25 +783,10 @@ jobs:
           EXPECTED_PROVIDER_MODE=paid-enabled
           if [ "$REVIEW_DEPLOYMENT_PROFILE" = "student-low-quota" ]; then
             EXPECTED_PROVIDER_MODE=fake-only
-            invoke_candidate \
-              "candidate fake Generation canary" \
-              review-generation-canary-student "" "$HEALTH_EVENT" \
-              "$RUNNER_TEMP/review-generation-canary-student.json"
-            assert_candidate_response \
-              "candidate fake Generation canary" '.statusCode == 200' \
-              "$RUNNER_TEMP/review-generation-canary-student.json" >/dev/null
             test "$(aws lambda get-function-configuration \
               --function-name review-generation-canary-student \
               --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
               --output text)" = "fake-only"
-          else
-            invoke_candidate \
-              "candidate paid Generation" \
-              review-generation-service-student candidate "$HEALTH_EVENT" \
-              "$RUNNER_TEMP/review-generation-service-student-candidate.json"
-            assert_candidate_response \
-              "candidate paid Generation" '.statusCode == 200' \
-              "$RUNNER_TEMP/review-generation-service-student-candidate.json" >/dev/null
           fi
           test "$(aws lambda get-function-configuration \
             --function-name review-generation-service-student \
@@ -926,15 +911,9 @@ jobs:
           else
             aws lambda put-function-concurrency --function-name review-generation-service-student --reserved-concurrent-executions 1 >/dev/null
           fi
-          HEALTH_EVENT='{"version":"2.0","routeKey":"GET /health","rawPath":"/health","rawQueryString":"","headers":{"host":"candidate.internal"},"requestContext":{"accountId":"candidate","apiId":"candidate","domainName":"candidate.internal","domainPrefix":"candidate","http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"deployment-service-smoke"},"requestId":"candidate","routeKey":"GET /health","stage":"$default","time":"01/Jan/2026:00:00:00 +0000","timeEpoch":0},"isBase64Encoded":false}'
-          aws lambda invoke \
-            --function-name review-generation-service-student \
-            --qualifier live \
-            --cli-binary-format raw-in-base64-out \
-            --payload "$HEALTH_EVENT" \
-            "$RUNNER_TEMP/review-generation-service-student-live.json" >/dev/null
-          jq -e '.statusCode == 200' \
-            "$RUNNER_TEMP/review-generation-service-student-live.json" >/dev/null
+          # The Generation function has no HTTP health route. Its exact
+          # candidate version was already exercised through the paid-work
+          # protocol by the candidate BFF smoke before this alias-only change.
 
       - name: Promote the candidate BFF and UI
         id: promote
