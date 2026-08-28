@@ -3,8 +3,30 @@ import { describe, expect, it } from "vitest";
 
 import { handler as consoleHandler } from "./console-main.js";
 import { handler as reviewerHandler } from "./reviewer-main.js";
+import { createDatabaseFailureSanitizingHandler } from "./runtime-failure.js";
 
 describe("US-01.3 Context production composition", () => {
+  it("publishes only structured database categories from private Lambda handlers", async () => {
+    const prismaFailure = Object.assign(
+      new Error("Raw query failed against a private relation"),
+      {
+        name: "PrismaClientKnownRequestError",
+        code: "P2010",
+        meta: { code: "42501", message: "private database detail" },
+      },
+    );
+    const sanitized = createDatabaseFailureSanitizingHandler(async () => {
+      throw prismaFailure;
+    });
+
+    await expect(sanitized({ operation: "list-reconciliation-candidates" })).rejects.toThrow(
+      "DATABASE_P2010_SQLSTATE_42501",
+    );
+    await expect(sanitized({ operation: "list-reconciliation-candidates" })).rejects.not.toThrow(
+      /private relation|private database detail/u,
+    );
+  });
+
   it("exports separate lazy reviewer and Console Lambda handlers", () => {
     expect(reviewerHandler).toBeTypeOf("function");
     expect(consoleHandler).toBeTypeOf("function");

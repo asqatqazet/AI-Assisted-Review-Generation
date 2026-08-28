@@ -1,6 +1,7 @@
 import { GetParameterCommand, SSMClient } from "@aws-sdk/client-ssm";
 
 import { createContextReviewerRuntime } from "./reviewer-runtime.js";
+import { createDatabaseFailureSanitizingHandler } from "./runtime-failure.js";
 
 let runtime: Promise<(event: unknown) => Promise<unknown>> | undefined;
 const ssm = new SSMClient({});
@@ -56,5 +57,6 @@ const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
   return runtime;
 };
 
-export const handler = async (event: unknown): Promise<unknown> =>
-  await (await getRuntime())(event);
+export const handler = createDatabaseFailureSanitizingHandler(
+  async (event: unknown): Promise<unknown> => await (await getRuntime())(event),
+);
