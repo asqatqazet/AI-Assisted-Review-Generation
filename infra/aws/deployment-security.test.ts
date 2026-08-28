@@ -735,6 +735,8 @@ describe("student deployment security", () => {
     expect(workflow).toContain('PUBLIC_ORIGIN="https://$DOMAIN"');
     expect(smoke).not.toContain("set -x");
     expect(smoke).toContain("configuration_release_snapshots");
+    expect(smoke).toContain("generation.status = 'SUCCEEDED'");
+    expect(smoke).not.toContain("generation.status = 'COMPLETED'");
     expect(smoke).toContain("OBSERVED_CONFIGURATION_RELEASE_ID");
     expect(smoke).toContain("OBSERVED_CONFIGURATION_SNAPSHOT_ID");
     expect(workflow).toMatch(

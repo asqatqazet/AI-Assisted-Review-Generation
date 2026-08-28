@@ -254,7 +254,7 @@ JOIN public.generations AS generation
  AND generation.review_session_id = batch.review_session_id
  AND generation.generation_batch_id = batch.id
 WHERE binding.route_handle_hash = :'route_handle_hash'
-  AND generation.status = 'COMPLETED'
+  AND generation.status = 'SUCCEEDED'
 ORDER BY generation.created_at DESC, generation.id DESC
 LIMIT 1;
 SQL
