@@ -223,7 +223,9 @@ jobs:
               local function_name="$1"
               local snapshot_file="$2"
               local previous
-              previous="$(jq -r '.ReservedConcurrentExecutions // "none"' "$snapshot_file")"
+              previous="$(
+                jq -er '.ReservedConcurrentExecutions' "$snapshot_file" 2>/dev/null || printf '%s' none
+              )"
               if [ "$previous" = "none" ]; then
                 aws lambda delete-function-concurrency \
                   --function-name "$function_name" >/dev/null

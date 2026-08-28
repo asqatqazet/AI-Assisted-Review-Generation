@@ -130,6 +130,9 @@ describe("legacy Context rollback dependency gate", () => {
     expect(workflow).toMatch(
       /restore_reconciliation_capacity[\s\S]*?restore_function_concurrency "\$GENERATION_FUNCTION_NAME"[\s\S]*?restore_function_concurrency "\$STREAM_FUNCTION_NAME"/u,
     );
+    expect(workflow).toContain(
+      "jq -er '.ReservedConcurrentExecutions' \"$snapshot_file\" 2>/dev/null || printf '%s' none",
+    );
     expect(workflow).not.toMatch(
       /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?\.inspected \| type == "number"/u,
     );
