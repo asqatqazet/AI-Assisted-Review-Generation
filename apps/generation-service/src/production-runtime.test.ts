@@ -2,10 +2,42 @@ import type { GenerationWorkloadDto } from "@review/contracts/generation";
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { handler } from "./main.js";
+import { createFailureSanitizingHandler, handler } from "./main.js";
 import { createAssessmentFakeGateway } from "./runtime.js";
 
 describe("US-01.3 Generation production composition", () => {
+  it("publishes only structured Prisma categories at the Lambda boundary", async () => {
+    const prismaFailure = Object.assign(
+      new Error("Invalid query involving private_table and a database URL"),
+      {
+        name: "PrismaClientKnownRequestError",
+        code: "P2010",
+        meta: { code: "42501", message: "permission denied for private_table" },
+      },
+    );
+    const sanitized = createFailureSanitizingHandler(async () => {
+      throw prismaFailure;
+    });
+
+    await expect(sanitized({ operation: "status" })).rejects.toThrow(
+      "DATABASE_P2010_SQLSTATE_42501",
+    );
+    await expect(sanitized({ operation: "status" })).rejects.not.toThrow(
+      /private_table|database URL|permission denied/u,
+    );
+  });
+
+  it("does not relabel non-Prisma application failures", async () => {
+    const applicationFailure = new Error("GENERATION_TERMINAL_NOT_AVAILABLE");
+    const sanitized = createFailureSanitizingHandler(async () => {
+      throw applicationFailure;
+    });
+
+    await expect(sanitized({ operation: "status" })).rejects.toBe(
+      applicationFailure,
+    );
+  });
+
   it("exports a Lambda handler instead of a development HTTP app", () => {
     expect(handler).toBeTypeOf("function");
     const source = fs.readFileSync(new URL("./main.ts", import.meta.url), "utf8");

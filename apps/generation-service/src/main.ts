@@ -91,5 +91,50 @@ const getRuntime = (): Promise<(event: unknown) => Promise<unknown>> => {
   return runtime;
 };
 
-export const handler = async (event: unknown): Promise<unknown> =>
-  await (await getRuntime())(event);
+const prismaFailureCode = (error: unknown): string | undefined => {
+  if (
+    typeof error !== "object" ||
+    error === null ||
+    !("name" in error) ||
+    error.name !== "PrismaClientKnownRequestError" ||
+    !("code" in error) ||
+    typeof error.code !== "string" ||
+    !/^P[0-9]{4}$/.test(error.code)
+  ) {
+    return undefined;
+  }
+  const parts = ["DATABASE", error.code];
+  if (
+    "meta" in error &&
+    typeof error.meta === "object" &&
+    error.meta !== null &&
+    "code" in error.meta &&
+    typeof error.meta.code === "string" &&
+    /^[0-9A-Z]{5}$/.test(error.meta.code)
+  ) {
+    parts.push("SQLSTATE", error.meta.code);
+  }
+  return parts.join("_");
+};
+
+export const createFailureSanitizingHandler = (
+  delegate: (event: unknown) => Promise<unknown>,
+): ((event: unknown) => Promise<unknown>) =>
+  async (event: unknown): Promise<unknown> => {
+    try {
+      return await delegate(event);
+    } catch (error) {
+      const stableCode = prismaFailureCode(error);
+      if (stableCode !== undefined) {
+        // Prisma messages can contain SQL and schema details. This boundary
+        // deliberately omits the caught value from the Lambda-visible error.
+        // eslint-disable-next-line preserve-caught-error -- raw database failures are private
+        throw new Error(stableCode);
+      }
+      throw error;
+    }
+  };
+
+export const handler = createFailureSanitizingHandler(
+  async (event: unknown): Promise<unknown> => await (await getRuntime())(event),
+);
