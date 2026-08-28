@@ -2709,7 +2709,10 @@ export function createPostgresReviewerGenerationAdmissionStore({
       }
       const queued = await client.$queryRaw<ReconciliationQueueRow[]>`
         SELECT reservation_id, tenant_id, execution_lease_id
-        FROM claim_due_reconciliation_queue(${randomUUID()}::uuid, ${limit})
+        FROM claim_due_reconciliation_queue(
+          ${randomUUID()}::uuid,
+          ${limit}::integer
+        )
       `;
       const candidates: (
         | {

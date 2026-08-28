@@ -59,6 +59,20 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
     await runSql("DELETE FROM platform_generation_admissions;");
   });
 
+  it("claims reconciliation work through the runtime role and exact function signature", async () => {
+    const store = createPostgresReviewerGenerationAdmissionStore({
+      databaseUrl: contextServiceDatabaseUrl(),
+      providerMode: "fake-only",
+    });
+    try {
+      await expect(
+        store.listReconciliationCandidates({ limit: 25 }),
+      ).resolves.toBeInstanceOf(Array);
+    } finally {
+      await store.disconnect();
+    }
+  });
+
   it("atomically freezes selected Assertions, configuration and its published Price Rate after rollover", async () => {
     if (!databaseUrl) {
       throw new Error("DATABASE_URL is required for database integration tests");
