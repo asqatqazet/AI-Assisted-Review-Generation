@@ -536,7 +536,7 @@ resource "aws_lambda_function" "context_console" {
   runtime                        = "nodejs24.x"
   memory_size                    = 256
   reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 1 : null
-  timeout                        = 7
+  timeout                        = 22
   filename                       = var.context_artifact_path
   source_code_hash               = filebase64sha256(var.context_artifact_path)
   publish                        = true
@@ -673,7 +673,7 @@ resource "aws_lambda_function" "web_bff_fast" {
   runtime                        = "nodejs24.x"
   memory_size                    = 256
   reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 5 : null
-  timeout                        = 10
+  timeout                        = 25
   filename                       = var.web_bff_artifact_path
   source_code_hash               = filebase64sha256(var.web_bff_artifact_path)
   publish                        = true

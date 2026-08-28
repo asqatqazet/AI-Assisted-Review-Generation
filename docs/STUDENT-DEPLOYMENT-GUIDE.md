@@ -205,6 +205,9 @@ GENERATION_WORK_PUBLIC_KEY_PEM
 HMAC binding；直接拿到 `console_control_svc` URL 的调用者即使设置 `app.operator_id`，也不能枚举/重绑
 Operator 或冒充 Platform admin。
 
+Console 发布的超时按同一边界递增：Prisma transaction 20 秒、Console Context 22 秒、Fast BFF 25 秒、
+CloudFront origin 30 秒。任何内层超时都不能追平 30 秒数据库授权寿命，否则慢请求会在 RLS 检查中途失去授权。
+
 `PUBLIC_SOURCE_RATE_HMAC_SECRET` 只授予 Reviewer Context。BFF 先把 IPv4 归一到 `/32`、IPv6 归一到
 `/64`，Context 再用 UTC day、策略和该 source prefix 派生 bucket。数据库在一个 transaction 内按序锁定并统计
 前一、当前与后一 UTC day 的三个 bucket，因此午夜后的 transaction 先提交时，延迟的午夜前 transaction 也不能

@@ -17,6 +17,25 @@ const between = (source: string, start: string, end: string): string => {
 };
 
 describe("student deployment security", () => {
+  it("keeps Console publications inside the database-authority and HTTP timeout envelope", () => {
+    const consoleTransactionOptions = read(
+      "packages/db/src/control-plane/console-transaction-options.ts",
+    );
+    const terraform = read("infra/terraform/student/main.tf");
+
+    expect(consoleTransactionOptions).toContain("maxWait: 2_000");
+    expect(consoleTransactionOptions).toContain("timeout: 20_000");
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"context_console"[\s\S]*?timeout\s*=\s*22/u,
+    );
+    expect(terraform).toMatch(
+      /resource\s+"aws_lambda_function"\s+"web_bff_fast"[\s\S]*?timeout\s*=\s*25/u,
+    );
+    expect(terraform).toMatch(
+      /origin_id\s*=\s*"web-bff-fast"[\s\S]*?origin_read_timeout\s*=\s*30/u,
+    );
+  });
+
   it("authenticates disposable CI service roles without changing production role provisioning", () => {
     const verify = read(".github/workflows/verify.yml");
     const deploy = read(".github/workflows/deploy-student.yml");

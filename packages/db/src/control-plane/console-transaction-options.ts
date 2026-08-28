@@ -4,6 +4,6 @@
  * Prisma's five-second interactive transaction default without being stuck.
  */
 export const consoleTransactionOptions = {
-  maxWait: 10_000,
-  timeout: 30_000,
+  maxWait: 2_000,
+  timeout: 20_000,
 } as const;

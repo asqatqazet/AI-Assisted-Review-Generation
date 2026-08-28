@@ -943,7 +943,7 @@ describe("student AWS topology invariants", () => {
     expect(variables).toContain('"student-low-quota"');
     expect(variables).toContain('"reserved-concurrency"');
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"web_bff_fast"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*5\s*:\s*null[\s\S]*?timeout\s*=\s*10/,
+      /resource\s+"aws_lambda_function"\s+"web_bff_fast"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*5\s*:\s*null[\s\S]*?timeout\s*=\s*25/,
     );
     expect(terraform).toMatch(
       /resource\s+"aws_lambda_function"\s+"web_bff_stream"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*2\s*:\s*null[\s\S]*?timeout\s*=\s*85/,
@@ -952,7 +952,7 @@ describe("student AWS topology invariants", () => {
       /resource\s+"aws_lambda_function"\s+"context_reviewer"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*4\s*:\s*null[\s\S]*?timeout\s*=\s*7/,
     );
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"context_console"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*1\s*:\s*null[\s\S]*?timeout\s*=\s*7/,
+      /resource\s+"aws_lambda_function"\s+"context_console"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*1\s*:\s*null[\s\S]*?timeout\s*=\s*22/,
     );
     expect(terraform).toMatch(
       /resource\s+"aws_lambda_function"\s+"generation_service"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*1\s*:\s*null[\s\S]*?timeout\s*=\s*75/,
