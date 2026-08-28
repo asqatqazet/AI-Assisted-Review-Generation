@@ -985,6 +985,15 @@ describe("student AWS topology invariants", () => {
     expect(candidateSmoke).toContain("candidate Context Console");
     expect(candidateSmoke).toContain("candidate fast BFF");
     expect(candidateSmoke).toContain("FunctionError");
+    expect(workflow).toContain("Report redacted candidate failure codes");
+    expect(workflow).toContain(
+      "/aws/lambda/review-generation-canary-student",
+    );
+    expect(workflow).toContain(
+      "/aws/lambda/review-web-bff-reconcile-student",
+    );
+    expect(workflow).toContain("STABLE_CODES");
+    expect(workflow).not.toContain("cat \"$RUNNER_TEMP/web-reconcile-candidate.json\"");
   });
 
   it("never sends API Gateway health events to the private Generation contract", () => {

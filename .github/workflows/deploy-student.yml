@@ -738,12 +738,15 @@ jobs:
               echo "::error title=$label invocation failed::AWS rejected the candidate invocation." >&2
               return 1
             fi
-            if [ -n "$(jq -r '.FunctionError // empty' <<< "$metadata")" ]; then
-              local error_type
-              error_type="$(jq -r '.errorType // "unknown"' "$output_file" 2>/dev/null || true)"
-              echo "::error title=$label FunctionError::Candidate Lambda failed with type $error_type; inspect its redacted CloudWatch log." >&2
-              return 1
-            fi
+          if [ -n "$(jq -r '.FunctionError // empty' <<< "$metadata")" ]; then
+            local error_type
+            local error_code
+            error_type="$(jq -r '.errorType // "unknown"' "$output_file" 2>/dev/null || true)"
+            error_code="$(jq -r '.errorMessage // empty' "$output_file" 2>/dev/null \
+              | grep -E '^[A-Z][A-Z0-9_]+$' || true)"
+            echo "::error title=$label FunctionError::Candidate Lambda failed with type $error_type${error_code:+ and stable code $error_code}; inspect its redacted CloudWatch log." >&2
+            return 1
+          fi
           }
           assert_candidate_response() {
             local label="$1"
@@ -829,6 +832,35 @@ jobs:
             "$RELEASE_DIR/release-manifest.json" > "$MANIFEST_TEMP"
           mv "$MANIFEST_TEMP" "$RELEASE_DIR/release-manifest.json"
           terraform -chdir="$TF_DIR" output -json > "$RELEASE_DIR/deployment-outputs.json"
+
+      - name: Report redacted candidate failure codes
+        if: ${{ failure() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          START_TIME="$(( $(date -u -d '15 minutes ago' +%s) * 1000 ))"
+          FOUND=false
+          for LOG_GROUP in \
+            /aws/lambda/review-web-bff-reconcile-student \
+            /aws/lambda/review-generation-canary-student; do
+            MESSAGES="$(aws logs filter-log-events \
+              --log-group-name "$LOG_GROUP" \
+              --start-time "$START_TIME" \
+              --filter-pattern ERROR \
+              --query 'events[].message' \
+              --output text 2>/dev/null || true)"
+            STABLE_CODES="$(printf '%s' "$MESSAGES" \
+              | grep -Eo '(PRIVATE_FUNCTION|RECONCILIATION|GENERATION|CONTEXT|DATABASE|PERMIT|LEASE|TERMINAL|WORKLOAD|RECEIPT|CONFIGURATION)_[A-Z0-9_]+|[A-Za-z]+(Error|Exception)|Task timed out after [0-9.]+ seconds' \
+              | LC_ALL=C sort -u \
+              | paste -sd ',' - || true)"
+            if [ -n "$STABLE_CODES" ]; then
+              echo "::notice title=Redacted Lambda failure codes::$LOG_GROUP: $STABLE_CODES"
+              FOUND=true
+            fi
+          done
+          if [ "$FOUND" != true ]; then
+            echo "::notice title=Redacted Lambda failure codes::No stable error code was available."
+          fi
 
       - name: Complete a reviewer Generation through the candidate UI and BFF
         id: candidate_bff_smoke
