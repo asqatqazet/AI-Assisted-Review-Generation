@@ -18,6 +18,12 @@ describe("US-06.1 internal reconciliation Lambda", () => {
     expect(source).not.toMatch(/event\.|event\[/);
     expect(source).toContain("createStaleGenerationReconciler");
     expect(source).toContain('qualifiedAliasArn("CONTEXT_REVIEWER_FUNCTION_ALIAS_ARN")');
+    expect(source).toContain(
+      'qualifiedAliasArn("GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN")',
+    );
+    expect(source).not.toContain(
+      'qualifiedAliasArn("GENERATION_FUNCTION_ALIAS_ARN")',
+    );
     expect(source).not.toContain("CONTEXT_CONSOLE_FUNCTION_ALIAS_ARN");
     expect(source).not.toContain('qualifiedAliasArn("CONTEXT_FUNCTION_ALIAS_ARN")');
     expect(project).toContain("apps/web-bff/src/reconcile-main.ts");

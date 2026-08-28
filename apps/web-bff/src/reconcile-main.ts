@@ -29,7 +29,7 @@ const createRuntime = (): (() => Promise<unknown>) => {
   const generation = createInvokedReconciliationGenerationPort(
     createAwsLambdaJsonInvoker(
       client,
-      qualifiedAliasArn("GENERATION_FUNCTION_ALIAS_ARN"),
+      qualifiedAliasArn("GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN"),
     ),
   );
   return createStaleGenerationReconciler({ context, generation, limit: 25 });
