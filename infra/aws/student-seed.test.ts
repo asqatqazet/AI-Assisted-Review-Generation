@@ -58,10 +58,11 @@ describe("canonical student seed", () => {
     expect(seed).toContain("'REVISE_WORDING', false");
   });
 
-  it("lets the shortest valid one-Assertion FakeProvider draft satisfy each enabled Format", () => {
-    expect(seed).toContain(`'Zu laut.','NEGATIVE',90,true`);
-    expect(seed.match(/'\{"minChars":8,"maxChars":/gu)).toHaveLength(2);
-    expect(seed).not.toContain(`'{"minChars":20,"maxChars":`);
+  it("keeps the immutable Format minimum compatible with the two-Fact FakeProvider journey", () => {
+    expect(seed).toContain(`'Frischer Fisch.','POSITIVE',10,true`);
+    expect(seed).toContain(`'Gut gewürzt.','POSITIVE',20,true`);
+    expect(seed.match(/'\{"minChars":20,"maxChars":/gu)).toHaveLength(2);
+    expect(seed).not.toContain(`'{"minChars":8,"maxChars":`);
   });
 
   it("withholds a Format whose posting destination has no exact Location binding", () => {

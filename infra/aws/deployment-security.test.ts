@@ -723,6 +723,13 @@ describe("student deployment security", () => {
     expect(smoke).toContain('SMOKE_STAGE="generation-terminal"');
     expect(smoke).toContain('SMOKE_STAGE="generation-completed"');
     expect(smoke).toContain("CANDIDATE_REVIEWER_TERMINAL:");
+    expect(smoke).toContain(
+      "FACT_OPTION_IDS=\"$(jq -cer '[.factOptions[0].id,.factOptions[1].id]'",
+    );
+    expect(smoke).toContain("--argjson factOptionIds \"$FACT_OPTION_IDS\"");
+    expect(smoke).toContain(
+      "'{factOptionIds:$factOptionIds,reviewFormatId:$reviewFormatId}'",
+    );
     expect(smoke).toContain('"x-forwarded-for":"127.0.0.1"');
     expect(smoke).toContain('"x-review-public-origin":$publicOrigin');
     expect(workflow).toContain('PUBLIC_ORIGIN="https://$DOMAIN"');

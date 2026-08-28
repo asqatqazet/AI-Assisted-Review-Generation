@@ -184,7 +184,7 @@ function studentSnapshotIsReusable(
   return (
     format?.["id"] === STUDENT_REVIEW_FORMAT_VERSION_ID &&
     exactStringArray(format["supportedCommands"], ["generate"]) &&
-    constraints?.["minChars"] === 8 &&
+    constraints?.["minChars"] === 20 &&
     constraints["maxChars"] === 420 &&
     constraints["paragraphs"] === 1 &&
     constraints["emojiPolicy"] === "none" &&

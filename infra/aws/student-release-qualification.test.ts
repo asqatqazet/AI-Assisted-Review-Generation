@@ -38,7 +38,7 @@ function publishedPayload(promptId = promptVersionId): unknown {
       {
         id: "00000000-0000-4000-8000-000000000122",
         constraints: {
-          minChars: 8,
+          minChars: 20,
           maxChars: 420,
           paragraphs: 1,
           emojiPolicy: "none",

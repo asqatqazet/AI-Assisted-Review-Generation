@@ -188,13 +188,14 @@ invoke_buffered "review-web-bff-fast-student" "$REVIEW_EVENT" \
 test "$(jq -r .statusCode "$RUNNER_TEMP/candidate-bff-review-response.json")" = "200"
 response_body "$RUNNER_TEMP/candidate-bff-review-response.json" \
   "$RUNNER_TEMP/candidate-bff-review.json"
-FACT_OPTION_ID="$(jq -er '.factOptions[0].id' "$RUNNER_TEMP/candidate-bff-review.json")"
+FACT_OPTION_IDS="$(jq -cer '[.factOptions[0].id,.factOptions[1].id]' \
+  "$RUNNER_TEMP/candidate-bff-review.json")"
 REVIEW_FORMAT_ID="$(jq -er '.reviewFormats[0].id' "$RUNNER_TEMP/candidate-bff-review.json")"
 
 GENERATION_BODY="$(jq -cn \
-  --arg factOptionId "$FACT_OPTION_ID" \
+  --argjson factOptionIds "$FACT_OPTION_IDS" \
   --arg reviewFormatId "$REVIEW_FORMAT_ID" \
-  '{factOptionIds:[$factOptionId],reviewFormatId:$reviewFormatId}')"
+  '{factOptionIds:$factOptionIds,reviewFormatId:$reviewFormatId}')"
 SMOKE_STAGE="generation-stream"
 GENERATION_HASH="$(printf '%s' "$GENERATION_BODY" | sha256sum | cut -d ' ' -f 1)"
 GENERATION_HEADERS="$(jq -cn \
