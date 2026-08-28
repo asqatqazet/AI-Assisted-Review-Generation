@@ -214,9 +214,10 @@ jobs:
           set -euo pipefail
           CANDIDATE_ID="$VERIFIED_RELEASE_SHA"
           UI_BUCKET="${{ steps.state.outputs.ui_bucket }}"
+          PUBLIC_ORIGIN="https://${{ steps.state.outputs.domain }}"
           EXPECTED_RELEASE_SHA="$VERIFIED_RELEASE_SHA"
           CONFIGURATION_CANDIDATE_RELEASE_ID="$TARGET_CONFIGURATION_RELEASE_ID"
-          export CANDIDATE_ID UI_BUCKET EXPECTED_RELEASE_SHA CONFIGURATION_CANDIDATE_RELEASE_ID
+          export CANDIDATE_ID UI_BUCKET PUBLIC_ORIGIN EXPECTED_RELEASE_SHA CONFIGURATION_CANDIDATE_RELEASE_ID
           scripts/smoke-candidate-reviewer-flow.sh
 
       - name: Capture previous live aliases and mutable UI

@@ -8,8 +8,9 @@ set -Eeuo pipefail
 : "${EXPECTED_RELEASE_SHA:?EXPECTED_RELEASE_SHA is required}"
 : "${CONFIGURATION_CANDIDATE_RELEASE_ID:?CONFIGURATION_CANDIDATE_RELEASE_ID is required}"
 : "${DATABASE_URL:?DATABASE_URL is required}"
+: "${PUBLIC_ORIGIN:?PUBLIC_ORIGIN is required}"
 
-readonly CANDIDATE_ORIGIN="https://candidate.internal"
+readonly CANDIDATE_ORIGIN="$PUBLIC_ORIGIN"
 readonly EVIDENCE_DIR="${RELEASE_DIR}/evidence"
 readonly IDEMPOTENCY_KEY="candidate-bff-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 mkdir -p "$EVIDENCE_DIR"
@@ -65,6 +66,7 @@ http_event() {
     --arg method "$method" \
     --arg path "$path" \
     --arg body "$body" \
+    --arg publicOrigin "$CANDIDATE_ORIGIN" \
     --argjson cookies "$cookies_json" \
     --argjson extraHeaders "$headers_json" \
     '{
@@ -72,7 +74,7 @@ http_event() {
       routeKey:($method + " " + $path),
       rawPath:$path,
       rawQueryString:"",
-      headers:({host:"candidate.internal","x-forwarded-for":"127.0.0.1"} + $extraHeaders),
+      headers:({host:"candidate.internal","x-forwarded-for":"127.0.0.1","x-review-public-origin":$publicOrigin} + $extraHeaders),
       cookies:$cookies,
       requestContext:{
         accountId:"candidate",

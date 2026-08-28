@@ -713,6 +713,8 @@ describe("student deployment security", () => {
     expect(smoke).toContain("CANDIDATE_REVIEWER_SMOKE_FAILED:${SMOKE_STAGE}");
     expect(smoke).toContain('SMOKE_STAGE="generation-stream"');
     expect(smoke).toContain('"x-forwarded-for":"127.0.0.1"');
+    expect(smoke).toContain('"x-review-public-origin":$publicOrigin');
+    expect(workflow).toContain('PUBLIC_ORIGIN="https://$DOMAIN"');
     expect(smoke).not.toContain("set -x");
     expect(smoke).toContain("configuration_release_snapshots");
     expect(smoke).toContain("OBSERVED_CONFIGURATION_RELEASE_ID");

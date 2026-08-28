@@ -871,9 +871,11 @@ jobs:
           set -euo pipefail
           CANDIDATE_ID="$GITHUB_SHA"
           UI_BUCKET="$(terraform -chdir="$TF_DIR" output -raw ui_bucket_name)"
+          DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
+          PUBLIC_ORIGIN="https://$DOMAIN"
           EXPECTED_RELEASE_SHA="$GITHUB_SHA"
           CONFIGURATION_CANDIDATE_RELEASE_ID="${{ steps.release_identity.outputs.id }}"
-          export CANDIDATE_ID UI_BUCKET EXPECTED_RELEASE_SHA CONFIGURATION_CANDIDATE_RELEASE_ID
+          export CANDIDATE_ID UI_BUCKET PUBLIC_ORIGIN EXPECTED_RELEASE_SHA CONFIGURATION_CANDIDATE_RELEASE_ID
           scripts/smoke-candidate-reviewer-flow.sh
 
       - name: Capture previous live aliases and mutable UI
