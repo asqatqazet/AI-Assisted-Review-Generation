@@ -81,7 +81,13 @@ assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json" session '
   (.result.factOptions | length) > 0 and
   (.result.reviewFormats | length) > 0
 '
-FACT_OPTION_ID="$(jq -er '.result.factOptions[0].id' \
+MINIMUM_FACT_SELECTIONS="$(jq -er \
+  '.result.requirements.minimumFactSelections |
+   select(type == "number" and floor == . and . >= 1)' \
+  "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json")"
+FACT_OPTION_IDS="$(jq -ce --argjson minimum "$MINIMUM_FACT_SELECTIONS" \
+  '.result.factOptions[0:$minimum] | map(.id) |
+   select(length == $minimum)' \
   "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json")"
 REVIEW_FORMAT_ID="$(jq -er '.result.reviewFormats[0].id' \
   "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json")"
@@ -90,9 +96,9 @@ GENERATION_EVENT="$(jq -cn \
   --arg reviewSessionHandle "$REVIEW_HANDLE" \
   --arg browser "$BROWSER_CAPABILITY" \
   --arg idempotencyKey "$IDEMPOTENCY_KEY" \
-  --arg factOptionId "$FACT_OPTION_ID" \
+  --argjson factOptionIds "$FACT_OPTION_IDS" \
   --arg reviewFormatId "$REVIEW_FORMAT_ID" \
-  '{operation:"prepare-reviewer-generation",input:{reviewSessionHandle:$reviewSessionHandle,browserCapability:$browser,idempotencyKey:$idempotencyKey,command:{factOptionIds:[$factOptionId],reviewFormatId:$reviewFormatId}}}')"
+  '{operation:"prepare-reviewer-generation",input:{reviewSessionHandle:$reviewSessionHandle,browserCapability:$browser,idempotencyKey:$idempotencyKey,command:{factOptionIds:$factOptionIds,reviewFormatId:$reviewFormatId}}}')"
 invoke_legacy "$GENERATION_EVENT" \
   "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json"
 assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json" generation '

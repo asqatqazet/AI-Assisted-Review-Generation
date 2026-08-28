@@ -135,6 +135,9 @@ describe("legacy Context rollback dependency gate", () => {
     );
     expect(probe).toContain('if [ "$PROBE_PHASE" = "after-migration" ]; then');
     expect(probe).toContain('legacy-before-migration-advance.json');
+    expect(probe).toContain('.result.requirements.minimumFactSelections');
+    expect(probe).toContain('.result.factOptions[0:$minimum] | map(.id)');
+    expect(probe).toContain('--argjson factOptionIds "$FACT_OPTION_IDS"');
     expect(probe).toContain("LEGACY_CONTEXT_PROBE_ASSERTION_FAILED");
   });
 });
