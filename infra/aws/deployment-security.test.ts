@@ -488,6 +488,12 @@ describe("student deployment security", () => {
     );
 
     expect(repair).toContain("--policy-only");
+    expect(repair).toContain(
+      "If $POLICY_NAME already exists, expand it and choose Edit",
+    );
+    expect(repair).toContain(
+      "If $POLICY_NAME is absent, choose Add permissions",
+    );
     expect(policyOnlyExit).toBeGreaterThanOrEqual(0);
     expect(resumeStage).toBeGreaterThan(policyOnlyExit);
     expect(

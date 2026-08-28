@@ -468,11 +468,10 @@ else
   sed 's/^/  /' "$POLICY_FILE"
   printf '\n'
 fi
-step "Choose Add permissions → Create inline policy."
-step "Choose JSON, replace the editor contents with the copied policy, then choose Next."
-step "Name the policy $POLICY_NAME. Verify it names exactly five roles and requires boundary $PERMISSIONS_BOUNDARY_NAME on creation."
-step "Choose Create policy. This is the only permission-changing action in the wizard."
-pause "Create the inline policy, then press Enter."
+step "If $POLICY_NAME already exists, expand it and choose Edit → JSON. Replace the editor contents with the copied policy, choose Next, then Save changes."
+step "If $POLICY_NAME is absent, choose Add permissions → Create inline policy → JSON. Replace the editor contents, choose Next, name it $POLICY_NAME, then Create policy."
+step "Before saving, verify the policy names exactly five roles and requires boundary $PERMISSIONS_BOUNDARY_NAME on creation."
+pause "Save or create the inline policy, then press Enter."
 open_url "$ROLE_URL"
 step "Under Permissions policies, expand $POLICY_NAME and verify all three statements are present."
 if ! confirm "Is $POLICY_NAME now listed on $DEPLOY_ROLE_NAME?"; then
