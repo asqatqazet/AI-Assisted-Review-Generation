@@ -167,4 +167,17 @@ describe("local composition isolation", () => {
       );
     }
   });
+
+  it("resets only an explicitly isolated loopback database before local browser acceptance", () => {
+    const playwright = read("playwright.config.ts");
+    const reset = read("infra/local/reset-browser-database.ts");
+
+    expect(playwright).toContain(
+      "./node_modules/.bin/tsx infra/local/reset-browser-database.ts && pnpm dev",
+    );
+    expect(playwright).toContain('REVIEW_LOCAL_RESET_DATABASE: "1"');
+    expect(reset).toContain('process.env["REVIEW_LOCAL_RESET_DATABASE"] !== "1"');
+    expect(reset).toContain("resetIntegrationDatabase");
+    expect(reset).toContain('new Set(["127.0.0.1", "localhost", "[::1]"])');
+  });
 });

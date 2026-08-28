@@ -64,12 +64,14 @@ export default defineConfig({
   ...(remoteBaseUrl === undefined
     ? {
         webServer: {
-          command: "pnpm dev",
+          command:
+            "./node_modules/.bin/tsx infra/local/reset-browser-database.ts && pnpm dev",
           url: `${localBaseUrl}/health`,
           timeout: 120_000,
           reuseExistingServer: false,
           env: {
             DATABASE_URL: databaseUrl!,
+            REVIEW_LOCAL_RESET_DATABASE: "1",
             REVIEW_LOCAL_SKIP_DATABASE_BOOTSTRAP: "1",
             REVIEW_LOCAL_HOST: "127.0.0.1",
             REVIEW_LOCAL_UI_PORT: "5173",
