@@ -16,9 +16,9 @@ const qualifiedAliasArn = (name: string): string => {
   return value;
 };
 
-let reconcile: (() => Promise<unknown>) | undefined;
+const reconcilerByMode = new Map<boolean, () => Promise<unknown>>();
 
-const createRuntime = (): (() => Promise<unknown>) => {
+const createRuntime = (candidateInvocation: boolean): (() => Promise<unknown>) => {
   const client = new LambdaClient({});
   const context = createInvokedReconciliationContextPort(
     createAwsLambdaJsonInvoker(
@@ -29,11 +29,22 @@ const createRuntime = (): (() => Promise<unknown>) => {
   const generation = createInvokedReconciliationGenerationPort(
     createAwsLambdaJsonInvoker(
       client,
-      qualifiedAliasArn("GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN"),
+      candidateInvocation
+        ? qualifiedAliasArn("GENERATION_CANDIDATE_FUNCTION_ALIAS_ARN")
+        : qualifiedAliasArn("GENERATION_FUNCTION_ALIAS_ARN"),
     ),
   );
   return createStaleGenerationReconciler({ context, generation, limit: 25 });
 };
 
-export const handler = async (): Promise<unknown> =>
-  await (reconcile ??= createRuntime())();
+export const handler = async (
+  event: { readonly candidateInvocation?: boolean } = {},
+): Promise<unknown> => {
+  const candidateInvocation = event.candidateInvocation === true;
+  let reconcile = reconcilerByMode.get(candidateInvocation);
+  if (reconcile === undefined) {
+    reconcile = createRuntime(candidateInvocation);
+    reconcilerByMode.set(candidateInvocation, reconcile);
+  }
+  return await reconcile();
+};

@@ -459,6 +459,7 @@ OpenAI/Gemini credentials never enter the snapshot or browser.
 | Reviewer Context invocation | 15 s |
 | Provider call; one Attempt, no automatic retry | 60 s |
 | Generation Lambda | 75 s |
+| Reconciliation Lambda | 90 s; contains one cold Generation status invocation |
 | Streaming BFF Lambda | 85 s |
 | CloudFront origin read / response completion | 30 s / 95 s |
 | Browser | 100 s |

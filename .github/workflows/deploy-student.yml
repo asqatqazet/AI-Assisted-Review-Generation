@@ -799,7 +799,7 @@ jobs:
             "$RUNNER_TEMP/web-stream-candidate.json"
           invoke_candidate \
             "candidate reconciliation BFF" \
-            review-web-bff-reconcile-student candidate '{}' \
+            review-web-bff-reconcile-student candidate '{"candidateInvocation":true}' \
             "$RUNNER_TEMP/web-reconcile-candidate.json"
           aws s3 sync "$RELEASE_DIR/ui" "s3://$UI_BUCKET" \
             --exclude "index.html" --exclude "robots.txt" --exclude "release.json" \

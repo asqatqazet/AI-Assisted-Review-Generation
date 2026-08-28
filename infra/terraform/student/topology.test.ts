@@ -39,6 +39,16 @@ describe("student AWS topology invariants", () => {
     );
   });
 
+  it("gives reconciliation enough time to observe one cold Generation invocation", () => {
+    const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
+    const reconciliation = terraform.slice(
+      terraform.indexOf('resource "aws_lambda_function" "web_bff_reconcile"'),
+      terraform.indexOf('resource "aws_lambda_alias" "web_bff_reconcile_live"'),
+    );
+
+    expect(reconciliation).toMatch(/timeout\s*=\s*90/u);
+  });
+
   it("pins each BFF release to immutable service versions and promotes the BFF last", () => {
     const terraform = fs.readFileSync(path.join(__dirname, "main.tf"), "utf8");
     const variables = fs.readFileSync(

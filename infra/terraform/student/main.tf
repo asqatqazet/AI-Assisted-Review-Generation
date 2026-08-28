@@ -729,12 +729,14 @@ resource "aws_lambda_alias" "web_bff_stream_candidate" {
 }
 
 resource "aws_lambda_function" "web_bff_reconcile" {
-  function_name    = local.function_names.web_bff_reconcile
-  role             = aws_iam_role.web_bff.arn
-  handler          = "reconcile-main.handler"
-  runtime          = "nodejs24.x"
-  memory_size      = 128
-  timeout          = 30
+  function_name = local.function_names.web_bff_reconcile
+  role          = aws_iam_role.web_bff.arn
+  handler       = "reconcile-main.handler"
+  runtime       = "nodejs24.x"
+  memory_size   = 128
+  # One reconciliation pass can include a cold synchronous Generation status
+  # invocation. Its 75-second budget must fit inside this coordinator.
+  timeout          = 90
   filename         = var.web_bff_artifact_path
   source_code_hash = filebase64sha256(var.web_bff_artifact_path)
   publish          = true
