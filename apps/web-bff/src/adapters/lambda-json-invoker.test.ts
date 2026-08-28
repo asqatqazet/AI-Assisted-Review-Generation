@@ -40,13 +40,27 @@ describe("AWS private Lambda JSON invoker", () => {
     });
   });
 
-  it("fails closed on FunctionError or a missing payload", async () => {
+  it("fails closed while retaining only a safe nested error class and stable code", async () => {
     const failed = createAwsLambdaJsonInvoker(
       {
         send: async () => ({
           StatusCode: 200,
           FunctionError: "Unhandled",
-          Payload: new TextEncoder().encode('{"errorMessage":"secret"}'),
+          Payload: new TextEncoder().encode(
+            '{"errorType":"DatabaseConnectionError","errorMessage":"secret database detail"}',
+          ),
+        }),
+      },
+      "qualified-function",
+    );
+    const stable = createAwsLambdaJsonInvoker(
+      {
+        send: async () => ({
+          StatusCode: 200,
+          FunctionError: "Unhandled",
+          Payload: new TextEncoder().encode(
+            '{"errorType":"Error","errorMessage":"GENERATION_TERMINAL_NOT_AVAILABLE"}',
+          ),
         }),
       },
       "qualified-function",
@@ -57,7 +71,13 @@ describe("AWS private Lambda JSON invoker", () => {
     );
 
     await expect(failed.invoke({ operation: "x" } as never)).rejects.toThrow(
-      "PRIVATE_FUNCTION_FAILED",
+      "PRIVATE_FUNCTION_FAILED_DATABASECONNECTIONERROR",
+    );
+    await expect(failed.invoke({ operation: "x" } as never)).rejects.not.toThrow(
+      "secret database detail",
+    );
+    await expect(stable.invoke({ operation: "x" } as never)).rejects.toThrow(
+      "PRIVATE_FUNCTION_FAILED_ERROR_GENERATION_TERMINAL_NOT_AVAILABLE",
     );
     await expect(empty.invoke({ operation: "x" } as never)).rejects.toThrow(
       "PRIVATE_FUNCTION_EMPTY_RESPONSE",
