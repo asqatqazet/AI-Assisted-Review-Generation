@@ -202,6 +202,38 @@ jobs:
           REVIEW_TEARDOWN_DATE: ${{ inputs.teardown_date }}
           REVIEW_DEPLOYMENT_PROFILE: ${{ inputs.deployment_profile }}
 
+      - name: Reconcile stale rollback-probe work before low-quota freeze
+        if: ${{ steps.legacy_dependency.outputs.required == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=review-web-bff-reconcile-student
+          ERROR_FILE="$RUNNER_TEMP/reconcile-live-get-function.error"
+          if aws lambda get-function --function-name "$FUNCTION_NAME" >/dev/null 2>"$ERROR_FILE"; then
+            OUTPUT_FILE="$RUNNER_TEMP/reconcile-live-before-freeze.json"
+            METADATA="$(aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --qualifier live \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{}' \
+              "$OUTPUT_FILE")"
+            if [ "$(jq -r '.FunctionError // empty' <<< "$METADATA")" != "" ]; then
+              jq -c '{errorType,errorMessage}' "$OUTPUT_FILE" >&2 || true
+              exit 1
+            fi
+            jq -e '
+              (.inspected | type == "number") and
+              (.released | type == "number") and
+              (.settled | type == "number") and
+              (.deferred | type == "number")
+            ' "$OUTPUT_FILE" >/dev/null
+          elif grep -Eq 'ResourceNotFoundException|ResourceNotFound' "$ERROR_FILE"; then
+            : # A fresh stack has no stale rollback-probe work.
+          else
+            cat "$ERROR_FILE" >&2
+            exit 1
+          fi
+
       - name: Freeze Generation before low-quota mutation
         id: low_quota_freeze
         if: ${{ inputs.deployment_profile == 'student-low-quota' }}

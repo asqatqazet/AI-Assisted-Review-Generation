@@ -14,8 +14,8 @@ if [[ ! "$PROBE_PHASE" =~ ^[a-z0-9-]+$ ]]; then
   exit 1
 fi
 
-readonly BROWSER_CAPABILITY="legacy_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}_${PROBE_PHASE}"
-readonly IDEMPOTENCY_KEY="legacy-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${PROBE_PHASE}"
+readonly BROWSER_CAPABILITY="legacy_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"
+readonly IDEMPOTENCY_KEY="legacy-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 
 invoke_legacy() {
   local payload="$1"
@@ -34,35 +34,53 @@ invoke_legacy() {
   fi
 }
 
-PREPARE_EVENT="$(jq -cn --arg browser "$BROWSER_CAPABILITY" \
-  '{operation:"prepare-entry",input:{tenantSlug:"speicher-neun",locationSlug:"hafencity",browserCapability:$browser}}')"
-invoke_legacy "$PREPARE_EVENT" "$RUNNER_TEMP/legacy-${PROBE_PHASE}-prepare.json"
-jq -e '.operation == "prepare-entry" and .result.status == "prepared"' \
-  "$RUNNER_TEMP/legacy-${PROBE_PHASE}-prepare.json" >/dev/null
-ENTRY_HANDLE="$(jq -er '.result.entryChallengeHandle' \
-  "$RUNNER_TEMP/legacy-${PROBE_PHASE}-prepare.json")"
+assert_response() {
+  local response_file="$1"
+  local label="$2"
+  local predicate="$3"
+  if ! jq -e "$predicate" "$response_file" >/dev/null; then
+    jq -c '{operation,result:{status:.result.status,code:.result.code,retryable:.result.retryable,retryAfterSeconds:.result.retryAfterSeconds}}' \
+      "$response_file" >&2 || true
+    printf '%s\n' "LEGACY_CONTEXT_PROBE_ASSERTION_FAILED:${PROBE_PHASE}:${label}" >&2
+    return 1
+  fi
+}
 
-ADVANCE_EVENT="$(jq -cn \
-  --arg entryChallengeHandle "$ENTRY_HANDLE" \
-  --arg browser "$BROWSER_CAPABILITY" \
-  '{operation:"advance-entry",input:{entryChallengeHandle:$entryChallengeHandle,browserCapability:$browser,rating:5,action:"generate"}}')"
-invoke_legacy "$ADVANCE_EVENT" "$RUNNER_TEMP/legacy-${PROBE_PHASE}-advance.json"
-jq -e '.operation == "advance-entry" and .result.status == "admitted"' \
-  "$RUNNER_TEMP/legacy-${PROBE_PHASE}-advance.json" >/dev/null
-REVIEW_HANDLE="$(jq -er '.result.reviewSessionHandle' \
-  "$RUNNER_TEMP/legacy-${PROBE_PHASE}-advance.json")"
+if [ "$PROBE_PHASE" = "after-migration" ]; then
+  BEFORE_ADVANCE="$RUNNER_TEMP/legacy-before-migration-advance.json"
+  test -s "$BEFORE_ADVANCE"
+  REVIEW_HANDLE="$(jq -er '.result.reviewSessionHandle' "$BEFORE_ADVANCE")"
+else
+  PREPARE_EVENT="$(jq -cn --arg browser "$BROWSER_CAPABILITY" \
+    '{operation:"prepare-entry",input:{tenantSlug:"speicher-neun",locationSlug:"hafencity",browserCapability:$browser}}')"
+  invoke_legacy "$PREPARE_EVENT" "$RUNNER_TEMP/legacy-${PROBE_PHASE}-prepare.json"
+  assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-prepare.json" prepare \
+    '.operation == "prepare-entry" and .result.status == "prepared"'
+  ENTRY_HANDLE="$(jq -er '.result.entryChallengeHandle' \
+    "$RUNNER_TEMP/legacy-${PROBE_PHASE}-prepare.json")"
+
+  ADVANCE_EVENT="$(jq -cn \
+    --arg entryChallengeHandle "$ENTRY_HANDLE" \
+    --arg browser "$BROWSER_CAPABILITY" \
+    '{operation:"advance-entry",input:{entryChallengeHandle:$entryChallengeHandle,browserCapability:$browser,rating:5,action:"generate"}}')"
+  invoke_legacy "$ADVANCE_EVENT" "$RUNNER_TEMP/legacy-${PROBE_PHASE}-advance.json"
+  assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-advance.json" advance \
+    '.operation == "advance-entry" and .result.status == "admitted"'
+  REVIEW_HANDLE="$(jq -er '.result.reviewSessionHandle' \
+    "$RUNNER_TEMP/legacy-${PROBE_PHASE}-advance.json")"
+fi
 
 READ_EVENT="$(jq -cn \
   --arg reviewSessionHandle "$REVIEW_HANDLE" \
   --arg browser "$BROWSER_CAPABILITY" \
   '{operation:"read-review-session",input:{reviewSessionHandle:$reviewSessionHandle,browserCapability:$browser}}')"
 invoke_legacy "$READ_EVENT" "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json"
-jq -e '
+assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json" session '
   .operation == "read-review-session" and
   .result.status == "ready" and
   (.result.factOptions | length) > 0 and
   (.result.reviewFormats | length) > 0
-' "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json" >/dev/null
+'
 FACT_OPTION_ID="$(jq -er '.result.factOptions[0].id' \
   "$RUNNER_TEMP/legacy-${PROBE_PHASE}-session.json")"
 REVIEW_FORMAT_ID="$(jq -er '.result.reviewFormats[0].id' \
@@ -77,7 +95,7 @@ GENERATION_EVENT="$(jq -cn \
   '{operation:"prepare-reviewer-generation",input:{reviewSessionHandle:$reviewSessionHandle,browserCapability:$browser,idempotencyKey:$idempotencyKey,command:{factOptionIds:[$factOptionId],reviewFormatId:$reviewFormatId}}}')"
 invoke_legacy "$GENERATION_EVENT" \
   "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json"
-jq -e '
+assert_response "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json" generation '
   .operation == "prepare-reviewer-generation" and
   .result.status == "prepared" and
   (.result.workload.bindings.promptVersionId | type == "string") and
@@ -89,6 +107,6 @@ jq -e '
       .commandKind == "generate" and
       (.body | type == "string") and
       (.body | length) > 0))
-' "$RUNNER_TEMP/legacy-${PROBE_PHASE}-generation.json" >/dev/null
+'
 
 printf '%s\n' "Legacy immutable Context Prompt/Generation probe passed: ${PROBE_PHASE}."

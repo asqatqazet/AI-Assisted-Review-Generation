@@ -15,6 +15,10 @@ const gatePath = new URL(
   "../../scripts/detect-legacy-context-rollback-dependency.sh",
   import.meta.url,
 );
+const probe = readFileSync(
+  new URL("../../scripts/probe-legacy-context-generation.sh", import.meta.url),
+  "utf8",
+);
 const workflow = readFileSync(
   new URL("../../.github/workflows/deploy-student.yml", import.meta.url),
   "utf8",
@@ -99,5 +103,32 @@ describe("legacy Context rollback dependency gate", () => {
     expect(workflow).toMatch(
       /Restore Generation after a pre-migration failure[\s\S]*?steps\.product_migration\.outcome == 'skipped'[\s\S]*?scripts\/restore-generation-concurrency\.sh/u,
     );
+  });
+
+  it("reconciles an earlier probe before freezing Generation", () => {
+    const reconcile = workflow.indexOf(
+      "Reconcile stale rollback-probe work before low-quota freeze",
+    );
+    const freeze = workflow.indexOf(
+      "Freeze Generation before low-quota mutation",
+    );
+
+    expect(reconcile).toBeGreaterThan(0);
+    expect(freeze).toBeGreaterThan(reconcile);
+    expect(workflow).toMatch(
+      /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?review-web-bff-reconcile-student[\s\S]*?--qualifier live[\s\S]*?FunctionError/u,
+    );
+  });
+
+  it("reuses the pre-migration session and idempotency key after expansion", () => {
+    expect(probe).toContain(
+      'readonly BROWSER_CAPABILITY="legacy_${GITHUB_RUN_ID:-local}_${GITHUB_RUN_ATTEMPT:-1}"',
+    );
+    expect(probe).toContain(
+      'readonly IDEMPOTENCY_KEY="legacy-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"',
+    );
+    expect(probe).toContain('if [ "$PROBE_PHASE" = "after-migration" ]; then');
+    expect(probe).toContain('legacy-before-migration-advance.json');
+    expect(probe).toContain("LEGACY_CONTEXT_PROBE_ASSERTION_FAILED");
   });
 });
