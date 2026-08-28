@@ -287,7 +287,26 @@ finish() {
 # Replace the example below. Set TOTAL_STAGES to match the stages you write.
 # ──────────────────────────────────────────────────────────────────────────
 
-TOTAL_STAGES=4
+REPAIR_POLICY_ONLY=false
+case "${1:-}" in
+  "") ;;
+  --policy-only) REPAIR_POLICY_ONLY=true ;;
+  --help)
+    printf 'Usage: %s [--policy-only]\n' "$0"
+    printf '  --policy-only  Install and verify the scoped IAM policy, then exit.\n'
+    exit 0
+    ;;
+  *)
+    printf 'Unknown option: %s\n' "$1" >&2
+    printf 'Usage: %s [--policy-only]\n' "$0" >&2
+    exit 2
+    ;;
+esac
+if [ "$REPAIR_POLICY_ONLY" = "true" ]; then
+  TOTAL_STAGES=3
+else
+  TOTAL_STAGES=4
+fi
 REPO_SLUG="asqatqazet/AI-Assisted-Review-Generation"
 GITHUB_ENVIRONMENT="student"
 DEPLOY_ROLE_NAME="review-github-deploy-student"
@@ -459,6 +478,12 @@ step "Under Permissions policies, expand $POLICY_NAME and verify all three state
 if ! confirm "Is $POLICY_NAME now listed on $DEPLOY_ROLE_NAME?"; then
   warn "Deployment remains blocked until the inline policy is visible on the role."
   exit 1
+fi
+
+if [ "$REPAIR_POLICY_ONLY" = "true" ]; then
+  say "The scoped deploy-role policy is installed. Deployment was not dispatched."
+  finish
+  exit 0
 fi
 
 stage "Resume and monitor the low-quota deployment"

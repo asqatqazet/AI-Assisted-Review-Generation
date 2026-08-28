@@ -478,6 +478,26 @@ describe("student deployment security", () => {
     expect(repair).not.toContain('-f "acknowledge_provider_cost=true"');
   });
 
+  it("can repair only the deploy-role policy without dispatching a deployment", () => {
+    const repair = read("scripts/repair-student-deploy-role.sh");
+    const policyOnlyExit = repair.indexOf(
+      'if [ "$REPAIR_POLICY_ONLY" = "true" ]; then',
+    );
+    const resumeStage = repair.indexOf(
+      'stage "Resume and monitor the low-quota deployment"',
+    );
+
+    expect(repair).toContain("--policy-only");
+    expect(policyOnlyExit).toBeGreaterThanOrEqual(0);
+    expect(resumeStage).toBeGreaterThan(policyOnlyExit);
+    expect(
+      repair.slice(policyOnlyExit, resumeStage),
+    ).toContain("finish");
+    expect(
+      repair.slice(policyOnlyExit, resumeStage),
+    ).toContain("exit 0");
+  });
+
   it("uses a separately invokable FakeProvider-only Generation canary for low quota", () => {
     const terraform = read("infra/terraform/student/main.tf");
     const canary = terraform.match(
