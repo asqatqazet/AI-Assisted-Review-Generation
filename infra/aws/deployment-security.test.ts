@@ -668,6 +668,14 @@ describe("student deployment security", () => {
     expect(smoke).toContain('status == "not-found"');
     expect(smoke).toContain('operation:"authorize-console-bench"');
     expect(smoke).toContain('operation:"console-bench"');
+    expect(smoke).toContain("keywordIds:[$form.keywords[0].id,$form.keywords[1].id]");
+    expect(smoke).toContain(
+      "FACT_OPTION_IDS=\"$(jq -cer '[.factOptions[0].id,.factOptions[1].id]'",
+    );
+    expect(smoke).toContain("--argjson factOptionIds \"$FACT_OPTION_IDS\"");
+    expect(smoke).toContain(
+      "'{factOptionIds:$factOptionIds,reviewFormatId:$reviewFormatId}'",
+    );
     expect(smoke).toMatch(
       /BENCH_FORM_EVENT="\$\(jq -cn --argjson identity "\$PLATFORM_IDENTITY"/,
     );

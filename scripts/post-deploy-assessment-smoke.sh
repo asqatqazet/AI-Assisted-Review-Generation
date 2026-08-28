@@ -112,7 +112,7 @@ BENCH_INPUT="$(jq -c '
     styleId:($form.styles | map(select(any(.supportedActions[]; . == "generate")))[0].id),
     promptVersionId:($form.promptVersions | map(select(.action == "generate"))[0].id),
     provider:"fake",
-    keywordIds:[$form.keywords[0].id],
+    keywordIds:[$form.keywords[0].id,$form.keywords[1].id],
     freeText:"",
     sourceText:"",
     rating:5
@@ -188,12 +188,13 @@ test -n "$REVIEW_SESSION_HANDLE"
 curl -sS --fail -b "$COOKIE_JAR" \
   "$PUBLIC_ORIGIN/api/v1/review-sessions/$REVIEW_SESSION_HANDLE" \
   > "$RUNNER_TEMP/review-session.json"
-FACT_OPTION_ID="$(jq -er '.factOptions[0].id' "$RUNNER_TEMP/review-session.json")"
+FACT_OPTION_IDS="$(jq -cer '[.factOptions[0].id,.factOptions[1].id]' \
+  "$RUNNER_TEMP/review-session.json")"
 REVIEW_FORMAT_ID="$(jq -er '.reviewFormats[0].id' "$RUNNER_TEMP/review-session.json")"
 GENERATION_BODY="$(jq -cn \
-  --arg factOptionId "$FACT_OPTION_ID" \
+  --argjson factOptionIds "$FACT_OPTION_IDS" \
   --arg reviewFormatId "$REVIEW_FORMAT_ID" \
-  '{factOptionIds:[$factOptionId],reviewFormatId:$reviewFormatId}')"
+  '{factOptionIds:$factOptionIds,reviewFormatId:$reviewFormatId}')"
 GENERATION_HASH="$(printf '%s' "$GENERATION_BODY" | sha256sum | cut -d ' ' -f 1)"
 IDEMPOTENCY_KEY="assessment-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
 curl -sS --fail-with-body --no-buffer --max-time 90 \
