@@ -65,6 +65,18 @@ describe("AWS private Lambda JSON invoker", () => {
       },
       "qualified-function",
     );
+    const prisma = createAwsLambdaJsonInvoker(
+      {
+        send: async () => ({
+          StatusCode: 200,
+          FunctionError: "Unhandled",
+          Payload: new TextEncoder().encode(
+            '{"errorType":"PrismaClientKnownRequestError","errorMessage":"Invalid query P2022 involving secret schema detail"}',
+          ),
+        }),
+      },
+      "qualified-function",
+    );
     const empty = createAwsLambdaJsonInvoker(
       { send: async () => ({ StatusCode: 200 }) },
       "qualified-function",
@@ -78,6 +90,12 @@ describe("AWS private Lambda JSON invoker", () => {
     );
     await expect(stable.invoke({ operation: "x" } as never)).rejects.toThrow(
       "PRIVATE_FUNCTION_FAILED_ERROR_GENERATION_TERMINAL_NOT_AVAILABLE",
+    );
+    await expect(prisma.invoke({ operation: "x" } as never)).rejects.toThrow(
+      "PRIVATE_FUNCTION_FAILED_PRISMACLIENTKNOWNREQUESTERROR_P2022",
+    );
+    await expect(prisma.invoke({ operation: "x" } as never)).rejects.not.toThrow(
+      "secret schema detail",
     );
     await expect(empty.invoke({ operation: "x" } as never)).rejects.toThrow(
       "PRIVATE_FUNCTION_EMPTY_RESPONSE",

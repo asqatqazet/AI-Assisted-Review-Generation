@@ -850,7 +850,7 @@ jobs:
               --query 'events[].message' \
               --output text 2>/dev/null || true)"
             STABLE_CODES="$(printf '%s' "$MESSAGES" \
-              | grep -Eo '(PRIVATE_FUNCTION|RECONCILIATION|GENERATION|CONTEXT|DATABASE|PERMIT|LEASE|TERMINAL|WORKLOAD|RECEIPT|CONFIGURATION)_[A-Z0-9_]+|[A-Za-z]+(Error|Exception)|Task timed out after [0-9.]+ seconds' \
+              | grep -Eo '(PRIVATE_FUNCTION|RECONCILIATION|GENERATION|CONTEXT|DATABASE|PERMIT|LEASE|TERMINAL|WORKLOAD|RECEIPT|CONFIGURATION)_[A-Z0-9_]+|P[0-9]{4}|[A-Za-z]+(Error|Exception)|Task timed out after [0-9.]+ seconds' \
               | LC_ALL=C sort -u \
               | paste -sd ',' - || true)"
             if [ -n "$STABLE_CODES" ]; then

@@ -48,6 +48,11 @@ const safeFunctionFailureCode = (payload: Uint8Array | undefined): string => {
       /^[A-Z][A-Z0-9_]{2,127}$/.test(failure.errorMessage)
     ) {
       parts.push(failure.errorMessage);
+    } else if (typeof failure.errorMessage === "string") {
+      const prismaCode = /\bP[0-9]{4}\b/.exec(failure.errorMessage)?.[0];
+      if (prismaCode !== undefined) {
+        parts.push(prismaCode);
+      }
     }
     return parts.join("_");
   } catch {

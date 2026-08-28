@@ -993,6 +993,7 @@ describe("student AWS topology invariants", () => {
       "/aws/lambda/review-web-bff-reconcile-student",
     );
     expect(workflow).toContain("STABLE_CODES");
+    expect(workflow).toContain("P[0-9]{4}");
     expect(workflow).not.toContain("cat \"$RUNNER_TEMP/web-reconcile-candidate.json\"");
   });
 
