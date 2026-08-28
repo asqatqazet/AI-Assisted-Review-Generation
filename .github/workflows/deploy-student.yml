@@ -718,54 +718,89 @@ jobs:
           DISTRIBUTION_ID="$(terraform -chdir="$TF_DIR" output -raw cloudfront_distribution_id)"
           DOMAIN="$(terraform -chdir="$TF_DIR" output -raw cloudfront_domain_name)"
           HEALTH_EVENT='{"version":"2.0","routeKey":"GET /health","rawPath":"/health","rawQueryString":"","headers":{"host":"candidate.internal"},"requestContext":{"accountId":"candidate","apiId":"candidate","domainName":"candidate.internal","domainPrefix":"candidate","http":{"method":"GET","path":"/health","protocol":"HTTP/1.1","sourceIp":"127.0.0.1","userAgent":"deployment-smoke"},"requestId":"candidate","routeKey":"GET /health","stage":"$default","time":"01/Jan/2026:00:00:00 +0000","timeEpoch":0},"isBase64Encoded":false}'
+          invoke_candidate() {
+            local label="$1"
+            local function_name="$2"
+            local qualifier="$3"
+            local payload="$4"
+            local output_file="$5"
+            local metadata
+            local -a qualifier_args=()
+            if [ -n "$qualifier" ]; then
+              qualifier_args=(--qualifier "$qualifier")
+            fi
+            if ! metadata="$(aws lambda invoke \
+              --function-name "$function_name" \
+              "${qualifier_args[@]}" \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$payload" \
+              "$output_file")"; then
+              echo "::error title=$label invocation failed::AWS rejected the candidate invocation." >&2
+              return 1
+            fi
+            if [ -n "$(jq -r '.FunctionError // empty' <<< "$metadata")" ]; then
+              local error_type
+              error_type="$(jq -r '.errorType // "unknown"' "$output_file" 2>/dev/null || true)"
+              echo "::error title=$label FunctionError::Candidate Lambda failed with type $error_type; inspect its redacted CloudWatch log." >&2
+              return 1
+            fi
+          }
+          assert_candidate_response() {
+            local label="$1"
+            local filter="$2"
+            local output_file="$3"
+            if ! jq -e "$filter" "$output_file" >/dev/null; then
+              echo "::error title=$label contract mismatch::Candidate response did not satisfy its smoke contract." >&2
+              return 1
+            fi
+          }
           REVIEWER_EVENT='{"operation":"prepare-entry","input":{"tenantSlug":"deployment-smoke-absent","locationSlug":"deployment-smoke-absent","browserCapability":"deployment-smoke-browser-capability"}}'
-          aws lambda invoke \
-            --function-name review-context-reviewer-student \
-            --qualifier candidate \
-            --cli-binary-format raw-in-base64-out \
-            --payload "$REVIEWER_EVENT" \
-            "$RUNNER_TEMP/context-reviewer-candidate.json" >/dev/null
-          jq -e '.operation == "prepare-entry" and .result.status == "unavailable"' \
-            "$RUNNER_TEMP/context-reviewer-candidate.json" >/dev/null
+          invoke_candidate \
+            "candidate Context Reviewer" \
+            review-context-reviewer-student candidate "$REVIEWER_EVENT" \
+            "$RUNNER_TEMP/context-reviewer-candidate.json"
+          assert_candidate_response \
+            "candidate Context Reviewer" \
+            '.operation == "prepare-entry" and .result.status == "unavailable"' \
+            "$RUNNER_TEMP/context-reviewer-candidate.json"
           OPERATOR_ISSUER="$(terraform -chdir="$TF_DIR" output -raw operator_oidc_issuer)"
           CONSOLE_EVENT="$(jq -cn --arg issuer "$OPERATOR_ISSUER" '{operation:"resolve-operator-access",input:{identity:{issuer:$issuer,subject:"deployment-smoke-unknown",email:"deployment-smoke@example.invalid"}}}')"
-          aws lambda invoke \
-            --function-name review-context-console-student \
-            --qualifier candidate \
-            --cli-binary-format raw-in-base64-out \
-            --payload "$CONSOLE_EVENT" \
-            "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
-          jq -e '.operation == "resolve-operator-access" and .result.status == "unauthorized"' \
-            "$RUNNER_TEMP/context-console-candidate.json" >/dev/null
-          aws lambda invoke \
-            --function-name review-web-bff-fast-student \
-            --qualifier candidate \
-            --cli-binary-format raw-in-base64-out \
-            --payload "$HEALTH_EVENT" \
-            "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
-          jq -e '.statusCode == 200' "$RUNNER_TEMP/web-fast-candidate.json" >/dev/null
+          invoke_candidate \
+            "candidate Context Console" \
+            review-context-console-student candidate "$CONSOLE_EVENT" \
+            "$RUNNER_TEMP/context-console-candidate.json"
+          assert_candidate_response \
+            "candidate Context Console" \
+            '.operation == "resolve-operator-access" and .result.status == "unauthorized"' \
+            "$RUNNER_TEMP/context-console-candidate.json"
+          invoke_candidate \
+            "candidate fast BFF" \
+            review-web-bff-fast-student candidate "$HEALTH_EVENT" \
+            "$RUNNER_TEMP/web-fast-candidate.json"
+          assert_candidate_response \
+            "candidate fast BFF" '.statusCode == 200' \
+            "$RUNNER_TEMP/web-fast-candidate.json"
           EXPECTED_PROVIDER_MODE=paid-enabled
           if [ "$REVIEW_DEPLOYMENT_PROFILE" = "student-low-quota" ]; then
             EXPECTED_PROVIDER_MODE=fake-only
-            aws lambda invoke \
-              --function-name review-generation-canary-student \
-              --cli-binary-format raw-in-base64-out \
-              --payload "$HEALTH_EVENT" \
-              "$RUNNER_TEMP/review-generation-canary-student.json" >/dev/null
-            jq -e '.statusCode == 200' \
+            invoke_candidate \
+              "candidate fake Generation canary" \
+              review-generation-canary-student "" "$HEALTH_EVENT" \
+              "$RUNNER_TEMP/review-generation-canary-student.json"
+            assert_candidate_response \
+              "candidate fake Generation canary" '.statusCode == 200' \
               "$RUNNER_TEMP/review-generation-canary-student.json" >/dev/null
             test "$(aws lambda get-function-configuration \
               --function-name review-generation-canary-student \
               --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
               --output text)" = "fake-only"
           else
-            aws lambda invoke \
-              --function-name review-generation-service-student \
-              --qualifier candidate \
-              --cli-binary-format raw-in-base64-out \
-              --payload "$HEALTH_EVENT" \
-              "$RUNNER_TEMP/review-generation-service-student-candidate.json" >/dev/null
-            jq -e '.statusCode == 200' \
+            invoke_candidate \
+              "candidate paid Generation" \
+              review-generation-service-student candidate "$HEALTH_EVENT" \
+              "$RUNNER_TEMP/review-generation-service-student-candidate.json"
+            assert_candidate_response \
+              "candidate paid Generation" '.statusCode == 200' \
               "$RUNNER_TEMP/review-generation-service-student-candidate.json" >/dev/null
           fi
           test "$(aws lambda get-function-configuration \
@@ -773,20 +808,14 @@ jobs:
             --qualifier candidate \
             --query 'Environment.Variables.REVIEW_PROVIDER_MODE' \
             --output text)" = "$EXPECTED_PROVIDER_MODE"
-          STREAM_METADATA="$(aws lambda invoke \
-            --function-name review-web-bff-stream-student \
-            --qualifier candidate \
-            --cli-binary-format raw-in-base64-out \
-            --payload "$HEALTH_EVENT" \
-            "$RUNNER_TEMP/web-stream-candidate.json")"
-          test "$(jq -r '.FunctionError // empty' <<< "$STREAM_METADATA")" = ""
-          RECONCILE_METADATA="$(aws lambda invoke \
-            --function-name review-web-bff-reconcile-student \
-            --qualifier candidate \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{}' \
-            "$RUNNER_TEMP/web-reconcile-candidate.json")"
-          test "$(jq -r '.FunctionError // empty' <<< "$RECONCILE_METADATA")" = ""
+          invoke_candidate \
+            "candidate stream BFF" \
+            review-web-bff-stream-student candidate "$HEALTH_EVENT" \
+            "$RUNNER_TEMP/web-stream-candidate.json"
+          invoke_candidate \
+            "candidate reconciliation BFF" \
+            review-web-bff-reconcile-student candidate '{}' \
+            "$RUNNER_TEMP/web-reconcile-candidate.json"
           aws s3 sync "$RELEASE_DIR/ui" "s3://$UI_BUCKET" \
             --exclude "index.html" --exclude "robots.txt" --exclude "release.json" \
             --cache-control "public,max-age=31536000,immutable"

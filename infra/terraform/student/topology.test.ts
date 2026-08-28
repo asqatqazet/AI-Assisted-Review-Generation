@@ -949,7 +949,7 @@ describe("student AWS topology invariants", () => {
       /resource\s+"aws_lambda_function"\s+"web_bff_stream"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*2\s*:\s*null[\s\S]*?timeout\s*=\s*85/,
     );
     expect(terraform).toMatch(
-      /resource\s+"aws_lambda_function"\s+"context_reviewer"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*4\s*:\s*null[\s\S]*?timeout\s*=\s*7/,
+      /resource\s+"aws_lambda_function"\s+"context_reviewer"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*4\s*:\s*null[\s\S]*?timeout\s*=\s*15/,
     );
     expect(terraform).toMatch(
       /resource\s+"aws_lambda_function"\s+"context_console"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*1\s*:\s*null[\s\S]*?timeout\s*=\s*22/,
@@ -958,6 +958,23 @@ describe("student AWS topology invariants", () => {
       /resource\s+"aws_lambda_function"\s+"generation_service"[\s\S]*?reserved_concurrent_executions\s*=\s*var\.deployment_profile\s*==\s*"reserved-concurrency"\s*\?\s*1\s*:\s*null[\s\S]*?timeout\s*=\s*75/,
     );
     expect(terraform).not.toContain("provisioned_concurrent_executions");
+  });
+
+  it("fails candidate Lambda smoke checks with a named, diagnostic boundary", () => {
+    const workflow = fs.readFileSync(
+      path.join(__dirname, "../../../.github/workflows/deploy-student.yml"),
+      "utf8",
+    );
+    const candidateSmoke = workflow.slice(
+      workflow.indexOf("Smoke candidate aliases and staged UI"),
+      workflow.indexOf("Complete a reviewer Generation through the candidate UI and BFF"),
+    );
+
+    expect(candidateSmoke).toContain("invoke_candidate");
+    expect(candidateSmoke).toContain("candidate Context Reviewer");
+    expect(candidateSmoke).toContain("candidate Context Console");
+    expect(candidateSmoke).toContain("candidate fast BFF");
+    expect(candidateSmoke).toContain("FunctionError");
   });
 
   it("lets only BFF roles invoke qualified service aliases and EventBridge invoke reconciliation", () => {

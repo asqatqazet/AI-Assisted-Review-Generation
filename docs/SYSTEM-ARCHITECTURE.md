@@ -456,7 +456,7 @@ OpenAI/Gemini credentials never enter the snapshot or browser.
 | Boundary | Initial value |
 |---|---:|
 | PostgreSQL statement / admission transaction | 2 s / 4 s |
-| Context invocation | 7 s |
+| Reviewer Context invocation | 15 s |
 | Provider call; one Attempt, no automatic retry | 60 s |
 | Generation Lambda | 75 s |
 | Streaming BFF Lambda | 85 s |

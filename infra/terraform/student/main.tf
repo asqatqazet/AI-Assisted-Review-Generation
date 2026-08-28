@@ -497,10 +497,12 @@ resource "aws_lambda_function" "context_reviewer" {
   runtime                        = "nodejs24.x"
   memory_size                    = 256
   reserved_concurrent_executions = var.deployment_profile == "reserved-concurrency" ? 4 : null
-  timeout                        = 7
-  filename                       = var.context_artifact_path
-  source_code_hash               = filebase64sha256(var.context_artifact_path)
-  publish                        = true
+  # The DB statement/transaction budgets remain 2s/4s. The larger invocation
+  # envelope accommodates SSM fetch plus a scale-to-zero Neon cold start.
+  timeout          = 15
+  filename         = var.context_artifact_path
+  source_code_hash = filebase64sha256(var.context_artifact_path)
+  publish          = true
 
   environment {
     variables = {
