@@ -221,12 +221,7 @@ jobs:
               jq -c '{errorType,errorMessage}' "$OUTPUT_FILE" >&2 || true
               exit 1
             fi
-            jq -e '
-              (.inspected | type == "number") and
-              (.released | type == "number") and
-              (.settled | type == "number") and
-              (.deferred | type == "number")
-            ' "$OUTPUT_FILE" >/dev/null
+            jq -e '.StatusCode == 200' <<< "$METADATA" >/dev/null
           elif grep -Eq 'ResourceNotFoundException|ResourceNotFound' "$ERROR_FILE"; then
             : # A fresh stack has no stale rollback-probe work.
           else

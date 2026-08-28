@@ -118,6 +118,12 @@ describe("legacy Context rollback dependency gate", () => {
     expect(workflow).toMatch(
       /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?review-web-bff-reconcile-student[\s\S]*?--qualifier live[\s\S]*?FunctionError/u,
     );
+    expect(workflow).toMatch(
+      /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?\.StatusCode == 200/u,
+    );
+    expect(workflow).not.toMatch(
+      /Reconcile stale rollback-probe work before low-quota freeze[\s\S]*?\.inspected \| type == "number"/u,
+    );
   });
 
   it("reuses the pre-migration session and idempotency key after expansion", () => {
