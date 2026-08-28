@@ -23,6 +23,7 @@ import { PrismaClient, type Prisma } from "../generated/control-plane/index.js";
 import { strictZeroPromptContentPolicy } from "../deployment/prompt-release-content-policy.js";
 
 import { createConsoleOperatorAuthorizationProof } from "./console-database-authority.js";
+import { consoleTransactionOptions } from "./console-transaction-options.js";
 
 /**
  * PostgreSQL adapter for the operator Console control plane.
@@ -1590,34 +1591,37 @@ export function createPostgresConsoleControlPlaneStore({
           ? "platform:admin"
           : "console:read",
       ): Promise<T> =>
-        await client.$transaction(async (transaction) => {
-          const proof = createConsoleOperatorAuthorizationProof({
-            secretHex: consoleDatabaseAuthoritySecret,
-            operatorId,
-          });
-          const bindings = await transaction.$queryRaw<{ bound: boolean }[]>`
-            SELECT console_bind_operator_authorization(
-              ${operatorId}::uuid,
-              ${proof.issuedAtMs}::bigint,
-              ${proof.nonce}::uuid,
-              ${proof.mac}
-            ) AS bound
-          `;
-          if (bindings[0]?.bound !== true) {
-            throw new ConsoleScopeDeniedError("Operator authority");
-          }
-          if (tenantId === null) {
-            if (!(await grantedForPlatform(transaction, requiredCapability))) {
-              throw new ConsoleScopeDeniedError("Platform scope");
+        await client.$transaction(
+          async (transaction) => {
+            const proof = createConsoleOperatorAuthorizationProof({
+              secretHex: consoleDatabaseAuthoritySecret,
+              operatorId,
+            });
+            const bindings = await transaction.$queryRaw<{ bound: boolean }[]>`
+              SELECT console_bind_operator_authorization(
+                ${operatorId}::uuid,
+                ${proof.issuedAtMs}::bigint,
+                ${proof.nonce}::uuid,
+                ${proof.mac}
+              ) AS bound
+            `;
+            if (bindings[0]?.bound !== true) {
+              throw new ConsoleScopeDeniedError("Operator authority");
             }
+            if (tenantId === null) {
+              if (!(await grantedForPlatform(transaction, requiredCapability))) {
+                throw new ConsoleScopeDeniedError("Platform scope");
+              }
+              return await work(transaction);
+            }
+            if (!(await grantedForTenant(transaction, tenantId, requiredCapability))) {
+              throw new ConsoleScopeDeniedError(`Tenant ${tenantId}`);
+            }
+            await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
             return await work(transaction);
-          }
-          if (!(await grantedForTenant(transaction, tenantId, requiredCapability))) {
-            throw new ConsoleScopeDeniedError(`Tenant ${tenantId}`);
-          }
-          await transaction.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
-          return await work(transaction);
-        });
+          },
+          consoleTransactionOptions,
+        );
 
       /**
        * A read of a scope this operator does not hold answers exactly like a
