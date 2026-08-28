@@ -14,6 +14,39 @@ const snapshotId = "00000000-0000-4000-8000-000000000997";
 
 function publishedPayload(promptId = promptVersionId): unknown {
   return {
+    settings: {
+      locale: "de-DE",
+      entryMode: "open-qr",
+      requireDisclosure: false,
+      requireVerifiedExperience: false,
+      maxReviewFormatsPerRequest: 1,
+      minimumFactSelections: 1,
+      maximumCustomerAssertionChars: 500,
+      enabledReviewFormatVersionIds: [
+        "00000000-0000-4000-8000-000000000122",
+      ],
+      enabledCommands: ["generate"],
+      monthlyBudgetMicros: 0,
+    },
+    factOptions: [
+      {
+        id: "00000000-0000-4000-8000-000000000130",
+        active: true,
+      },
+    ],
+    reviewFormats: [
+      {
+        id: "00000000-0000-4000-8000-000000000122",
+        constraints: {
+          minChars: 8,
+          maxChars: 420,
+          paragraphs: 1,
+          emojiPolicy: "none",
+          secondPerson: false,
+        },
+        supportedCommands: ["generate"],
+      },
+    ],
     promptVersions: [
       {
         id: promptId,
@@ -21,12 +54,25 @@ function publishedPayload(promptId = promptVersionId): unknown {
         commandKind: "generate",
       },
     ],
+    priceRates: [
+      {
+        provider: "fake",
+        model: "fake-v1",
+        inputPerMillionMicros: 0,
+        outputPerMillionMicros: 0,
+      },
+    ],
+    providerRouting: {
+      primaryProvider: "fake",
+      primaryModel: "fake-v1",
+    },
   };
 }
 
 function consoleBoundary(options?: {
   readonly draftChanges?: readonly unknown[] | null;
   readonly alreadyPublished?: boolean;
+  readonly snapshotPayload?: unknown;
 }): {
   readonly console: StudentReleaseQualificationConsole;
   readonly calls: string[];
@@ -61,7 +107,7 @@ function consoleBoundary(options?: {
           ? {
               snapshotId,
               contentHash: promptVersionHash,
-              payload: publishedPayload(),
+              payload: options?.snapshotPayload ?? publishedPayload(),
             }
           : null;
       },
@@ -83,7 +129,7 @@ function consoleBoundary(options?: {
         };
         return { status: "saved" };
       },
-      async publishConfiguration(input) {
+      async publishConfiguration() {
         calls.push("publish");
         published = true;
         candidateStaged = true;
@@ -174,6 +220,46 @@ describe("student Prompt release qualification", () => {
       "snapshot:live",
       "promote",
       "stage",
+      "snapshot:candidate",
+    ]);
+  });
+
+  it("does not reuse a stale immutable snapshot that only has the exact Prompt", async () => {
+    const { console, calls } = consoleBoundary({
+      alreadyPublished: true,
+      snapshotPayload: {
+        promptVersions: [
+          {
+            id: promptVersionId,
+            hash: promptVersionHash,
+            commandKind: "generate",
+          },
+        ],
+      },
+    });
+
+    await expect(
+      qualifyStudentRelease({
+        console,
+        operatorId: "00000000-0000-4000-8000-000000000301",
+        tenantId,
+        promptVersionId,
+        promptVersionHash,
+        configurationReleaseId,
+      }),
+    ).resolves.toEqual({
+      status: "published",
+      snapshotIds: [snapshotId],
+      configurationReleaseId,
+    });
+    expect(calls).toEqual([
+      "locations",
+      "snapshot:live",
+      "state",
+      "promote",
+      "save",
+      "state",
+      "publish",
       "snapshot:candidate",
     ]);
   });

@@ -12,6 +12,8 @@ import { PrismaClient } from "../packages/db/src/generated/control-plane/index.j
 const STUDENT_TENANT_ID = STUDENT_STRICT_ZERO_PROMPT_APPROVAL.tenantId;
 const STUDENT_PROMPT_VERSION_ID =
   STUDENT_STRICT_ZERO_PROMPT_APPROVAL.promptVersionId;
+const STUDENT_REVIEW_FORMAT_VERSION_ID =
+  "00000000-0000-4000-8000-000000000122";
 
 type TargetPromptDeploymentChange = {
   readonly operation: "deploy-prompt-version";
@@ -130,6 +132,70 @@ function snapshotContainsPrompt(
   );
 }
 
+function exactStringArray(value: unknown, expected: readonly string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length === expected.length &&
+    value.every((entry, index) => entry === expected[index])
+  );
+}
+
+function studentSnapshotIsReusable(
+  payload: unknown,
+  promptVersionId: string,
+  promptVersionHash: string,
+): boolean {
+  if (!snapshotContainsPrompt(payload, promptVersionId, promptVersionHash)) {
+    return false;
+  }
+  const document = record(payload);
+  const settings = record(document?.["settings"]);
+  const providerRouting = record(document?.["providerRouting"]);
+  const reviewFormats = document?.["reviewFormats"];
+  const factOptions = document?.["factOptions"];
+  const priceRates = document?.["priceRates"];
+  if (
+    settings?.["locale"] !== "de-DE" ||
+    settings["entryMode"] !== "open-qr" ||
+    settings["requireDisclosure"] !== false ||
+    settings["requireVerifiedExperience"] !== false ||
+    settings["maxReviewFormatsPerRequest"] !== 1 ||
+    settings["minimumFactSelections"] !== 1 ||
+    settings["maximumCustomerAssertionChars"] !== 500 ||
+    settings["monthlyBudgetMicros"] !== 0 ||
+    !exactStringArray(settings["enabledCommands"], ["generate"]) ||
+    !exactStringArray(settings["enabledReviewFormatVersionIds"], [
+      STUDENT_REVIEW_FORMAT_VERSION_ID,
+    ]) ||
+    providerRouting?.["primaryProvider"] !== "fake" ||
+    providerRouting["primaryModel"] !== "fake-v1" ||
+    !Array.isArray(factOptions) ||
+    !factOptions.some((entry) => record(entry)?.["active"] === true) ||
+    !Array.isArray(reviewFormats) ||
+    reviewFormats.length !== 1 ||
+    !Array.isArray(priceRates) ||
+    priceRates.length !== 1
+  ) {
+    return false;
+  }
+  const format = record(reviewFormats[0]);
+  const constraints = record(format?.["constraints"]);
+  const rate = record(priceRates[0]);
+  return (
+    format?.["id"] === STUDENT_REVIEW_FORMAT_VERSION_ID &&
+    exactStringArray(format["supportedCommands"], ["generate"]) &&
+    constraints?.["minChars"] === 8 &&
+    constraints["maxChars"] === 420 &&
+    constraints["paragraphs"] === 1 &&
+    constraints["emojiPolicy"] === "none" &&
+    constraints["secondPerson"] === false &&
+    rate?.["provider"] === "fake" &&
+    rate["model"] === "fake-v1" &&
+    rate["inputPerMillionMicros"] === 0 &&
+    rate["outputPerMillionMicros"] === 0
+  );
+}
+
 function isTargetDraft(
   draft: Draft,
   promptVersionId: string,
@@ -190,7 +256,7 @@ export async function qualifyStudentRelease(input: {
     before.every(
       (snapshot) =>
         snapshot !== null &&
-        snapshotContainsPrompt(
+        studentSnapshotIsReusable(
           snapshot.payload,
           input.promptVersionId,
           input.promptVersionHash,
