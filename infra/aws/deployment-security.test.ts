@@ -688,6 +688,9 @@ describe("student deployment security", () => {
   it("completes a zero-cost reviewer Generation through the candidate UI and version-pinned BFF before BFF promotion", () => {
     const smokePath = path.join(root, "scripts/smoke-candidate-reviewer-flow.sh");
     const smoke = fs.readFileSync(smokePath, "utf8");
+    const streamInvoker = read(
+      "apps/web-bff/scripts/invoke-with-response-stream.ts",
+    );
     const workflow = read(".github/workflows/deploy-student.yml");
     const syntax = spawnSync("bash", ["-n", smokePath], {
       cwd: root,
@@ -703,7 +706,12 @@ describe("student deployment security", () => {
     ]) {
       expect(smoke).toContain(route);
     }
-    expect(smoke).toContain("invoke-with-response-stream");
+    expect(smoke).not.toContain("aws lambda invoke-with-response-stream");
+    expect(smoke).toContain(
+      "pnpm --dir apps/web-bff exec tsx scripts/invoke-with-response-stream.ts",
+    );
+    expect(streamInvoker).toContain("InvokeWithResponseStreamCommand");
+    expect(streamInvoker).toContain("for await (const event of eventStream)");
     expect(smoke).toContain(
       'invoke_buffered "review-web-bff-fast-student"',
     );

@@ -41,16 +41,10 @@ invoke_stream() {
   local function_name="$1"
   local payload="$2"
   local output_file="$3"
-  local metadata
-  metadata="$(
-    aws lambda invoke-with-response-stream \
-      --function-name "$function_name" \
-      --qualifier candidate \
-      --cli-binary-format raw-in-base64-out \
-      --payload "$payload" \
-      "$output_file"
-  )"
-  if [ "$(jq -r '.FunctionError // empty' <<< "$metadata")" != "" ]; then
+  local payload_file="${output_file}.request.json"
+  printf '%s' "$payload" > "$payload_file"
+  if ! pnpm --dir apps/web-bff exec tsx scripts/invoke-with-response-stream.ts \
+    "$function_name" "$payload_file" "$output_file"; then
     printf '%s\n' "CANDIDATE_BFF_STREAM_FAILED:${function_name}" >&2
     return 1
   fi
