@@ -206,4 +206,73 @@ describe("US-01.3 reviewer Generation BFF", () => {
       "settle:signed-terminal-receipt",
     ]);
   });
+
+  it("streams the application rate-limit wait without invoking Generation", async () => {
+    let generationPrepareCalls = 0;
+    const context: ReviewerGenerationContextPort = {
+      async prepare() {
+        return {
+          status: "rejected",
+          code: "RATE_LIMITED",
+          retryable: true,
+          retryAfterSeconds: 73,
+        };
+      },
+      async activate() {
+        return { status: "rejected" };
+      },
+      async settle() {
+        return { status: "rejected" };
+      },
+    };
+    const generation: ReviewerGenerationExecutionPort = {
+      async prepare() {
+        generationPrepareCalls += 1;
+        throw new Error("Generation must not run for rejected admission");
+      },
+      async *execute() {
+        yield { type: "heartbeat", elapsedSeconds: 0 };
+        throw new Error("Generation must not run for rejected admission");
+      },
+    };
+    const app = createWebBffApp({
+      ...allowedPublicSource,
+      reviewerGenerationContextPort: context,
+      reviewerGenerationExecutionPort: generation,
+      publicOrigin: "https://reviews.example.test",
+    });
+    const body = JSON.stringify({
+      factOptionIds: ["fact-attentive"],
+      reviewFormatId: "format-concise-v1",
+    });
+
+    const response = await app.request(
+      "/api/v1/review-sessions/review-session-demo/generations",
+      {
+        method: "POST",
+        headers: {
+          Accept: "text/event-stream",
+          "Content-Type": "application/json",
+          Cookie: "__Host-review_browser=browser-capability-123456789",
+          Origin: "https://reviews.example.test",
+          "Idempotency-Key": "generation-request-rate-limited",
+          "x-amz-content-sha256":
+            "dce940abe8303c5f5919f83cdb432d18413b30d8458a22cbb447c9f752d61794",
+        },
+        body,
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(sseData(await response.text())).toEqual([
+      {
+        type: "terminal",
+        status: "rejected",
+        code: "RATE_LIMITED",
+        retryable: true,
+        retryAfterSeconds: 73,
+      },
+    ]);
+    expect(generationPrepareCalls).toBe(0);
+  });
 });

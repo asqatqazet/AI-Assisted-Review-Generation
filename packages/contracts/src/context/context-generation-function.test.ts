@@ -5,6 +5,7 @@ import {
   ActivateGenerationInvocationDtoSchema,
   ContextFunctionInvocationDtoSchema,
   PrepareReviewerGenerationInvocationDtoSchema,
+  PrepareReviewerGenerationInvocationResultDtoSchema,
   SettleGenerationInvocationDtoSchema,
 } from "./context-function.js";
 
@@ -138,5 +139,27 @@ describe("private Context Generation function contract", () => {
 
     expect(ContextFunctionInvocationDtoSchema.parse(activation)).toEqual(activation);
     expect(ContextFunctionInvocationDtoSchema.parse(settlement)).toEqual(settlement);
+  });
+
+  it("carries the server-computed wait when admission rate-limits paid work", () => {
+    expect(
+      PrepareReviewerGenerationInvocationResultDtoSchema.parse({
+        operation: "prepare-reviewer-generation",
+        result: {
+          status: "rejected",
+          code: "RATE_LIMITED",
+          retryable: true,
+          retryAfterSeconds: 73,
+        },
+      }),
+    ).toEqual({
+      operation: "prepare-reviewer-generation",
+      result: {
+        status: "rejected",
+        code: "RATE_LIMITED",
+        retryable: true,
+        retryAfterSeconds: 73,
+      },
+    });
   });
 });

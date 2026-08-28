@@ -67,6 +67,7 @@ export type ReviewerGenerationAdmissionResult =
       readonly status: "rejected";
       readonly code: ReviewerGenerationRejectionCodeDto;
       readonly retryable: boolean;
+      readonly retryAfterSeconds?: number | undefined;
     };
 
 export interface ReviewerGenerationAdmissionStore {
@@ -250,6 +251,9 @@ export function createReviewerGenerationService({
           status: "rejected",
           code: prepared.code,
           retryable: prepared.retryable,
+          ...(prepared.retryAfterSeconds === undefined
+            ? {}
+            : { retryAfterSeconds: prepared.retryAfterSeconds }),
         };
       }
       const workload = GenerationWorkloadDtoSchema.parse(prepared.workload);

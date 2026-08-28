@@ -30,6 +30,7 @@ export interface ReviewerGenerationContextPort {
         readonly status: "rejected";
         readonly code: ReviewerGenerationRejectionCode;
         readonly retryable: boolean;
+        readonly retryAfterSeconds?: number | undefined;
       }
   >;
   activate(input: {
@@ -67,6 +68,7 @@ export type ReviewerGenerationExecutionEvent =
       readonly terminalReceipt: string;
       readonly code: ReviewerGenerationRejectionCode;
       readonly retryable: boolean;
+      readonly retryAfterSeconds?: number | undefined;
     };
 
 export interface ReviewerGenerationExecutionPort {

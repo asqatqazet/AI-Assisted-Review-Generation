@@ -58,6 +58,21 @@ describe("canonical student seed", () => {
     expect(seed).toContain("'REVISE_WORDING', false");
   });
 
+  it("lets the shortest valid one-Assertion FakeProvider draft satisfy each enabled Format", () => {
+    expect(seed).toContain(`'Zu laut.','NEGATIVE',90,true`);
+    expect(seed.match(/'\{"minChars":8,"maxChars":/gu)).toHaveLength(2);
+    expect(seed).not.toContain(`'{"minChars":20,"maxChars":`);
+  });
+
+  it("withholds a Format whose posting destination has no exact Location binding", () => {
+    expect(seed).toContain(
+      `'00000000-0000-4000-8000-000000000125','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000123',false`,
+    );
+    expect(seed).toContain(
+      `'unconfigured',\n    'https://www.tripadvisor.com/',\n    false`,
+    );
+  });
+
   it("seeds explicit sparse Tenant settings so a Platform publication preserves open QR", () => {
     const tenantInsertStart = seed.indexOf("INSERT INTO tenants (");
     const tenantInsertEnd = seed.indexOf("INSERT INTO locations", tenantInsertStart);

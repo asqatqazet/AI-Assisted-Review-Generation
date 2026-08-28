@@ -321,6 +321,7 @@ describe("US-03.2 Context reviewer Generation service", () => {
             status: "rejected",
             code: "RATE_LIMITED",
             retryable: true,
+            retryAfterSeconds: 73,
           };
         },
         activate: async () => ({ status: "rejected" }),
@@ -352,6 +353,7 @@ describe("US-03.2 Context reviewer Generation service", () => {
       status: "rejected",
       code: "RATE_LIMITED",
       retryable: true,
+      retryAfterSeconds: 73,
     });
     expect(receivedAdmission).toEqual({
       routeHandleHash: "sha256:review-session-route-a",

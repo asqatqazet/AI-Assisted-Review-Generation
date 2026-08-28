@@ -968,7 +968,10 @@ function ReviewRoute({
   }, [reviewSessionQuery.data]);
 
   const persistProgress = useCallback(
-    (progress: ResumableProgress): void => {
+    (
+      progress: ResumableProgress,
+      options?: { readonly keepalive?: boolean | undefined },
+    ): void => {
       const serialized = JSON.stringify(progress);
       if (
         progressEpochRef.current === undefined ||
@@ -991,7 +994,7 @@ function ReviewRoute({
             reviewSessionHandle,
             expectedEpoch,
             progress,
-          });
+          }, options);
           if (result.status === "saved") {
             progressEpochRef.current = result.progress.epoch;
             lastPersistedProgressRef.current = serialized;
@@ -1031,6 +1034,23 @@ function ReviewRoute({
     return () => globalThis.clearTimeout(timer);
   }, [completedText, persistProgress, state]);
 
+  useEffect(() => {
+    const flushProgress = (): void => {
+      const resumableProgress = resumableProgressForState(state);
+      if (resumableProgress === undefined) {
+        return;
+      }
+      persistProgress(
+        state.value === "results" && completedText !== null
+          ? { ...resumableProgress, phase: "done" }
+          : resumableProgress,
+        { keepalive: true },
+      );
+    };
+    globalThis.addEventListener("pagehide", flushProgress);
+    return () => globalThis.removeEventListener("pagehide", flushProgress);
+  }, [completedText, persistProgress, state]);
+
   const activeDraft = state.value === "results" ? state.draft : undefined;
   const activeDraftIdentity =
     activeDraft === undefined
@@ -1054,27 +1074,20 @@ function ReviewRoute({
     setDraftSaveStatus("idle");
   }, [activeDraft, activeDraftIdentity]);
 
-  useEffect(() => {
-    if (
-      activeDraft === undefined ||
-      activeDraftIdentity === undefined ||
-      draftText.trim().length === 0 ||
-      draftText === lastSavedDraftTextRef.current ||
-      draftText === lastQueuedDraftTextRef.current ||
-      draftConflictRef.current ||
-      draftAutosaveSuspendedRef.current
-    ) {
-      return undefined;
-    }
-
-    const text = draftText;
-    const identity = activeDraftIdentity;
-    const timer = globalThis.setTimeout(() => {
+  const persistDraftRevision = useCallback(
+    (
+      draft: NonNullable<typeof activeDraft>,
+      identity: string,
+      text: string,
+      options?: { readonly keepalive?: boolean | undefined },
+    ): void => {
       if (
+        text.trim().length === 0 ||
         identity !== draftIdentityRef.current ||
+        text === lastSavedDraftTextRef.current ||
+        text === lastQueuedDraftTextRef.current ||
         draftConflictRef.current ||
-        draftAutosaveSuspendedRef.current ||
-        text === lastQueuedDraftTextRef.current
+        draftAutosaveSuspendedRef.current
       ) {
         return;
       }
@@ -1092,14 +1105,17 @@ function ReviewRoute({
             return;
           }
           setDraftSaveStatus("saving");
-          const result = await reviewerDraftRevisionClient.save({
-            reviewSessionHandle,
-            idempotencyKey: newIdempotencyKey(),
-            draftId: activeDraft.id,
-            generationId: activeDraft.generationId,
-            expectedRevision,
-            text,
-          });
+          const result = await reviewerDraftRevisionClient.save(
+            {
+              reviewSessionHandle,
+              idempotencyKey: newIdempotencyKey(),
+              draftId: draft.id,
+              generationId: draft.generationId,
+              expectedRevision,
+              text,
+            },
+            options,
+          );
           if (result.status === "conflict") {
             draftRevisionRef.current = result.revision;
             draftConflictRef.current = true;
@@ -1116,16 +1132,47 @@ function ReviewRoute({
           }
           setDraftSaveStatus("failed");
         });
+    },
+    [newIdempotencyKey, reviewSessionHandle, reviewerDraftRevisionClient],
+  );
+
+  useEffect(() => {
+    if (
+      activeDraft === undefined ||
+      activeDraftIdentity === undefined ||
+      draftText.trim().length === 0 ||
+      draftText === lastSavedDraftTextRef.current ||
+      draftText === lastQueuedDraftTextRef.current ||
+      draftConflictRef.current ||
+      draftAutosaveSuspendedRef.current
+    ) {
+      return undefined;
+    }
+
+    const text = draftText;
+    const identity = activeDraftIdentity;
+    const timer = globalThis.setTimeout(() => {
+      persistDraftRevision(activeDraft, identity, text);
     }, 600);
     return () => globalThis.clearTimeout(timer);
   }, [
     activeDraft,
     activeDraftIdentity,
     draftText,
-    newIdempotencyKey,
-    reviewSessionHandle,
-    reviewerDraftRevisionClient,
+    persistDraftRevision,
   ]);
+
+  useEffect(() => {
+    if (activeDraft === undefined || activeDraftIdentity === undefined) {
+      return undefined;
+    }
+    const flushDraft = (): void =>
+      persistDraftRevision(activeDraft, activeDraftIdentity, draftText, {
+        keepalive: true,
+      });
+    globalThis.addEventListener("pagehide", flushDraft);
+    return () => globalThis.removeEventListener("pagehide", flushDraft);
+  }, [activeDraft, activeDraftIdentity, draftText, persistDraftRevision]);
 
   const sessionCopy = getSurveyCopy(reviewProjection?.locale ?? "en-GB");
   const privacyControl =
@@ -1262,6 +1309,9 @@ function ReviewRoute({
                 type: "GENERATION_FAILED",
                 code: event.code,
                 retryable: event.retryable,
+                ...(event.retryAfterSeconds === undefined
+                  ? {}
+                  : { retryAfterSeconds: event.retryAfterSeconds }),
               }),
             );
             return;

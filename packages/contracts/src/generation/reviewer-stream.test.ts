@@ -241,14 +241,16 @@ describe("reviewer Generation stream contract", () => {
       ReviewerGenerationEventDtoSchema.parse({
         type: "terminal",
         status: "rejected",
-        code: "GROUNDING_REJECTED",
-        retryable: false,
+        code: "RATE_LIMITED",
+        retryable: true,
+        retryAfterSeconds: 73,
       }),
     ).toEqual({
       type: "terminal",
       status: "rejected",
-      code: "GROUNDING_REJECTED",
-      retryable: false,
+      code: "RATE_LIMITED",
+      retryable: true,
+      retryAfterSeconds: 73,
     });
 
     expect(

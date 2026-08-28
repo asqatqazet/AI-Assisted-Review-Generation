@@ -278,7 +278,7 @@ VALUES
     1,
     'any',
     'google',
-    '{"minChars":20,"maxChars":420,"paragraphs":1,"emojiPolicy":"none","secondPerson":false}'::jsonb,
+    '{"minChars":8,"maxChars":420,"paragraphs":1,"emojiPolicy":"none","secondPerson":false}'::jsonb,
     '{"displayName":{"de-DE":"Kurzer Text","en-GB":"Concise blurb"},"description":{"de-DE":"Zwei oder drei Sätze. Was passiert ist, in der Reihenfolge, in der es passiert ist.","en-GB":"Two or three sentences. What happened, in the order it happened."},"sample":{"de-DE":"Frischer Fisch, gut gewürzt, und der Service war aufmerksam. Der Blick auf den Hafen hat den Abend gemacht.","en-GB":"Fresh fish, well seasoned, with attentive service."}}'::jsonb,
     ARRAY['GENERATE']::generation_action[],
     'sha256:speicher-neun-concise-blurb-v1',
@@ -290,7 +290,7 @@ VALUES
     1,
     'any',
     'tripadvisor',
-    '{"minChars":20,"maxChars":140,"paragraphs":1,"emojiPolicy":"allowed","secondPerson":false}'::jsonb,
+    '{"minChars":8,"maxChars":140,"paragraphs":1,"emojiPolicy":"allowed","secondPerson":false}'::jsonb,
     '{"displayName":{"de-DE":"Kurz für Portale","en-GB":"Social short"},"description":{"de-DE":"Eine Zeile, für Portale mit harter Zeichenbegrenzung.","en-GB":"One line, for listing sites with a hard character limit."},"sample":{"de-DE":"Frischer Fisch, aufmerksamer Service, Blick auf den Hafen.","en-GB":"Fresh fish, attentive service, harbour view."}}'::jsonb,
     ARRAY['GENERATE']::generation_action[],
     'sha256:speicher-neun-social-short-v1',
@@ -308,7 +308,7 @@ INSERT INTO review_format_enablements (
 )
 VALUES
   ('00000000-0000-4000-8000-000000000124','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000122',true,1,ARRAY['GENERATE']::generation_action[]),
-  ('00000000-0000-4000-8000-000000000125','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000123',true,2,ARRAY['GENERATE']::generation_action[])
+  ('00000000-0000-4000-8000-000000000125','00000000-0000-4000-8000-000000000101','00000000-0000-4000-8000-000000000123',false,2,ARRAY['GENERATE']::generation_action[])
 ON CONFLICT (id) DO UPDATE SET
   review_format_version_id = EXCLUDED.review_format_version_id,
   enabled = EXCLUDED.enabled,

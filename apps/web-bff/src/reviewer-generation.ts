@@ -45,6 +45,9 @@ export function createReviewerGenerationCoordinator(
             status: "rejected",
             code: prepared.code,
             retryable: prepared.retryable,
+            ...(prepared.retryAfterSeconds === undefined
+              ? {}
+              : { retryAfterSeconds: prepared.retryAfterSeconds }),
           });
           return;
         }
@@ -96,6 +99,9 @@ export function createReviewerGenerationCoordinator(
                   status: event.status,
                   code: event.code,
                   retryable: event.retryable,
+                  ...(event.retryAfterSeconds === undefined
+                    ? {}
+                    : { retryAfterSeconds: event.retryAfterSeconds }),
                 },
           );
           return;

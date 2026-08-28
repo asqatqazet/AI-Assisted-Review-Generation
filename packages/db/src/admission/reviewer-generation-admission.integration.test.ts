@@ -489,6 +489,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         status: "rejected",
         code: "RATE_LIMITED",
         retryable: true,
+        retryAfterSeconds: 60,
       });
       await expect(store.prepare({
         routeHandleHash,
@@ -582,6 +583,48 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
           `SELECT count(*) FROM source_text_revisions WHERE tenant_id = '${tenantId}' AND review_session_id = '${reviewSessionId}' AND body = '${sourceText}';`,
         ),
       ).toBe("0");
+
+      const sessionWindowReservationId = randomUUID();
+      const sessionWindowBatchId = randomUUID();
+      const sessionWindowRequestHash = `sha256:${"7".repeat(64)}`;
+      await runSql(`
+        INSERT INTO budget_reservations (
+          id, tenant_id, location_id, review_session_id, snapshot_id,
+          permit_jti, request_hash, action, reserved_micros,
+          actual_cost_micros, status, reserved_at, expires_at, settled_at
+        ) VALUES (
+          '${sessionWindowReservationId}', '${tenantId}', '${locationId}',
+          '${reviewSessionId}', '${snapshotId}', 'session-window-fixture',
+          '${sessionWindowRequestHash}', 'GENERATE', 0, 0, 'SETTLED',
+          clock_timestamp(), clock_timestamp() + interval '1 hour',
+          clock_timestamp()
+        );
+        INSERT INTO generation_batches (
+          id, tenant_id, location_id, review_session_id, snapshot_id,
+          budget_reservation_id, idempotency_key, request_hash, action,
+          normalized_input
+        ) VALUES (
+          '${sessionWindowBatchId}', '${tenantId}', '${locationId}',
+          '${reviewSessionId}', '${snapshotId}', '${sessionWindowReservationId}',
+          'session-window-fixture', '${sessionWindowRequestHash}', 'GENERATE',
+          '{}'::jsonb
+        );
+      `);
+      await expect(
+        store.prepare({
+          ...input,
+          idempotencyKey: "session-window-fourth",
+        }),
+      ).resolves.toEqual({
+        status: "rejected",
+        code: "RATE_LIMITED",
+        retryable: true,
+        retryAfterSeconds: 1_800,
+      });
+      await runSql(`
+        DELETE FROM generation_batches WHERE id = '${sessionWindowBatchId}';
+        DELETE FROM budget_reservations WHERE id = '${sessionWindowReservationId}';
+      `);
 
       const sourceGenerationId = randomUUID();
       const unsupportedCommands = [
@@ -752,6 +795,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         status: "rejected",
         code: "RATE_LIMITED",
         retryable: true,
+        retryAfterSeconds: 60,
       });
       expect(
         await runSql("SELECT count(*) FROM platform_generation_admissions;"),
@@ -776,6 +820,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         status: "rejected",
         code: "RATE_LIMITED",
         retryable: true,
+        retryAfterSeconds: 3_600,
       });
       expect(
         await runSql(
@@ -1366,6 +1411,7 @@ describeDatabase("US-01.3 PostgreSQL reviewer Generation admission", () => {
         status: "rejected",
         code: "RATE_LIMITED",
         retryable: true,
+        retryAfterSeconds: 86_400,
       });
       expect(
         await runSql(

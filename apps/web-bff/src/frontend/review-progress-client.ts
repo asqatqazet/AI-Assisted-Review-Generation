@@ -16,6 +16,7 @@ export interface SaveReviewProgressInput {
 export interface ReviewProgressClient {
   save(
     input: SaveReviewProgressInput,
+    options?: { readonly keepalive?: boolean | undefined },
   ): Promise<SaveReviewSessionProgressInvocationResultDto["result"]>;
 }
 
@@ -35,7 +36,7 @@ export function createHttpReviewProgressClient(
   fetchFn: typeof fetch = globalThis.fetch,
 ): ReviewProgressClient {
   return {
-    async save(input) {
+    async save(input, options) {
       const body = JSON.stringify({
         expectedEpoch: input.expectedEpoch,
         progress: ReviewSessionProgressInputDtoSchema.parse(input.progress),
@@ -52,6 +53,7 @@ export function createHttpReviewProgressClient(
             "x-amz-content-sha256": await sha256Hex(body),
           },
           body,
+          keepalive: options?.keepalive ?? false,
         },
       );
       if (response.status !== 200 && response.status !== 409) {

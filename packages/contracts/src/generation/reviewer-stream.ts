@@ -112,6 +112,7 @@ export const ReviewerGenerationEventDtoSchema = z.union([
     status: z.literal("rejected"),
     code: ReviewerGenerationRejectionCodeDtoSchema,
     retryable: z.boolean(),
+    retryAfterSeconds: z.number().int().min(1).max(86_400).optional(),
   }),
 ]);
 

@@ -7,14 +7,17 @@ import {
 import { readBffClientError } from "./bff-error.js";
 
 export interface ReviewerDraftRevisionClient {
-  save(input: {
-    readonly reviewSessionHandle: string;
-    readonly idempotencyKey: string;
-    readonly draftId: string;
-    readonly generationId: string;
-    readonly expectedRevision: number;
-    readonly text: string;
-  }): Promise<ReviewerDraftRevisionResultDto>;
+  save(
+    input: {
+      readonly reviewSessionHandle: string;
+      readonly idempotencyKey: string;
+      readonly draftId: string;
+      readonly generationId: string;
+      readonly expectedRevision: number;
+      readonly text: string;
+    },
+    options?: { readonly keepalive?: boolean | undefined },
+  ): Promise<ReviewerDraftRevisionResultDto>;
 }
 
 const encoder = new TextEncoder();
@@ -33,7 +36,7 @@ export function createHttpReviewerDraftRevisionClient(
   fetchFn: typeof fetch = globalThis.fetch,
 ): ReviewerDraftRevisionClient {
   return {
-    async save(input) {
+    async save(input, options) {
       if (input.idempotencyKey.length < 1 || input.idempotencyKey.length > 200) {
         throw new Error("INVALID_IDEMPOTENCY_KEY");
       }
@@ -57,6 +60,7 @@ export function createHttpReviewerDraftRevisionClient(
             "x-amz-content-sha256": await sha256Hex(body),
           },
           body,
+          keepalive: options?.keepalive ?? false,
         },
       );
       if (response.status === 409) {

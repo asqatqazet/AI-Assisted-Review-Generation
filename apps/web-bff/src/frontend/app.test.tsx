@@ -1037,6 +1037,67 @@ describe("reviewer application routes", () => {
     );
   });
 
+  it("flushes a newly selected Fact on pagehide before the debounce expires", async () => {
+    const user = userEvent.setup();
+    const saves: unknown[] = [];
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{
+            read: async () => ({
+              ...resumableResult(),
+              progress: {
+                epoch: 1,
+                phase: "facts",
+                selectedFactOptionIds: [],
+                customerAssertion: "",
+                sourceText: "",
+                selectedReviewFormatId: null,
+              },
+              drafts: [],
+            }),
+          }}
+          reviewProgressClient={{
+            save: async (input, options) => {
+              saves.push({ input, options });
+              return {
+                status: "saved",
+                progress: { epoch: input.expectedEpoch + 1, ...input.progress },
+              };
+            },
+          }}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      await screen.findByRole("checkbox", { name: "The team was attentive" }),
+    );
+    await act(async () => {
+      globalThis.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(saves).toEqual([
+        {
+          input: {
+            reviewSessionHandle: "review-session-demo",
+            expectedEpoch: 1,
+            progress: {
+              phase: "facts",
+              selectedFactOptionIds: ["fact-attentive"],
+              customerAssertion: "",
+              sourceText: "",
+              selectedReviewFormatId: null,
+            },
+          },
+          options: { keepalive: true },
+        },
+      ]),
+    );
+  });
+
   it("describes the reviewer assertion field with its limit and grounding guidance", async () => {
     render(
       <MemoryRouter initialEntries={["/review/review-session-demo"]}>
@@ -1540,7 +1601,7 @@ describe("reviewer application routes", () => {
     expect(screen.getByRole("radio", { name: "Concise blurb" })).toBeChecked();
   });
 
-  it("honours Retry-After before offering another paid request", async () => {
+  it("honours an application Retry-After before offering another paid request", async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter initialEntries={["/review/review-session-demo"]}>
@@ -1573,17 +1634,15 @@ describe("reviewer application routes", () => {
             }),
           }}
           generationClient={{
-            start: () => ({
-              [Symbol.asyncIterator]: () => ({
-                next: async () => {
-                  throw new GenerationTransportError(
-                    "EDGE_THROTTLED",
-                    true,
-                    4,
-                  );
-                },
-              }),
-            }),
+            async *start() {
+              yield {
+                type: "terminal",
+                status: "rejected",
+                code: "RATE_LIMITED",
+                retryable: true,
+                retryAfterSeconds: 4,
+              } as const;
+            },
           }}
           newIdempotencyKey={() => "generation-request-a"}
         />
@@ -2122,6 +2181,51 @@ describe("reviewer application routes", () => {
       { timeout: 2_000 },
     );
     expect(await screen.findByText("Changes saved.")).toBeVisible();
+  });
+
+  it("flushes the latest Draft edit on pagehide before autosave debounce", async () => {
+    const user = userEvent.setup();
+    const saves: unknown[] = [];
+    render(
+      <MemoryRouter initialEntries={["/review/review-session-demo"]}>
+        <ReviewerApplication
+          reviewSessionClient={{ read: async () => resumableResult() }}
+          reviewerDraftRevisionClient={{
+            save: async (input, options) => {
+              saves.push({ input, options });
+              return { status: "recorded", revision: 2 };
+            },
+          }}
+          newIdempotencyKey={() => "draft-pagehide-a"}
+        />
+      </MemoryRouter>,
+    );
+
+    const draft = await screen.findByRole("textbox", {
+      name: "Your draft — edit it freely",
+    });
+    await user.clear(draft);
+    await user.type(draft, "The team listened carefully.");
+    await act(async () => {
+      globalThis.dispatchEvent(new Event("pagehide"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() =>
+      expect(saves).toEqual([
+        {
+          input: {
+            reviewSessionHandle: "review-session-demo",
+            idempotencyKey: "draft-pagehide-a",
+            draftId: "draft-a",
+            generationId: "generation-a",
+            expectedRevision: 1,
+            text: "The team listened carefully.",
+          },
+          options: { keepalive: true },
+        },
+      ]),
+    );
   });
 
   it("renders policy disclosure outside the editable body and never submits it as reviewer text", async () => {

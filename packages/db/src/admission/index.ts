@@ -155,6 +155,7 @@ export type ReviewerGenerationAdmissionResult =
       readonly status: "rejected";
       readonly code: ReviewerGenerationRejectionCode;
       readonly retryable: boolean;
+      readonly retryAfterSeconds?: number | undefined;
     };
 
 export interface PostgresReviewerGenerationAdmissionStore {
@@ -1596,10 +1597,12 @@ const MICROS_PER_TOKEN_RATE_UNIT = 1_000_000n;
 const rejectReviewerGeneration = (
   code: ReviewerGenerationRejectionCode,
   retryable = false,
+  retryAfterSeconds?: number,
 ): ReviewerGenerationAdmissionResult => ({
   status: "rejected",
   code,
   retryable,
+  ...(retryAfterSeconds === undefined ? {} : { retryAfterSeconds }),
 });
 
 const isUuid = (value: string): boolean =>
@@ -2289,14 +2292,17 @@ export function createPostgresReviewerGenerationAdmissionStore({
                 ) AS tenant_active
             `
           )[0];
-          if (
-            limits === undefined ||
-            limits.session_recent >= 3n ||
-            limits.tenant_recent >= 10n ||
-            limits.session_active >= 1n ||
-            limits.tenant_active >= 1n
-          ) {
+          if (limits === undefined) {
             return rejectReviewerGeneration("RATE_LIMITED", true);
+          }
+          if (limits.session_active >= 1n || limits.tenant_active >= 1n) {
+            return rejectReviewerGeneration("RATE_LIMITED", true, 60);
+          }
+          if (limits.tenant_recent >= 10n) {
+            return rejectReviewerGeneration("RATE_LIMITED", true, 3_600);
+          }
+          if (limits.session_recent >= 3n) {
+            return rejectReviewerGeneration("RATE_LIMITED", true, 1_800);
           }
 
           const reservedMicros = funded
@@ -2515,10 +2521,12 @@ export function createPostgresReviewerGenerationAdmissionStore({
         const message = String(error);
         if (
           message.includes("GENERATION_PLATFORM_ACTIVE_LIMIT") ||
-          message.includes("GENERATION_PLATFORM_MINUTE_LIMIT") ||
-          message.includes("GENERATION_PLATFORM_FUNDED_DAILY_LIMIT")
+          message.includes("GENERATION_PLATFORM_MINUTE_LIMIT")
         ) {
-          return rejectReviewerGeneration("RATE_LIMITED", true);
+          return rejectReviewerGeneration("RATE_LIMITED", true, 60);
+        }
+        if (message.includes("GENERATION_PLATFORM_FUNDED_DAILY_LIMIT")) {
+          return rejectReviewerGeneration("RATE_LIMITED", true, 86_400);
         }
         if (
           message.includes("Stored Effective Configuration Snapshot") ||
